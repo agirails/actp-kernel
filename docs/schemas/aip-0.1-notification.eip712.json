@@ -1,0 +1,33 @@
+{
+  "domain": {
+    "name": "AGIRAILS",
+    "version": "1",
+    "chainId": 84532,
+    "verifyingContract": "<ACTP_KERNEL_ADDRESS>"
+  },
+  "primaryType": "Notification",
+  "types": {
+    "Notification": [
+      { "name": "type", "type": "string" },
+      { "name": "version", "type": "string" },
+      { "name": "txId", "type": "bytes32" },
+      { "name": "cid", "type": "string" },
+      { "name": "consumer", "type": "string" },
+      { "name": "provider", "type": "string" },
+      { "name": "chainId", "type": "uint256" },
+      { "name": "timestamp", "type": "uint256" },
+      { "name": "nonce", "type": "uint256" }
+    ]
+  },
+  "message": {
+    "type": "agirails.notification.v1",
+    "version": "1.0.0",
+    "txId": "0x7d87c3b8e23a5c9d1f4e6b2a8c5d9e3f1a7b4c6d8e2f5a3b9c1d7e4f6a8b2c5d",
+    "cid": "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+    "consumer": "did:ethr:0xConsumerAddress...",
+    "provider": "did:ethr:0xProviderAddress...",
+    "chainId": 84532,
+    "timestamp": 1700000000,
+    "nonce": 1
+  }
+}
