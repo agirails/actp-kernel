@@ -1,0 +1,71 @@
+{
+  "network": "Base Sepolia",
+  "chainId": 84532,
+  "deployedAt": "2025-01-22",
+  "deployedBy": "system@agirails.io",
+  "blockExplorer": "https://sepolia.basescan.org",
+  "contracts": {
+    "MockUSDC": {
+      "address": "0x444b4e1A65949AB2ac75979D5d0166Eb7A248Ccb",
+      "verified": true,
+      "explorerUrl": "https://sepolia.basescan.org/address/0x444b4e1A65949AB2ac75979D5d0166Eb7A248Ccb",
+      "decimals": 6,
+      "symbol": "mUSDC"
+    },
+    "ACTPKernel": {
+      "address": "0xb5B002A73743765450d427e2F8a472C24FDABF9b",
+      "verified": true,
+      "explorerUrl": "https://sepolia.basescan.org/address/0xb5B002A73743765450d427e2F8a472C24FDABF9b",
+      "constructorArgs": {
+        "admin": "TBD",
+        "pauser": "TBD",
+        "feeRecipient": "TBD"
+      }
+    },
+    "EscrowVault": {
+      "address": "0x67770791c83eA8e46D8a08E09682488ba584744f",
+      "verified": true,
+      "explorerUrl": "https://sepolia.basescan.org/address/0x67770791c83eA8e46D8a08E09682488ba584744f",
+      "constructorArgs": {
+        "token": "0x444b4e1A65949AB2ac75979D5d0166Eb7A248Ccb",
+        "kernel": "0xb5B002A73743765450d427e2F8a472C24FDABF9b"
+      }
+    }
+  },
+  "deployment": {
+    "tool": "Apex (Claude Precision Engineer)",
+    "framework": "Foundry",
+    "safeMode": true,
+    "features": [
+      "Hex validation",
+      "RPC chain checks",
+      "Env parsing",
+      "Bytecode integrity checks",
+      "Structured audit logging"
+    ],
+    "rpc": "Alchemy Base Sepolia (system@agirails.io)",
+    "etherscan": "Etherscan API V2 (system@agirails.io)"
+  },
+  "smokeTests": {
+    "passed": true,
+    "total": 5,
+    "results": "5/5 passed",
+    "status": "✅ All post-deployment checks passed"
+  },
+  "artifacts": {
+    "gasUsage": "Generated",
+    "jsonSummary": "Generated",
+    "auditLogs": "Generated",
+    "broadcastArtifacts": "Stored automatically"
+  },
+  "notes": [
+    "Deployed using full Apex + Codex integration",
+    "All contracts verified on Basescan",
+    "Safe Mode enabled with full integrity checks",
+    "Service accounts registered under system@agirails.io",
+    "AGIRAILS-DEV environment fully aligned",
+    "Protected layers (foundation/inc) isolated",
+    "Arha organism DNA embedded in source code (Apache-2.0)",
+    "Covenant principles encoded as invariant comments"
+  ]
+}
