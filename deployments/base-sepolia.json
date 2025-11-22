@@ -59,13 +59,15 @@
     "broadcastArtifacts": "Stored automatically"
   },
   "notes": [
+    "Redeployed 2025-11-22 with AIP-5 implementation (platformFeeBpsLocked field)",
     "Deployed using full Apex + Codex integration",
     "All contracts verified on Basescan",
     "Safe Mode enabled with full integrity checks",
-    "Service accounts registered under system@agirails.io",
+    "Service accounts registered under justin@agirails.io",
     "AGIRAILS-DEV environment fully aligned",
     "Protected layers (foundation/inc) isolated",
     "Arha organism DNA embedded in source code (Apache-2.0)",
-    "Covenant principles encoded as invariant comments"
+    "Covenant principles encoded as invariant comments",
+    "Smoke tests: 5/5 passed (pause, unpause, mint verification)"
   ]
 }

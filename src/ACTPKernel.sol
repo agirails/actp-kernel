@@ -124,29 +124,38 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
      *      1. At least one escrow vault is approved by the admin
      *      2. You have sufficient funds to create escrow in an approved vault
      *      3. The provider address is correct and trusted
-     * @dev msg.sender will be set as the requester automatically
-     * @param transactionId Unique identifier for the transaction
+     * @dev transactionId is generated deterministically from the inputs
      * @param provider Address of the service provider
+     * @param requester Address of the requester (must match msg.sender)
      * @param amount Amount in tokens (must be > 0 and <= MAX_TRANSACTION_AMOUNT)
-     * @param serviceHash Hash of the service agreement
      * @param deadline Timestamp when the transaction expires
+     * @param disputeWindow Duration in seconds for the dispute window
+     * @param serviceHash Hash of the service agreement
+     * @return transactionId The generated transaction ID
      */
     function createTransaction(
-        bytes32 transactionId,
         address provider,
+        address requester,
         uint256 amount,
-        bytes32 serviceHash,
-        uint256 deadline
-    ) external override whenNotPaused {
-        require(transactions[transactionId].createdAt == 0, "Tx exists");
-        address requester = msg.sender;
+        uint256 deadline,
+        uint256 disputeWindow,
+        bytes32 serviceHash
+    ) external override whenNotPaused returns (bytes32 transactionId) {
+        require(msg.sender == requester, "Requester mismatch");
         require(provider != address(0), "Zero provider");
         require(requester != provider, "Self-transaction not allowed");
         require(amount >= MIN_TRANSACTION_AMOUNT, "Amount below minimum");
         require(amount <= MAX_TRANSACTION_AMOUNT, "Amount exceeds maximum");
-        // Deadline enforcement: time-bound commitments
         require(deadline > block.timestamp, "Deadline in past");
         require(deadline <= block.timestamp + MAX_DEADLINE, "Deadline too far");
+        require(disputeWindow >= MIN_DISPUTE_WINDOW, "Dispute window too short");
+        require(disputeWindow <= MAX_DISPUTE_WINDOW, "Dispute window too long");
+
+        // Generate deterministic transactionId
+        transactionId = keccak256(
+            abi.encodePacked(requester, provider, amount, serviceHash, block.timestamp, block.number)
+        );
+        require(transactions[transactionId].createdAt == 0, "Tx exists");
 
         Transaction storage txn = transactions[transactionId];
         txn.transactionId = transactionId;
@@ -157,6 +166,7 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         txn.createdAt = block.timestamp;
         txn.updatedAt = block.timestamp;
         txn.deadline = deadline;
+        txn.disputeWindow = disputeWindow;
         txn.serviceHash = serviceHash;
         txn.platformFeeBpsLocked = platformFeeBps; // AIP-5: Lock current platform fee % at creation
 
