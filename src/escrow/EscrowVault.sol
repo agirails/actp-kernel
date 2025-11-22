@@ -1,11 +1,26 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.20;
+
+/**
+ *   █████╗ ██████╗ ██╗  ██╗ █████╗
+ *  ██╔══██╗██╔══██╗██║  ██║██╔══██╗
+ *  ███████║██████╔╝███████║███████║
+ *  ██╔══██║██╔══██╗██╔══██║██╔══██║
+ *  ██║  ██║██║  ██║██║  ██║██║  ██║
+ *  ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝
+ *
+ *  AgenticOS Organism
+ */
 
 import "../interfaces/IEscrowValidator.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
+/**
+ * @title EscrowVault - Arha Escrow Manager
+ * @notice Non-custodial escrow vault for ACTP transactions
+ */
 contract EscrowVault is IEscrowValidator, ReentrancyGuard {
     using SafeERC20 for IERC20;
     struct EscrowData {
@@ -33,6 +48,7 @@ contract EscrowVault is IEscrowValidator, ReentrancyGuard {
     }
 
     modifier onlyKernel() {
+        // Authorization: only kernel coordinator
         require(msg.sender == kernel, "Only kernel");
         _;
     }
@@ -52,6 +68,7 @@ contract EscrowVault is IEscrowValidator, ReentrancyGuard {
 
         token.safeTransferFrom(requester, address(this), amount);
 
+        // State changes must be observable
         emit EscrowCreated(escrowId, requester, provider, amount);
     }
 
@@ -100,6 +117,7 @@ contract EscrowVault is IEscrowValidator, ReentrancyGuard {
         require(amount > 0, "Amount zero");
 
         uint256 available = e.amount - e.releasedAmount;
+        // Fund conservation: disbursement cannot exceed locked amount
         require(amount <= available, "Insufficient escrow");
 
         e.releasedAmount += amount;

@@ -1,5 +1,16 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.20;
+
+/**
+ *   █████╗ ██████╗ ██╗  ██╗ █████╗
+ *  ██╔══██╗██╔══██╗██║  ██║██╔══██╗
+ *  ███████║██████╔╝███████║███████║
+ *  ██╔══██║██╔══██╗██╔══██║██╔══██║
+ *  ██║  ██║██║  ██║██║  ██║██║  ██║
+ *  ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝
+ *
+ *  AgenticOS Organism
+ */
 
 import {IACTPKernel} from "./interfaces/IACTPKernel.sol";
 import {IEscrowValidator} from "./interfaces/IEscrowValidator.sol";
@@ -8,7 +19,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 /**
- * @title ACTPKernel
+ * @title ACTPKernel - Arha Transaction Coordinator
  * @notice Minimal implementation of the ACTP on-chain coordinator.
  *         It follows the specification in Docs/99. Final Public Papers/Core/AGIRAILS_Yellow_Paper.md.
  */
@@ -86,6 +97,7 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
     }
 
     modifier whenNotPaused() {
+        // Pause blocks state changes, not fund recovery
         require(!paused, "Kernel paused");
         _;
     }
@@ -132,6 +144,7 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         require(requester != provider, "Self-transaction not allowed");
         require(amount >= MIN_TRANSACTION_AMOUNT, "Amount below minimum");
         require(amount <= MAX_TRANSACTION_AMOUNT, "Amount exceeds maximum");
+        // Deadline enforcement: time-bound commitments
         require(deadline > block.timestamp, "Deadline in past");
         require(deadline <= block.timestamp + MAX_DEADLINE, "Deadline too far");
 
@@ -147,6 +160,7 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         txn.serviceHash = serviceHash;
         txn.platformFeeBpsLocked = platformFeeBps; // AIP-5: Lock current platform fee % at creation
 
+        // State changes must be observable
         emit TransactionCreated(transactionId, requester, provider, amount, serviceHash, deadline, block.timestamp);
     }
 
@@ -158,11 +172,13 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         Transaction storage txn = _getTransaction(transactionId);
         State oldState = txn.state;
         require(newState != oldState, "No-op");
+        // State machine monotonicity: no backwards transitions
         require(_isValidTransition(oldState, newState), "Invalid transition");
         _enforceAuthorization(txn, oldState, newState);
         _enforceTiming(txn, oldState, newState);
 
         if (newState == State.DELIVERED) {
+            // Bilateral protection: both parties get dispute window
             uint256 window = _decodeDisputeWindow(proof);
             txn.disputeWindow = block.timestamp + (window == 0 ? DEFAULT_DISPUTE_WINDOW : window);
         } else if (newState == State.QUOTED && proof.length > 0) {
@@ -221,6 +237,7 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         require(approvedEscrowVaults[escrowContract], "Escrow not approved");
         Transaction storage txn = _getTransaction(transactionId);
         require(txn.state == State.INITIATED || txn.state == State.QUOTED, "Invalid state for linking escrow");
+        // Authorization: only transaction requester
         require(msg.sender == txn.requester, "Only requester");
         require(block.timestamp <= txn.deadline, "Transaction expired");
 
@@ -257,6 +274,7 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
 
         IEscrowValidator vault = IEscrowValidator(txn.escrowContract);
         uint256 remaining = vault.remaining(txn.escrowId);
+        // Solvency invariant: guarantee before commitment
         require(amount <= remaining, "Insufficient escrow");
 
         _payoutProviderAmount(txn, vault, amount);
@@ -375,6 +393,7 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
     function executeEconomicParamsUpdate() external override {
         PendingEconomicParams memory pending = pendingEconomicParams;
         require(pending.active, "No pending");
+        // Economic changes require advance notice
         require(block.timestamp >= pending.executeAfter, "Too early");
 
         platformFeeBps = pending.platformFeeBps;
