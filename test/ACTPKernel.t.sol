@@ -32,9 +32,8 @@ contract ACTPKernelTest is Test {
     // Helpers --------------------------------------------------------------
 
     function _createBaseTx() internal returns (bytes32 txId) {
-        txId = keccak256(abi.encodePacked("tx", block.timestamp, block.prevrandao));
         vm.prank(requester);
-        kernel.createTransaction(txId, provider, ONE_USDC, keccak256("service"), block.timestamp + 7 days);
+        txId = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"));
     }
 
     function _quote(bytes32 txId) internal {
@@ -76,11 +75,14 @@ contract ACTPKernelTest is Test {
     }
 
     function testDuplicateTransactionReverts() external {
-        bytes32 txId = _createBaseTx();
+        // Create first transaction
+        vm.prank(requester);
+        kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"));
 
+        // Try to create second transaction with same inputs in same block (generates same deterministic ID)
         vm.expectRevert(bytes("Tx exists"));
         vm.prank(requester);
-        kernel.createTransaction(txId, provider, ONE_USDC, keccak256("s"), block.timestamp + 1 days);
+        kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"));
     }
 
     function testUnauthorizedTransitionReverts() external {
@@ -125,9 +127,8 @@ contract ACTPKernelTest is Test {
 
     function testCancelBeforeDeadlineFailsUntilExpired() external {
         // Use a short deadline (1 day) for this test to check cancel behavior
-        bytes32 txId = keccak256(abi.encodePacked("tx", block.timestamp, block.prevrandao));
         vm.prank(requester);
-        kernel.createTransaction(txId, provider, ONE_USDC, keccak256("service"), block.timestamp + 1 days);
+        bytes32 txId = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 1 days, 2 days, keccak256("service"));
 
         _quote(txId);
         bytes32 escrowId = keccak256("escrow4");
@@ -457,15 +458,8 @@ contract ACTPKernelTest is Test {
         kernel.executeEconomicParamsUpdate();
 
         // Create second transaction with new fee
-        bytes32 txId2 = keccak256("tx2");
         vm.prank(requester);
-        kernel.createTransaction(
-            txId2,
-            provider,
-            ONE_USDC,
-            bytes32(uint256(1)),
-            block.timestamp + 1 days
-        );
+        bytes32 txId2 = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 1 days, 2 days, bytes32(uint256(1)));
 
         // Verify first transaction locked original fee
         IACTPKernel.TransactionView memory txView1 = kernel.getTransaction(txId1);

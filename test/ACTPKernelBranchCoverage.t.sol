@@ -153,10 +153,9 @@ contract ACTPKernelBranchCoverageTest is Test {
     function testPausedTransactionCreationReverts() external {
         kernel.pause();
 
-        bytes32 txId = keccak256("paused_tx");
         vm.prank(requester);
         vm.expectRevert("Kernel paused");
-        kernel.createTransaction(txId, provider, ONE_USDC, keccak256("service"), block.timestamp + 7 days);
+        bytes32 txId = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"));
     }
 
     function testPausedLinkEscrowReverts() external {
@@ -304,27 +303,24 @@ contract ACTPKernelBranchCoverageTest is Test {
     // ============================================
 
     function testCreateTransactionRejectsZeroProvider() external {
-        bytes32 txId = keccak256("zero_provider");
         vm.prank(requester);
         vm.expectRevert("Zero provider");
-        kernel.createTransaction(txId, address(0), ONE_USDC, keccak256("service"), block.timestamp + 7 days);
+        bytes32 txId = kernel.createTransaction(address(0), requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"));
     }
 
     function testCreateTransactionRejectsSelfTransaction() external {
-        bytes32 txId = keccak256("self_tx");
         vm.prank(requester);
         vm.expectRevert("Self-transaction not allowed");
-        kernel.createTransaction(txId, requester, ONE_USDC, keccak256("service"), block.timestamp + 7 days);
+        bytes32 txId = kernel.createTransaction(requester, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"));
     }
 
     function testCreateTransactionRejectsDuplicateId() external {
-        bytes32 txId = keccak256("duplicate");
         vm.prank(requester);
-        kernel.createTransaction(txId, provider, ONE_USDC, keccak256("service"), block.timestamp + 7 days);
+        bytes32 txId = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"));
 
         vm.prank(requester);
         vm.expectRevert("Tx exists");
-        kernel.createTransaction(txId, provider, ONE_USDC, keccak256("service"), block.timestamp + 7 days);
+        kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"));
     }
 
     // ============================================
@@ -374,9 +370,8 @@ contract ACTPKernelBranchCoverageTest is Test {
     }
 
     function testLinkEscrowRejectsAfterDeadline() external {
-        bytes32 txId = keccak256("short_deadline");
         vm.prank(requester);
-        kernel.createTransaction(txId, provider, ONE_USDC, keccak256("service"), block.timestamp + 1 hours);
+        bytes32 txId = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 1 hours, 2 days, keccak256("service"));
 
         // Warp past deadline
         vm.warp(block.timestamp + 2 hours);
@@ -436,9 +431,8 @@ contract ACTPKernelBranchCoverageTest is Test {
     // ============================================
 
     function _createTx() internal returns (bytes32 txId) {
-        txId = keccak256(abi.encodePacked("tx", block.timestamp, block.prevrandao));
         vm.prank(requester);
-        kernel.createTransaction(txId, provider, ONE_USDC, keccak256("service"), block.timestamp + 7 days);
+        txId = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"));
     }
 
     function _createCommittedTx() internal returns (bytes32 txId) {
