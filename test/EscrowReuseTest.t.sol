@@ -42,11 +42,9 @@ contract EscrowReuseTest is Test {
         bytes32 sharedEscrowId = keccak256("shared_escrow_id");
 
         // ==================== TX1: Normal transaction lifecycle ====================
-        bytes32 tx1 = keccak256("transaction_1");
-
         // Alice creates transaction
         vm.prank(alice);
-        kernel.createTransaction(tx1, bob, ONE_USDC, keccak256("service1"), block.timestamp + 7 days);
+        bytes32 tx1 = kernel.createTransaction(bob, alice, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service1"));
 
         // Bob quotes
         vm.prank(bob);
@@ -75,11 +73,9 @@ contract EscrowReuseTest is Test {
         assertEq(escrow.remaining(sharedEscrowId), 0); // All funds disbursed
 
         // ==================== TX2: User can now reuse escrowId ====================
-        bytes32 tx2 = keccak256("transaction_2_reuse");
-
-        // Attacker creates transaction
+        // Attacker creates transaction (attacker is now requester)
         vm.prank(attacker);
-        kernel.createTransaction(tx2, bob, ONE_USDC, keccak256("service2"), block.timestamp + 7 days);
+        bytes32 tx2 = kernel.createTransaction(bob, attacker, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service2"));
 
         // User links with SAME escrowId - NOW ALLOWED after previous deletion
         vm.startPrank(attacker);
@@ -98,9 +94,8 @@ contract EscrowReuseTest is Test {
         bytes32 sharedEscrowId = keccak256("cancelled_escrow");
 
         // TX1: Create and cancel
-        bytes32 tx1 = keccak256("tx_cancelled");
         vm.prank(alice);
-        kernel.createTransaction(tx1, bob, ONE_USDC, keccak256("service"), block.timestamp + 1 days);
+        bytes32 tx1 = kernel.createTransaction(bob, alice, ONE_USDC, block.timestamp + 1 days, 2 days, keccak256("service"));
 
         vm.prank(bob);
         kernel.transitionState(tx1, IACTPKernel.State.QUOTED, "");
@@ -119,9 +114,8 @@ contract EscrowReuseTest is Test {
         assertEq(escrow.remaining(sharedEscrowId), 0);
 
         // TX2: Reuse escrowId - NOW ALLOWED
-        bytes32 tx2 = keccak256("tx_after_cancel");
         vm.prank(attacker);
-        kernel.createTransaction(tx2, bob, ONE_USDC, keccak256("service2"), block.timestamp + 7 days);
+        bytes32 tx2 = kernel.createTransaction(bob, attacker, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service2"));
 
         vm.startPrank(attacker);
         usdc.approve(address(escrow), ONE_USDC);
@@ -140,9 +134,8 @@ contract EscrowReuseTest is Test {
         bytes32 escrowId = keccak256("unique_escrow");
 
         // TX1: Alice creates transaction
-        bytes32 tx1 = keccak256("tx1");
         vm.prank(alice);
-        kernel.createTransaction(tx1, bob, ONE_USDC, keccak256("service1"), block.timestamp + 7 days);
+        bytes32 tx1 = kernel.createTransaction(bob, alice, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service1"));
 
         vm.startPrank(alice);
         usdc.approve(address(escrow), ONE_USDC);
@@ -150,9 +143,8 @@ contract EscrowReuseTest is Test {
         vm.stopPrank();
 
         // TX2: Alice tries to create another transaction with SAME escrowId - SHOULD FAIL
-        bytes32 tx2 = keccak256("tx2");
         vm.prank(alice);
-        kernel.createTransaction(tx2, bob, ONE_USDC, keccak256("service2"), block.timestamp + 7 days);
+        bytes32 tx2 = kernel.createTransaction(bob, alice, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service2"));
 
         vm.startPrank(alice);
         usdc.approve(address(escrow), ONE_USDC);
@@ -166,11 +158,10 @@ contract EscrowReuseTest is Test {
      */
     function testUniqueEscrowIdsWorkCorrectly() external {
         // TX1: Alice creates transaction with escrowId1
-        bytes32 tx1 = keccak256("tx1");
         bytes32 escrowId1 = keccak256("escrow1");
 
         vm.prank(alice);
-        kernel.createTransaction(tx1, bob, ONE_USDC, keccak256("service1"), block.timestamp + 7 days);
+        bytes32 tx1 = kernel.createTransaction(bob, alice, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service1"));
 
         vm.startPrank(alice);
         usdc.approve(address(escrow), ONE_USDC);
@@ -178,11 +169,10 @@ contract EscrowReuseTest is Test {
         vm.stopPrank();
 
         // TX2: Alice creates transaction with DIFFERENT escrowId2
-        bytes32 tx2 = keccak256("tx2");
         bytes32 escrowId2 = keccak256("escrow2"); // DIFFERENT ID
 
         vm.prank(alice);
-        kernel.createTransaction(tx2, bob, ONE_USDC, keccak256("service2"), block.timestamp + 7 days);
+        bytes32 tx2 = kernel.createTransaction(bob, alice, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service2"));
 
         vm.startPrank(alice);
         usdc.approve(address(escrow), ONE_USDC);
@@ -202,9 +192,8 @@ contract EscrowReuseTest is Test {
         vm.assume(escrowId != bytes32(0));
 
         // TX1: Create and settle
-        bytes32 tx1 = keccak256("tx1");
         vm.prank(alice);
-        kernel.createTransaction(tx1, bob, ONE_USDC, keccak256("service"), block.timestamp + 7 days);
+        bytes32 tx1 = kernel.createTransaction(bob, alice, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"));
 
         vm.startPrank(alice);
         usdc.approve(address(escrow), ONE_USDC);
@@ -223,9 +212,8 @@ contract EscrowReuseTest is Test {
         assertEq(escrow.remaining(escrowId), 0);
 
         // TX2: Reuse the SAME escrowId - NOW ALLOWED
-        bytes32 tx2 = keccak256("tx2");
         vm.prank(attacker);
-        kernel.createTransaction(tx2, bob, ONE_USDC, keccak256("service2"), block.timestamp + 7 days);
+        bytes32 tx2 = kernel.createTransaction(bob, attacker, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service2"));
 
         vm.startPrank(attacker);
         usdc.approve(address(escrow), ONE_USDC);

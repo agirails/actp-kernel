@@ -126,16 +126,9 @@ contract ACTPKernelFuzzTest is Test {
     function testFuzzTransactionAmounts(uint96 amountRaw) external {
         uint256 amount = bound(uint256(amountRaw), kernel.MIN_TRANSACTION_AMOUNT(), INITIAL_MINT);
 
-        bytes32 txId = keccak256(abi.encodePacked("fuzzAmount", amount, block.timestamp));
 
         vm.prank(requester);
-        kernel.createTransaction(
-            txId,
-            provider,
-            amount,
-            keccak256("service"),
-            block.timestamp + 1 days
-        );
+        bytes32 txId = kernel.createTransaction(provider, requester, amount, block.timestamp + 1 days, 2 days, keccak256("service"));
 
         IACTPKernel.TransactionView memory txn = kernel.getTransaction(txId);
         assertEq(txn.amount, amount);
@@ -197,9 +190,8 @@ contract ACTPKernelFuzzTest is Test {
     }
 
     function _createBaseTx(uint256 amount, uint256 deadline) internal returns (bytes32 txId) {
-        txId = keccak256(abi.encodePacked("tx", block.number, block.timestamp, amount));
         vm.prank(requester);
-        kernel.createTransaction(txId, provider, amount, keccak256("service"), deadline);
+        txId = kernel.createTransaction(provider, requester, amount, deadline, 2 days, keccak256("service"));
     }
 
     function _quote(bytes32 txId) internal {

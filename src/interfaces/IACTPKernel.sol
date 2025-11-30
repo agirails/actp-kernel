@@ -117,12 +117,13 @@ interface IACTPKernel {
     event EconomicParamsUpdated(uint16 platformFeeBps, uint16 requesterPenaltyBps, uint256 timestamp);
 
     function createTransaction(
-        bytes32 transactionId,
         address provider,
+        address requester,
         uint256 amount,
-        bytes32 serviceHash,
-        uint256 deadline
-    ) external;
+        uint256 deadline,
+        uint256 disputeWindow,
+        bytes32 serviceHash
+    ) external returns (bytes32 transactionId);
 
     function transitionState(bytes32 transactionId, State newState, bytes calldata proof) external;
 

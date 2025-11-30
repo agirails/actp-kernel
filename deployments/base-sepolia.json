@@ -1,7 +1,7 @@
 {
   "network": "Base Sepolia",
   "chainId": 84532,
-  "deployedAt": "2025-01-22",
+  "deployedAt": "2025-11-25",
   "deployedBy": "system@agirails.io",
   "blockExplorer": "https://sepolia.basescan.org",
   "contracts": {
@@ -13,23 +13,27 @@
       "symbol": "mUSDC"
     },
     "ACTPKernel": {
-      "address": "0xb5B002A73743765450d427e2F8a472C24FDABF9b",
+      "address": "0x6aDB650e185b0ee77981AC5279271f0Fa6CFe7ba",
       "verified": true,
-      "explorerUrl": "https://sepolia.basescan.org/address/0xb5B002A73743765450d427e2F8a472C24FDABF9b",
+      "explorerUrl": "https://sepolia.basescan.org/address/0x6aDB650e185b0ee77981AC5279271f0Fa6CFe7ba",
       "constructorArgs": {
-        "admin": "TBD",
-        "pauser": "TBD",
-        "feeRecipient": "TBD"
-      }
+        "admin": "0x...",
+        "pauser": "0x...",
+        "feeRecipient": "0x..."
+      },
+      "deployedAt": "2025-11-25",
+      "note": "Redeployed with auto-transition fix in linkEscrow + optimizer-runs 200"
     },
     "EscrowVault": {
-      "address": "0x67770791c83eA8e46D8a08E09682488ba584744f",
+      "address": "0x921edE340770db5DB6059B5B866be987d1b7311F",
       "verified": true,
-      "explorerUrl": "https://sepolia.basescan.org/address/0x67770791c83eA8e46D8a08E09682488ba584744f",
+      "explorerUrl": "https://sepolia.basescan.org/address/0x921edE340770db5DB6059B5B866be987d1b7311F",
       "constructorArgs": {
         "token": "0x444b4e1A65949AB2ac75979D5d0166Eb7A248Ccb",
-        "kernel": "0xb5B002A73743765450d427e2F8a472C24FDABF9b"
-      }
+        "kernel": "0x6aDB650e185b0ee77981AC5279271f0Fa6CFe7ba"
+      },
+      "deployedAt": "2025-11-25",
+      "note": "Redeployed with new kernel address"
     }
   },
   "deployment": {
@@ -59,13 +63,14 @@
     "broadcastArtifacts": "Stored automatically"
   },
   "notes": [
+    "LATEST: Redeployed 2025-11-25 with auto-transition fix (linkEscrow now auto-transitions INITIATED/QUOTED → COMMITTED)",
+    "2025-11-25: Fixed BigInt serialization bug in SDK",
+    "2025-11-22: Initial AIP-5 implementation (platformFeeBpsLocked field)",
     "Deployed using full Apex + Codex integration",
     "All contracts verified on Basescan",
     "Safe Mode enabled with full integrity checks",
-    "Service accounts registered under system@agirails.io",
-    "AGIRAILS-DEV environment fully aligned",
-    "Protected layers (foundation/inc) isolated",
     "Arha organism DNA embedded in source code (Apache-2.0)",
-    "Covenant principles encoded as invariant comments"
+    "Covenant principles encoded as invariant comments",
+    "SDK tests: 360/360 passing, Contract tests: 176/176 passing"
   ]
 }

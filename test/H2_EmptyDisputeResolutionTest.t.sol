@@ -393,11 +393,10 @@ contract H2_EmptyDisputeResolutionTest is Test {
     // ============================================
 
     function _createDisputedTransaction() internal returns (bytes32 txId) {
-        txId = keccak256(abi.encodePacked("disputed", block.timestamp));
 
         // Create transaction
         vm.prank(requester);
-        kernel.createTransaction(txId, provider, TRANSACTION_AMOUNT, keccak256("service"), block.timestamp + 30 days);
+        txId = kernel.createTransaction(provider, requester, TRANSACTION_AMOUNT, block.timestamp + 30 days, 2 days, keccak256("service"));
 
         // Link escrow (auto-transitions to COMMITTED)
         vm.startPrank(requester);
