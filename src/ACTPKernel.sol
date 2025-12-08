@@ -669,7 +669,7 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         // [C-2 FIX] Update reputation only if not yet processed by current registry (prevents double-counting on registry upgrade)
         if (address(agentRegistry) != address(0) && reputationProcessedBy[txn.transactionId] == address(0)) {
             reputationProcessedBy[txn.transactionId] = address(agentRegistry);
-            try agentRegistry.updateReputationOnSettlement{gas: 100000}(
+            try agentRegistry.updateReputationOnSettlement{gas: 150000}(
                 txn.provider,
                 txn.transactionId,
                 txn.amount,
@@ -696,7 +696,7 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         // [C-2 FIX] Update reputation only if not yet processed by current registry (prevents double-counting on registry upgrade)
         if (address(agentRegistry) != address(0) && reputationProcessedBy[txn.transactionId] == address(0)) {
             reputationProcessedBy[txn.transactionId] = address(agentRegistry);
-            try agentRegistry.updateReputationOnSettlement{gas: 100000}(
+            try agentRegistry.updateReputationOnSettlement{gas: 150000}(
                 txn.provider,
                 txn.transactionId,
                 txn.amount,
