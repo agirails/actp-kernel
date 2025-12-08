@@ -120,18 +120,27 @@ contract EscrowVault is IEscrowValidator, ReentrancyGuard {
         // Fund conservation: disbursement cannot exceed locked amount
         require(amount <= available, "Insufficient escrow");
 
+        // SECURITY [M-2 FIX]: Checks-Effects-Interactions pattern
+        // Effects: Update state variables BEFORE external calls
         e.releasedAmount += amount;
-        if (e.releasedAmount == e.amount) {
-            e.active = false;
-            emit EscrowCompleted(escrowId, e.amount);
+        bool shouldComplete = (e.releasedAmount == e.amount);
 
-            // M-1 FIX: Delete escrow data to allow ID reuse after completion
-            // This resets amount to 0, allowing createEscrow check to pass for future use
+        if (shouldComplete) {
+            e.active = false;
+            // NOTE: Delete moved to after transfer to preserve data if transfer fails
+        }
+
+        // Interactions: External call to token contract
+        token.safeTransfer(recipient, amount);
+        emit EscrowPayout(escrowId, recipient, amount);
+
+        // Cleanup: Delete storage AFTER successful transfer (CEI pattern)
+        // This ensures escrow data is preserved if transfer reverts
+        if (shouldComplete) {
+            emit EscrowCompleted(escrowId, e.amount);
             delete escrows[escrowId];
         }
 
-        token.safeTransfer(recipient, amount);
-        emit EscrowPayout(escrowId, recipient, amount);
         return amount;
     }
 }

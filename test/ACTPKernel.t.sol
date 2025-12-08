@@ -19,8 +19,8 @@ contract ACTPKernelTest is Test {
     uint256 constant INITIAL_BALANCE = 1_000_000_000;
 
     function setUp() external {
-        kernel = new ACTPKernel(address(this), address(this), feeCollector);
         usdc = new MockUSDC();
+        kernel = new ACTPKernel(address(this), address(this), feeCollector, address(0), address(usdc));
         escrow = new EscrowVault(address(usdc), address(kernel));
         
         // Approve escrow vault (admin is the test contract)
@@ -74,15 +74,23 @@ contract ACTPKernelTest is Test {
         assertEq(viewData.escrowContract, address(escrow));
     }
 
-    function testDuplicateTransactionReverts() external {
+    function testNonceBasedIdPreventsCollision() external {
+        // With nonce-based ID generation, identical parameters produce DIFFERENT txIds
         // Create first transaction
         vm.prank(requester);
-        kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"));
+        bytes32 txId1 = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"));
 
-        // Try to create second transaction with same inputs in same block (generates same deterministic ID)
-        vm.expectRevert(bytes("Tx exists"));
+        // Create second transaction with SAME inputs - should succeed with DIFFERENT txId
         vm.prank(requester);
-        kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"));
+        bytes32 txId2 = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"));
+
+        // Verify both transactions exist with different IDs
+        assertTrue(txId1 != txId2, "Nonce should produce different IDs");
+
+        IACTPKernel.TransactionView memory tx1 = kernel.getTransaction(txId1);
+        IACTPKernel.TransactionView memory tx2 = kernel.getTransaction(txId2);
+        assertEq(tx1.amount, ONE_USDC);
+        assertEq(tx2.amount, ONE_USDC);
     }
 
     function testUnauthorizedTransitionReverts() external {

@@ -19,8 +19,8 @@ contract ACTPKernelFuzzTest is Test {
     uint256 internal constant INITIAL_MINT = 1_000_000_000;
 
     function setUp() external {
-        kernel = new ACTPKernel(address(this), address(this), feeCollector);
         usdc = new MockUSDC();
+        kernel = new ACTPKernel(address(this), address(this), feeCollector, address(0), address(usdc));
         escrow = new EscrowVault(address(usdc), address(kernel));
         
         // Approve escrow vault (admin is the test contract)

@@ -26,12 +26,11 @@ contract ACTPKernelBranchCoverageTest is Test {
     uint256 constant ONE_USDC = 1_000_000;
 
     function setUp() external {
-        kernel = new ACTPKernel(admin, pauser, feeCollector);
         usdc = new MockUSDC();
+        kernel = new ACTPKernel(admin, pauser, feeCollector, address(0), address(usdc));
         escrow = new EscrowVault(address(usdc), address(kernel));
         kernel.approveEscrowVault(address(escrow), true);
         usdc.mint(requester, 10_000_000);
-        // C-4 FIX: No longer minting to kernel - kernel never holds funds
     }
 
     // ============================================
@@ -171,13 +170,6 @@ contract ACTPKernelBranchCoverageTest is Test {
     }
 
     // ============================================
-    // C-4 FIX: Emergency Withdraw tests removed
-    // Kernel never holds funds by design - all funds go to EscrowVault
-    // Platform fees go directly to feeRecipient
-    // Emergency withdraw was unnecessary and created attack surface
-    // ============================================
-
-    // ============================================
     // BRANCH COVERAGE: Escrow Vault Approval
     // ============================================
 
@@ -231,7 +223,7 @@ contract ACTPKernelBranchCoverageTest is Test {
         kernel.approveMediator(mediator, false);
 
         assertFalse(kernel.approvedMediators(mediator));
-        assertEq(kernel.mediatorApprovedAt(mediator), 0); // M-2 FIX: Timelock DELETED
+        assertEq(kernel.mediatorApprovedAt(mediator), 0);
     }
 
     function testReapproveMediatorResetsTimelock() external {
@@ -239,16 +231,21 @@ contract ACTPKernelBranchCoverageTest is Test {
         kernel.approveMediator(mediator, true);
         uint256 timelockFirst = kernel.mediatorApprovedAt(mediator);
 
-        // Disapprove (timelock deleted)
         kernel.approveMediator(mediator, false);
         assertEq(kernel.mediatorApprovedAt(mediator), 0);
 
-        // Re-approve (new timelock set)
-        vm.warp(block.timestamp + 1 days); // Time passes
+        // SECURITY [C-1 FIX]: Cannot bypass timelock via revoke-reapprove
+        // Must wait MEDIATOR_APPROVAL_DELAY (2 days) after revoke before re-approval
+        vm.warp(block.timestamp + 1 days);
+        vm.expectRevert("Cannot bypass timelock via revoke-reapprove");
+        kernel.approveMediator(mediator, true);
+
+        // After waiting the full delay, re-approval should work
+        vm.warp(block.timestamp + 1 days + 1);
         kernel.approveMediator(mediator, true);
         uint256 timelockSecond = kernel.mediatorApprovedAt(mediator);
 
-        assertGt(timelockSecond, timelockFirst); // M-2 FIX: Timelock RESET
+        assertGt(timelockSecond, timelockFirst);
     }
 
     // ============================================
@@ -314,13 +311,21 @@ contract ACTPKernelBranchCoverageTest is Test {
         bytes32 txId = kernel.createTransaction(requester, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"));
     }
 
-    function testCreateTransactionRejectsDuplicateId() external {
+    function testNonceBasedIdAllowsIdenticalParams() external {
+        // Nonce-based ID generation allows identical parameters
         vm.prank(requester);
-        bytes32 txId = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"));
+        bytes32 txId1 = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"));
 
+        // Second call with identical params succeeds with different ID (due to nonce)
         vm.prank(requester);
-        vm.expectRevert("Tx exists");
-        kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"));
+        bytes32 txId2 = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"));
+
+        // Verify both exist and are different
+        assertTrue(txId1 != txId2, "Nonce-based IDs should be unique");
+        IACTPKernel.TransactionView memory tx1 = kernel.getTransaction(txId1);
+        IACTPKernel.TransactionView memory tx2 = kernel.getTransaction(txId2);
+        assertEq(uint8(tx1.state), uint8(IACTPKernel.State.INITIATED));
+        assertEq(uint8(tx2.state), uint8(IACTPKernel.State.INITIATED));
     }
 
     // ============================================

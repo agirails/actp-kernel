@@ -24,8 +24,8 @@ contract EscrowReuseTest is Test {
     uint256 constant ONE_USDC = 1_000_000;
 
     function setUp() external {
-        kernel = new ACTPKernel(admin, admin, feeCollector);
         usdc = new MockUSDC();
+        kernel = new ACTPKernel(admin, admin, feeCollector, address(0), address(usdc));
         escrow = new EscrowVault(address(usdc), address(kernel));
         kernel.approveEscrowVault(address(escrow), true);
 
@@ -35,10 +35,11 @@ contract EscrowReuseTest is Test {
     }
 
     /**
-     * @notice M-1 FIX: Verify that escrow IDs CAN be reused after settlement
-     * This is now ALLOWED because we delete escrow data after completion
+     * @notice SECURITY [M-1 FIX]: Verify that escrow IDs CANNOT be reused after settlement
+     * This prevents the escrow ID reuse attack where an attacker could hijack funds
+     * by reusing an escrow ID from a completed transaction.
      */
-    function testEscrowIdCanBeReusedAfterSettle() external {
+    function testEscrowIdCannotBeReusedAfterSettle() external {
         bytes32 sharedEscrowId = keccak256("shared_escrow_id");
 
         // ==================== TX1: Normal transaction lifecycle ====================
@@ -72,25 +73,23 @@ contract EscrowReuseTest is Test {
         assertEq(uint8(tx1View.state), uint8(IACTPKernel.State.SETTLED));
         assertEq(escrow.remaining(sharedEscrowId), 0); // All funds disbursed
 
-        // ==================== TX2: User can now reuse escrowId ====================
+        // ==================== TX2: Attacker tries to reuse escrowId (SHOULD FAIL) ====================
         // Attacker creates transaction (attacker is now requester)
         vm.prank(attacker);
         bytes32 tx2 = kernel.createTransaction(bob, attacker, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service2"));
 
-        // User links with SAME escrowId - NOW ALLOWED after previous deletion
+        // SECURITY FIX: Trying to reuse SAME escrowId should REVERT with "Escrow ID already used"
         vm.startPrank(attacker);
         usdc.approve(address(escrow), ONE_USDC);
-        kernel.linkEscrow(tx2, address(escrow), sharedEscrowId); // ✅ NOW WORKS!
+        vm.expectRevert("Escrow ID already used");
+        kernel.linkEscrow(tx2, address(escrow), sharedEscrowId); // ❌ NOW BLOCKED!
         vm.stopPrank();
-
-        // Verify new escrow is active
-        assertEq(escrow.remaining(sharedEscrowId), ONE_USDC);
     }
 
     /**
-     * @notice Verify that escrow IDs CAN be reused after CANCELLED state
+     * @notice SECURITY [M-1 FIX]: Verify that escrow IDs CANNOT be reused after CANCELLED state
      */
-    function testEscrowIdCanBeReusedAfterCancel() external {
+    function testEscrowIdCannotBeReusedAfterCancel() external {
         bytes32 sharedEscrowId = keccak256("cancelled_escrow");
 
         // TX1: Create and cancel
@@ -113,17 +112,16 @@ contract EscrowReuseTest is Test {
         // Verify funds returned and escrow deleted
         assertEq(escrow.remaining(sharedEscrowId), 0);
 
-        // TX2: Reuse escrowId - NOW ALLOWED
+        // TX2: Try to reuse escrowId - SHOULD FAIL
         vm.prank(attacker);
         bytes32 tx2 = kernel.createTransaction(bob, attacker, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service2"));
 
+        // SECURITY FIX: Escrow ID is permanently banned, cannot be reused
         vm.startPrank(attacker);
         usdc.approve(address(escrow), ONE_USDC);
-        kernel.linkEscrow(tx2, address(escrow), sharedEscrowId); // ✅ NOW WORKS!
+        vm.expectRevert("Escrow ID already used");
+        kernel.linkEscrow(tx2, address(escrow), sharedEscrowId); // ❌ NOW BLOCKED!
         vm.stopPrank();
-
-        // Verify new escrow is active
-        assertGt(escrow.remaining(sharedEscrowId), 0);
     }
 
     /**
@@ -148,8 +146,8 @@ contract EscrowReuseTest is Test {
 
         vm.startPrank(alice);
         usdc.approve(address(escrow), ONE_USDC);
-        vm.expectRevert("Escrow exists");
-        kernel.linkEscrow(tx2, address(escrow), escrowId); // ❌ BLOCKED!
+        vm.expectRevert("Escrow ID already used");
+        kernel.linkEscrow(tx2, address(escrow), escrowId);
         vm.stopPrank();
     }
 
@@ -185,9 +183,9 @@ contract EscrowReuseTest is Test {
     }
 
     /**
-     * @notice Fuzz test: Verify escrowIds CAN be reused after completion
+     * @notice SECURITY [M-1 FIX]: Fuzz test - Verify escrowIds CANNOT be reused after completion
      */
-    function testFuzzEscrowIdReusableAfterCompletion(bytes32 escrowId) external {
+    function testFuzzEscrowIdNotReusableAfterCompletion(bytes32 escrowId) external {
         // Skip zero escrowId (would fail amount > 0 check anyway)
         vm.assume(escrowId != bytes32(0));
 
@@ -211,16 +209,15 @@ contract EscrowReuseTest is Test {
         // Verify escrow is deleted (amount reset to 0)
         assertEq(escrow.remaining(escrowId), 0);
 
-        // TX2: Reuse the SAME escrowId - NOW ALLOWED
+        // TX2: Try to reuse the SAME escrowId - SHOULD FAIL
         vm.prank(attacker);
         bytes32 tx2 = kernel.createTransaction(bob, attacker, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service2"));
 
+        // SECURITY FIX: Escrow ID is permanently banned, cannot be reused
         vm.startPrank(attacker);
         usdc.approve(address(escrow), ONE_USDC);
-        kernel.linkEscrow(tx2, address(escrow), escrowId); // ✅ NOW WORKS!
+        vm.expectRevert("Escrow ID already used");
+        kernel.linkEscrow(tx2, address(escrow), escrowId); // ❌ NOW BLOCKED!
         vm.stopPrank();
-
-        // Verify new escrow is active with new funds
-        assertEq(escrow.remaining(escrowId), ONE_USDC);
     }
 }

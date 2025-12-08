@@ -53,8 +53,8 @@ contract H2_EmptyDisputeResolutionTest is Test {
     uint256 constant TRANSACTION_AMOUNT = 1_000 * ONE_USDC; // $1000
 
     function setUp() external {
-        kernel = new ACTPKernel(admin, pauser, feeCollector);
         usdc = new MockUSDC();
+        kernel = new ACTPKernel(admin, pauser, feeCollector, address(0), address(usdc));
         escrow = new EscrowVault(address(usdc), address(kernel));
         kernel.approveEscrowVault(address(escrow), true);
         kernel.approveMediator(mediator, true);

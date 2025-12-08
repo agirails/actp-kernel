@@ -54,9 +54,11 @@ contract DeployBaseSepolia is Script {
         // 2. Deploy ACTPKernel
         console.log("\nDeploying ACTPKernel...");
         ACTPKernel kernel = new ACTPKernel(
-            admin,      // admin
-            admin,      // pauser (same as admin)
-            treasury    // fee recipient (separate treasury wallet)
+            admin,         // admin
+            admin,         // pauser (same as admin)
+            treasury,      // fee recipient (separate treasury wallet)
+            address(0),    // agentRegistry (deploy later)
+            address(usdc)  // USDC token
         );
         console.log("ACTPKernel deployed at:", address(kernel));
 

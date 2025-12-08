@@ -23,8 +23,8 @@ contract ACTPKernelEdgeCasesTest is Test {
     uint256 constant ONE_USDC = 1_000_000;
 
     function setUp() external {
-        kernel = new ACTPKernel(admin, admin, feeCollector);
         usdc = new MockUSDC();
+        kernel = new ACTPKernel(admin, admin, feeCollector, address(0), address(usdc));
         escrow = new EscrowVault(address(usdc), address(kernel));
         kernel.approveEscrowVault(address(escrow), true);
         usdc.mint(requester, 10_000_000);

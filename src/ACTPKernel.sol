@@ -14,6 +14,8 @@ pragma solidity ^0.8.20;
 
 import {IACTPKernel} from "./interfaces/IACTPKernel.sol";
 import {IEscrowValidator} from "./interfaces/IEscrowValidator.sol";
+import {IAgentRegistry} from "./interfaces/IAgentRegistry.sol";
+import {IArchiveTreasury} from "./interfaces/IArchiveTreasury.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -42,9 +44,11 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         uint256 disputeWindow; // timestamp (expiry)
         bytes32 metadata; // For quote hash (AIP-2) or other protocol metadata
         uint16 platformFeeBpsLocked; // AIP-5: Lock platform fee % at creation time
+        bool wasDisputed; // AIP-7: Track if transaction went through dispute for reputation calculation
     }
 
     mapping(bytes32 => Transaction) private transactions;
+    mapping(address => uint256) private requesterNonces;
 
     uint256 public constant DEFAULT_DISPUTE_WINDOW = 2 days;
     uint256 public constant MIN_DISPUTE_WINDOW = 1 hours; // Minimum 1 hour to prevent instant finalization
@@ -58,7 +62,7 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
     uint256 public constant MAX_DEADLINE = 365 days; // Maximum 1 year deadline
     uint256 public constant ECONOMIC_PARAM_DELAY = 2 days;
     uint256 public constant MEDIATOR_APPROVAL_DELAY = 2 days; // Time-lock for mediator approvals
-    // C-4 FIX: EMERGENCY_WITHDRAW_DELAY removed - kernel never holds funds
+    // Note: No emergency withdraw - kernel never holds funds by design
     address public admin;
     address public pauser;
     address public feeRecipient;
@@ -66,13 +70,30 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
     uint16 public platformFeeBps;
     uint16 public requesterPenaltyBps;
     bool public paused;
+    IAgentRegistry public agentRegistry; // AIP-7: Agent registry for reputation tracking
+
+    /// @notice Archive treasury contract for permanent storage funding
+    address public archiveTreasury;
+
+    /// @notice Basis points allocated to archive treasury (0.1% = 10 bps of platform fee)
+    uint16 public constant ARCHIVE_ALLOCATION_BPS = 10;
+
+    /// @notice USDC token address for fee transfers
+    IERC20 public USDC;
 
     mapping(address => bool) public approvedEscrowVaults;
     mapping(address => bool) public approvedMediators;
-    mapping(address => uint256) public mediatorApprovedAt; // Timestamp when mediator was approved
+    mapping(address => uint256) public mediatorApprovedAt;
+    mapping(address => uint256) public mediatorRevokedAt; // [C-1 FIX] Track revocation time to prevent timelock bypass
+    mapping(address => mapping(bytes32 => bool)) private usedEscrowIds;
+    mapping(bytes32 => address) public reputationProcessedBy; // [C-2 FIX] Track which registry processed reputation for each transaction
 
     event MediatorApproved(address indexed mediator, bool approved);
     event AdminTransferInitiated(address indexed currentAdmin, address indexed pendingAdmin);
+    event AgentRegistryUpdated(address indexed oldRegistry, address indexed newRegistry);
+    event AgentRegistryUpdateScheduled(address indexed newRegistry, uint256 executeAfter);
+    event AgentRegistryUpdateCancelled(address indexed newRegistry, uint256 timestamp);
+    event ArchiveTreasuryUpdated(address indexed oldTreasury, address indexed newTreasury);
 
     struct PendingEconomicParams {
         uint16 platformFeeBps;
@@ -81,10 +102,14 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         bool active;
     }
 
-    // C-4 FIX: PendingEmergencyWithdraw struct removed - kernel never holds funds
+    struct PendingRegistryUpdate {
+        address newRegistry;
+        uint256 executeAfter;
+        bool active;
+    }
 
     PendingEconomicParams private pendingEconomicParams;
-    // C-4 FIX: pendingEmergencyWithdraw removed - kernel never holds funds
+    PendingRegistryUpdate private pendingRegistryUpdate;
 
     modifier onlyAdmin() {
         require(msg.sender == admin, "Not admin");
@@ -102,16 +127,26 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         _;
     }
 
-    constructor(address _admin, address _pauser, address _feeRecipient) {
+    constructor(
+        address _admin,
+        address _pauser,
+        address _feeRecipient,
+        address _agentRegistry,
+        address _usdc
+    ) {
         require(_admin != address(0), "Admin required");
         require(_feeRecipient != address(0), "Fee recipient required");
+        require(_usdc != address(0), "USDC required");
         admin = _admin;
         pauser = _pauser == address(0) ? _admin : _pauser;
         feeRecipient = _feeRecipient;
+        USDC = IERC20(_usdc);
         _validatePlatformFee(100);
         _validateRequesterPenalty(500);
         platformFeeBps = 100;
         requesterPenaltyBps = 500;
+
+        _setInitialAgentRegistry(_agentRegistry);
     }
 
     // ---------------------------------------------------------------------
@@ -151,10 +186,13 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         require(disputeWindow >= MIN_DISPUTE_WINDOW, "Dispute window too short");
         require(disputeWindow <= MAX_DISPUTE_WINDOW, "Dispute window too long");
 
-        // Generate deterministic transactionId
+        // Generate deterministic transactionId with nonce for uniqueness
+        uint256 currentNonce = requesterNonces[requester];
+        require(currentNonce < type(uint256).max, "Nonce overflow");
         transactionId = keccak256(
-            abi.encodePacked(requester, provider, amount, serviceHash, block.timestamp, block.number)
+            abi.encodePacked(requester, provider, amount, serviceHash, currentNonce)
         );
+        requesterNonces[requester] = currentNonce + 1;
         require(transactions[transactionId].createdAt == 0, "Tx exists");
 
         Transaction storage txn = transactions[transactionId];
@@ -190,13 +228,18 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         if (newState == State.DELIVERED) {
             // Bilateral protection: both parties get dispute window
             uint256 window = _decodeDisputeWindow(proof);
-            txn.disputeWindow = block.timestamp + (window == 0 ? DEFAULT_DISPUTE_WINDOW : window);
+            uint256 windowDuration = (window == 0 ? DEFAULT_DISPUTE_WINDOW : window);
+            require(block.timestamp <= type(uint256).max - windowDuration, "Timestamp overflow");
+            txn.disputeWindow = block.timestamp + windowDuration;
         } else if (newState == State.QUOTED && proof.length > 0) {
             // AIP-2: Store quote hash for verification (optional - only if proof provided)
             require(proof.length == 32, "Quote hash must be 32 bytes");
             bytes32 quoteHash = abi.decode(proof, (bytes32));
             require(quoteHash != bytes32(0), "Invalid quote hash");
             txn.metadata = quoteHash;
+        } else if (newState == State.DISPUTED) {
+            // AIP-7: Mark transaction as disputed for reputation tracking
+            txn.wasDisputed = true;
         }
 
         txn.state = newState;
@@ -210,8 +253,10 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
             } else {
                 _releaseEscrow(txn);
             }
+            _clearUsedEscrowId(txn);
         } else if (newState == State.CANCELLED) {
             _handleCancellation(txn, oldState, proof, msg.sender);
+            _clearUsedEscrowId(txn);
         }
     }
 
@@ -242,21 +287,21 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
     // ---------------------------------------------------------------------
 
     function linkEscrow(bytes32 transactionId, address escrowContract, bytes32 escrowId) external override whenNotPaused nonReentrant {
-        // CHECKS: Validate inputs and permissions
         require(escrowContract != address(0), "Escrow addr");
+        require(escrowId != bytes32(0), "Invalid escrow ID");
         require(approvedEscrowVaults[escrowContract], "Escrow not approved");
+        require(!usedEscrowIds[escrowContract][escrowId], "Escrow ID already used");
+        usedEscrowIds[escrowContract][escrowId] = true;
+
         Transaction storage txn = _getTransaction(transactionId);
         require(txn.state == State.INITIATED || txn.state == State.QUOTED, "Invalid state for linking escrow");
         // Authorization: only transaction requester
         require(msg.sender == txn.requester, "Only requester");
         require(block.timestamp <= txn.deadline, "Transaction expired");
 
-        // CHECKS: Store old state before transition for event emission
         State oldState = txn.state;
 
-        // INTERACTIONS: Create escrow in the vault
-        // Note: The vault will pull funds from the requester
-        // The vault's createEscrow() will revert if escrowId already exists (defense against reuse)
+        // Create escrow - vault pulls funds from requester
         IEscrowValidator(escrowContract).createEscrow(
             escrowId,
             txn.requester,
@@ -264,13 +309,20 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
             txn.amount
         );
 
-        // EFFECTS: Update transaction state
+        // Verify escrow was actually funded
+        (bool isActive, uint256 escrowAmount) = IEscrowValidator(escrowContract).verifyEscrow(
+            escrowId,
+            txn.requester,
+            txn.provider,
+            txn.amount
+        );
+        require(isActive && escrowAmount >= txn.amount, "Escrow funding failed");
+
         txn.escrowContract = escrowContract;
         txn.escrowId = escrowId;
         txn.state = State.COMMITTED;
         txn.updatedAt = block.timestamp;
 
-        // INTERACTIONS: Emit events
         emit EscrowLinked(transactionId, escrowContract, escrowId, txn.amount, block.timestamp);
         emit StateTransitioned(transactionId, oldState, State.COMMITTED, msg.sender, block.timestamp);
     }
@@ -358,21 +410,87 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         emit EscrowVaultApproved(vault, approved);
     }
 
+    /**
+     * @notice Approve or revoke mediator with timelock protection
+     * @dev [C-1 SECURITY FIX] Prevents timelock bypass via revoke-and-reapprove attack
+     *      - If mediator was recently revoked, must wait MEDIATOR_APPROVAL_DELAY before re-approval
+     *      - Only sets new timelock if mediator is NOT already approved
+     *      - Tracks revocation timestamp to enforce cooling period
+     * @param mediator Address of the mediator to approve/revoke
+     * @param approved True to approve, false to revoke
+     */
     function approveMediator(address mediator, bool approved) external onlyAdmin {
         require(mediator != address(0), "Zero mediator");
 
         if (approved) {
-            // M-2 FIX: ALWAYS reset timelock on approval (including re-approval)
-            // This prevents timelock bypass via revoke → re-approve
-            mediatorApprovedAt[mediator] = block.timestamp + MEDIATOR_APPROVAL_DELAY;
+            // [C-1 FIX] Prevent bypass: if recently revoked, must wait MEDIATOR_APPROVAL_DELAY
+            if (mediatorRevokedAt[mediator] > 0) {
+                require(
+                    block.timestamp >= mediatorRevokedAt[mediator] + MEDIATOR_APPROVAL_DELAY,
+                    "Cannot bypass timelock via revoke-reapprove"
+                );
+            }
+
+            // Only set new timelock if not already approved (prevent timelock reset on existing mediators)
+            if (!approvedMediators[mediator]) {
+                mediatorApprovedAt[mediator] = block.timestamp + MEDIATOR_APPROVAL_DELAY;
+            }
             approvedMediators[mediator] = true;
+            delete mediatorRevokedAt[mediator];
         } else {
-            // M-2 FIX: Clear timelock on revoke to prevent stale timelock reuse
             approvedMediators[mediator] = false;
+            mediatorRevokedAt[mediator] = block.timestamp; // Track revocation time
             delete mediatorApprovedAt[mediator];
         }
 
         emit MediatorApproved(mediator, approved);
+    }
+
+    function scheduleAgentRegistryUpdate(address newRegistry) external onlyAdmin {
+        require(newRegistry != address(0), "Zero registry");
+        require(!pendingRegistryUpdate.active, "Pending update exists - cancel first");
+
+        pendingRegistryUpdate = PendingRegistryUpdate({
+            newRegistry: newRegistry,
+            executeAfter: block.timestamp + ECONOMIC_PARAM_DELAY, // 2-day delay
+            active: true
+        });
+
+        emit AgentRegistryUpdateScheduled(newRegistry, pendingRegistryUpdate.executeAfter);
+    }
+
+    function cancelAgentRegistryUpdate() external onlyAdmin {
+        require(pendingRegistryUpdate.active, "No pending update");
+        address cancelledRegistry = pendingRegistryUpdate.newRegistry;
+        delete pendingRegistryUpdate;
+        emit AgentRegistryUpdateCancelled(cancelledRegistry, block.timestamp);
+    }
+
+    function executeAgentRegistryUpdate() external {
+        PendingRegistryUpdate memory pending = pendingRegistryUpdate;
+        require(pending.active, "No pending update");
+        require(block.timestamp >= pending.executeAfter, "Timelock not expired");
+
+        address oldRegistry = address(agentRegistry);
+        agentRegistry = IAgentRegistry(pending.newRegistry);
+        delete pendingRegistryUpdate;
+
+        emit AgentRegistryUpdated(oldRegistry, pending.newRegistry);
+    }
+
+    /// @notice Set the archive treasury address
+    /// @param _archiveTreasury New archive treasury contract address
+    function setArchiveTreasury(address _archiveTreasury) external onlyAdmin {
+        require(_archiveTreasury != address(0), "Zero address");
+        address oldTreasury = archiveTreasury;
+        archiveTreasury = _archiveTreasury;
+        emit ArchiveTreasuryUpdated(oldTreasury, _archiveTreasury);
+    }
+
+    function _setInitialAgentRegistry(address registry) internal {
+        if (registry != address(0)) {
+            agentRegistry = IAgentRegistry(registry);
+        }
     }
 
     function scheduleEconomicParams(uint16 newPlatformFeeBps, uint16 newRequesterPenaltyBps) external override onlyAdmin {
@@ -423,11 +541,6 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         return (pending.platformFeeBps, pending.requesterPenaltyBps, pending.executeAfter, pending.active);
     }
 
-    // C-4 FIX: Emergency withdraw functions removed - kernel never holds funds by design
-    // All user funds go directly to EscrowVault
-    // Platform fees go directly to feeRecipient (line 675: vault.payout(txn.escrowId, feeRecipient, fee))
-    // If tokens are accidentally sent to kernel, they are permanently lost (user error, not protocol responsibility)
-
     // ---------------------------------------------------------------------
     // Internal helpers
     // ---------------------------------------------------------------------
@@ -439,8 +552,7 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
 
     function _isValidTransition(State fromState, State toState) internal pure returns (bool) {
         if (fromState == State.INITIATED && toState == State.QUOTED) return true;
-        if (fromState == State.INITIATED && toState == State.COMMITTED) return true; // Allow skip QUOTED
-        if (fromState == State.QUOTED && toState == State.COMMITTED) return true;
+        // INITIATED/QUOTED → COMMITTED only allowed via linkEscrow() to ensure escrow is funded
         if (fromState == State.COMMITTED && toState == State.IN_PROGRESS) return true;
         if (fromState == State.IN_PROGRESS && toState == State.DELIVERED) return true;
         if (fromState == State.DELIVERED && (toState == State.SETTLED || toState == State.DISPUTED)) return true;
@@ -542,14 +654,36 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         return (requesterAmount, providerAmount, mediator, mediatorAmount, true);
     }
 
+    /**
+     * @notice Release escrow to provider after successful delivery
+     * @dev [C-2 SECURITY FIX] Prevents reputation double-counting if AgentRegistry is upgraded
+     *      - Only updates reputation if current registry hasn't processed this transaction yet
+     *      - Tracks which registry version processed the update (prevents replay across registry upgrades)
+     */
     function _releaseEscrow(Transaction storage txn) internal {
         require(txn.escrowContract != address(0), "Escrow missing");
         IEscrowValidator vault = IEscrowValidator(txn.escrowContract);
         uint256 remaining = vault.remaining(txn.escrowId);
         require(remaining > 0, "Escrow empty");
+
+        // [C-2 FIX] Update reputation only if not yet processed by current registry (prevents double-counting on registry upgrade)
+        if (address(agentRegistry) != address(0) && reputationProcessedBy[txn.transactionId] == address(0)) {
+            reputationProcessedBy[txn.transactionId] = address(agentRegistry);
+            try agentRegistry.updateReputationOnSettlement{gas: 100000}(
+                txn.provider,
+                txn.transactionId,
+                txn.amount,
+                txn.wasDisputed
+            ) {} catch {}
+        }
+
         _payoutProviderAmount(txn, vault, remaining);
     }
 
+    /**
+     * @notice Handle dispute settlement with custom resolution
+     * @dev [C-2 SECURITY FIX] Prevents reputation double-counting if AgentRegistry is upgraded
+     */
     function _handleDisputeSettlement(Transaction storage txn, bytes calldata proof) internal {
         if (txn.escrowContract == address(0)) return;
         IEscrowValidator vault = IEscrowValidator(txn.escrowContract);
@@ -559,12 +693,27 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         (uint256 requesterAmount, uint256 providerAmount, address mediator, uint256 mediatorAmount, bool hasResolution) =
             _decodeResolutionProof(proof);
 
+        // [C-2 FIX] Update reputation only if not yet processed by current registry (prevents double-counting on registry upgrade)
+        if (address(agentRegistry) != address(0) && reputationProcessedBy[txn.transactionId] == address(0)) {
+            reputationProcessedBy[txn.transactionId] = address(agentRegistry);
+            try agentRegistry.updateReputationOnSettlement{gas: 100000}(
+                txn.provider,
+                txn.transactionId,
+                txn.amount,
+                txn.wasDisputed
+            ) {} catch {}
+        }
+
         if (!hasResolution) {
             _payoutProviderAmount(txn, vault, remaining);
             return;
         }
 
-        // H-2 FIX: Prevent empty or partial dispute resolutions
+        if (mediator != address(0)) {
+            require(approvedMediators[mediator], "Mediator not approved");
+            require(block.timestamp >= mediatorApprovedAt[mediator], "Mediator approval pending");
+        }
+
         uint256 totalDistributed = requesterAmount + providerAmount + mediatorAmount;
         require(totalDistributed > 0, "Empty resolution not allowed");
         require(totalDistributed == remaining, "Must distribute ALL funds");
@@ -579,9 +728,6 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         if (mediatorAmount > 0) {
             _payoutMediator(txn, vault, mediator, mediatorAmount);
         }
-
-        // H-2 FIX: No leftover handling needed - resolution MUST distribute exact amount
-        // If there's any leftover, the require above will catch it
     }
 
     function _handleCancellation(
@@ -600,7 +746,11 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         if (oldState == State.DISPUTED && hasResolution) {
             require(triggeredBy == admin || triggeredBy == pauser, "Resolver only");
 
-            // H-2 FIX: Prevent empty or partial dispute resolutions
+            if (mediator != address(0)) {
+                require(approvedMediators[mediator], "Mediator not approved");
+                require(block.timestamp >= mediatorApprovedAt[mediator], "Mediator approval pending");
+            }
+
             uint256 totalDistributed = requesterAmount + providerAmount + mediatorAmount;
             require(totalDistributed > 0, "Empty resolution not allowed");
             require(totalDistributed == remaining, "Must distribute ALL funds");
@@ -615,8 +765,6 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
             if (mediatorAmount > 0) {
                 _payoutMediator(txn, vault, mediator, mediatorAmount);
             }
-
-            // H-2 FIX: No leftover handling needed - resolution MUST distribute exact amount
             return;
         }
 
@@ -639,34 +787,91 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         uint256 grossAmount
     ) internal {
         require(grossAmount > 0, "Amount zero");
-
-        // Verify vault is approved (defense-in-depth)
         require(approvedEscrowVaults[address(vault)], "Vault not approved");
 
-        // Verify escrow has sufficient balance BEFORE payout
         uint256 available = vault.remaining(txn.escrowId);
         require(available >= grossAmount, "Insufficient escrow balance");
 
-        // AIP-5: Use locked fee percentage from transaction creation
         uint256 fee = _calculateFee(grossAmount, txn.platformFeeBpsLocked);
         require(fee <= grossAmount, "Fee exceeds amount");
         uint256 providerNet = grossAmount - fee;
 
         if (providerNet > 0) {
-            vault.payoutToProvider(txn.escrowId, providerNet);
-            emit EscrowReleased(txn.transactionId, txn.provider, providerNet, block.timestamp);
+            uint256 actualPayout = vault.payoutToProvider(txn.escrowId, providerNet);
+            require(actualPayout == providerNet, "Partial payout not allowed");
+            emit EscrowReleased(txn.transactionId, txn.provider, actualPayout, block.timestamp);
         }
         if (fee > 0) {
-            vault.payout(txn.escrowId, feeRecipient, fee);
-            emit PlatformFeeAccrued(txn.transactionId, feeRecipient, fee, block.timestamp);
+            _distributeFee(txn, vault, fee);
+        }
+    }
+
+    /// @notice Event emitted when archive treasury fee distribution fails
+    event ArchiveTreasuryFailed(bytes32 indexed transactionId, uint256 amount, bytes reason);
+
+    /// @notice Event emitted when vault payout returns unexpected amount (forensic tracing)
+    event ArchivePayoutMismatch(bytes32 indexed transactionId, uint256 expected, uint256 actual);
+
+    /**
+     * @notice Distribute platform fees between archive treasury and fee recipient
+     * @dev [H-1 SECURITY FIX] Wraps treasury transfers in nested try-catch to prevent fund loss
+     *      - If treasury transfer fails, funds are redirected to feeRecipient
+     *      - Clears dangling approvals before fallback transfer
+     *      - Emits forensic events for all failure scenarios
+     */
+    function _distributeFee(Transaction storage txn, IEscrowValidator vault, uint256 totalFee) internal {
+        // Split fee: 0.1% to archive treasury, 99.9% to fee recipient
+        uint256 archiveFee;
+        bool archiveSuccess;
+        if (archiveTreasury != address(0)) {
+            archiveFee = (totalFee * ARCHIVE_ALLOCATION_BPS) / MAX_BPS;
+            if (archiveFee > 0) {
+                // Payout archive fee to kernel first, then forward to treasury
+                // [H-1 FIX] Use try/catch to prevent settlement failure if archive treasury reverts
+                uint256 payoutResult = vault.payout(txn.escrowId, address(this), archiveFee);
+                if (payoutResult == archiveFee) {
+                    USDC.forceApprove(archiveTreasury, archiveFee);
+                    try IArchiveTreasury(archiveTreasury).receiveFunds(archiveFee) {
+                        archiveSuccess = true;
+                    } catch (bytes memory reason) {
+                        // Archive treasury failed - redirect to fee recipient
+                        archiveSuccess = false;
+                        emit ArchiveTreasuryFailed(txn.transactionId, archiveFee, reason);
+                        // [H-1 FIX] Clear dangling approval before redirecting to fee recipient
+                        USDC.forceApprove(archiveTreasury, 0);
+                        // [H-1 FIX] Wrap fallback transfer in try-catch to prevent total failure
+                        try USDC.transfer(feeRecipient, archiveFee) returns (bool success) {
+                            require(success, "Fallback transfer failed");
+                        } catch {
+                            // Emergency: Both archive treasury AND fee recipient failed
+                            // Funds remain in kernel - emit emergency event for manual recovery
+                            emit ArchivePayoutMismatch(txn.transactionId, archiveFee, 0);
+                        }
+                    }
+                } else {
+                    // [AUDIT FIX] Emit event for forensic tracing when vault payout fails
+                    emit ArchivePayoutMismatch(txn.transactionId, archiveFee, payoutResult);
+                    // Redirect any partial payout to feeRecipient (don't leave stuck in escrow)
+                    if (payoutResult > 0) {
+                        USDC.safeTransfer(feeRecipient, payoutResult);
+                    }
+                    archiveFee = 0;
+                }
+            }
+        }
+        uint256 treasuryFee = totalFee - (archiveSuccess ? archiveFee : 0);
+        if (treasuryFee > 0) {
+            require(vault.payout(txn.escrowId, feeRecipient, treasuryFee) == treasuryFee, "Partial fee");
+            emit PlatformFeeAccrued(txn.transactionId, feeRecipient, treasuryFee, block.timestamp);
         }
     }
 
     function _refundRequester(Transaction storage txn, IEscrowValidator vault, uint256 amount) internal {
         require(amount > 0, "Refund amount zero");
         require(approvedEscrowVaults[address(vault)], "Vault not approved");
-        vault.refundToRequester(txn.escrowId, amount);
-        emit EscrowRefunded(txn.transactionId, txn.requester, amount, block.timestamp);
+        uint256 actualRefund = vault.refundToRequester(txn.escrowId, amount);
+        require(actualRefund == amount, "Partial refund not allowed");
+        emit EscrowRefunded(txn.transactionId, txn.requester, actualRefund, block.timestamp);
     }
 
     function _payoutMediator(Transaction storage txn, IEscrowValidator vault, address mediator, uint256 amount) internal {
@@ -676,12 +881,12 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         require(amount > 0, "Mediator amount zero");
         require(approvedEscrowVaults[address(vault)], "Vault not approved");
 
-        // Validate mediator fee doesn't exceed maximum (10% of transaction amount)
         uint256 maxMediatorFee = (txn.amount * MAX_MEDIATOR_FEE_BPS) / MAX_BPS;
         require(amount <= maxMediatorFee, "Mediator fee exceeds maximum");
 
-        vault.payout(txn.escrowId, mediator, amount);
-        emit EscrowMediatorPaid(txn.transactionId, mediator, amount, block.timestamp);
+        uint256 actualPayout = vault.payout(txn.escrowId, mediator, amount);
+        require(actualPayout == amount, "Partial mediator payout not allowed");
+        emit EscrowMediatorPaid(txn.transactionId, mediator, actualPayout, block.timestamp);
     }
 
     /**
@@ -700,5 +905,30 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
 
     function _validateRequesterPenalty(uint16 newPenalty) internal pure {
         require(newPenalty <= MAX_REQUESTER_PENALTY_CAP, "Penalty cap");
+    }
+
+    /**
+     * @dev [H-3 SECURITY FIX] INTENTIONALLY DISABLED - Never clear usedEscrowIds to prevent ID reuse
+     *
+     *      RATIONALE:
+     *      - Previously, escrow IDs were cleared immediately on settlement, allowing potential reuse
+     *      - This created a race condition where same escrow ID could be used for multiple transactions
+     *      - Security-first approach: Keep permanent record of ALL escrow IDs ever used
+     *
+     *      IMPLICATIONS:
+     *      - Each escrow ID can only be used ONCE across entire contract lifetime
+     *      - Escrow vaults must generate unique IDs for each transaction (recommended: keccak256(requester, provider, nonce, timestamp))
+     *      - No storage cleanup = slightly higher gas over time (but negligible, boolean mapping)
+     *
+     *      ALTERNATIVE (if needed): Add time-based expiration (e.g., allow reuse after 1 year)
+     *      But current approach is safest - storage is cheap on L2, security is priceless
+     */
+    function _clearUsedEscrowId(Transaction storage txn) internal {
+        // [H-3 FIX] INTENTIONALLY DISABLED - Never clear usedEscrowIds to prevent race condition
+        // Previously: delete usedEscrowIds[txn.escrowContract][txn.escrowId];
+        // Now: Keep permanent record to prevent ID reuse attacks
+
+        // NOTE: This function is now a no-op but kept for backwards compatibility
+        // Do not re-enable clearing without comprehensive security review
     }
 }

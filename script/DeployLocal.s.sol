@@ -30,7 +30,9 @@ contract DeployLocal is Script {
         ACTPKernel kernel = new ACTPKernel(
             address(this), // admin (deployer)
             address(this), // pauser (same as admin)
-            address(this)  // fee recipient
+            address(this), // fee recipient
+            address(0),    // agentRegistry (deploy later)
+            address(usdc)  // USDC token
         );
         console.log("ACTPKernel deployed at:", address(kernel));
 
