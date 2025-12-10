@@ -9,14 +9,17 @@ import "../src/tokens/MockUSDC.sol";
 /**
  * @title DeployLocal
  * @notice Deploy ACTP contracts to local Anvil testnet
- * 
+ *
  * Usage:
+ *   PRIVATE_KEY=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 \
  *   forge script script/DeployLocal.s.sol --rpc-url http://localhost:8545 --broadcast
+ *
+ * Note: The key above is Anvil's default account #0 - safe for local testing only!
  */
 contract DeployLocal is Script {
     function run() external {
-        // Use Anvil's default account (address 0)
-        uint256 deployerPrivateKey = 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80;
+        // Load private key from environment (use Anvil default for local testing)
+        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
         
         vm.startBroadcast(deployerPrivateKey);
 
