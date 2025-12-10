@@ -1,8 +1,8 @@
 {
   "network": "Base Sepolia",
   "chainId": 84532,
-  "deployedAt": "2025-11-25",
-  "deployedBy": "system@agirails.io",
+  "deployedAt": "2025-12-10",
+  "deployedBy": "0x42a2f11555b9363fb7ebdcdc76d7cb26e01dcb00",
   "blockExplorer": "https://sepolia.basescan.org",
   "contracts": {
     "MockUSDC": {
@@ -13,64 +13,44 @@
       "symbol": "mUSDC"
     },
     "ACTPKernel": {
-      "address": "0x6aDB650e185b0ee77981AC5279271f0Fa6CFe7ba",
-      "verified": true,
-      "explorerUrl": "https://sepolia.basescan.org/address/0x6aDB650e185b0ee77981AC5279271f0Fa6CFe7ba",
+      "address": "0xD199070F8e9FB9a127F6Fe730Bc13300B4b3d962",
+      "verified": false,
+      "explorerUrl": "https://sepolia.basescan.org/address/0xD199070F8e9FB9a127F6Fe730Bc13300B4b3d962",
       "constructorArgs": {
-        "admin": "0x...",
-        "pauser": "0x...",
-        "feeRecipient": "0x..."
+        "admin": "0x42a2f11555b9363fb7ebdcdc76d7cb26e01dcb00",
+        "pauser": "0x42a2f11555b9363fb7ebdcdc76d7cb26e01dcb00",
+        "feeRecipient": "0x866ECF4b0E79EA6095c19e4adA4Ed872373fF6b7",
+        "agentRegistry": "0x0000000000000000000000000000000000000000",
+        "usdc": "0x444b4e1A65949AB2ac75979D5d0166Eb7A248Ccb"
       },
-      "deployedAt": "2025-11-25",
-      "note": "Redeployed with auto-transition fix in linkEscrow + optimizer-runs 200"
+      "deployedAt": "2025-12-10",
+      "note": "Redeployed with new deployer wallet after security incident"
     },
     "EscrowVault": {
-      "address": "0x921edE340770db5DB6059B5B866be987d1b7311F",
-      "verified": true,
-      "explorerUrl": "https://sepolia.basescan.org/address/0x921edE340770db5DB6059B5B866be987d1b7311F",
+      "address": "0x948b9Ea081C4Cec1E112Af2e539224c531d4d585",
+      "verified": false,
+      "explorerUrl": "https://sepolia.basescan.org/address/0x948b9Ea081C4Cec1E112Af2e539224c531d4d585",
       "constructorArgs": {
         "token": "0x444b4e1A65949AB2ac75979D5d0166Eb7A248Ccb",
-        "kernel": "0x6aDB650e185b0ee77981AC5279271f0Fa6CFe7ba"
+        "kernel": "0xD199070F8e9FB9a127F6Fe730Bc13300B4b3d962"
       },
-      "deployedAt": "2025-11-25",
+      "deployedAt": "2025-12-10",
       "note": "Redeployed with new kernel address"
     }
   },
+  "treasury": {
+    "address": "0x866ECF4b0E79EA6095c19e4adA4Ed872373fF6b7",
+    "note": "Platform fee recipient wallet"
+  },
   "deployment": {
-    "tool": "Apex (Claude Precision Engineer)",
+    "tool": "Arha (Claude Code)",
     "framework": "Foundry",
-    "safeMode": true,
-    "features": [
-      "Hex validation",
-      "RPC chain checks",
-      "Env parsing",
-      "Bytecode integrity checks",
-      "Structured audit logging"
-    ],
-    "rpc": "Alchemy Base Sepolia (system@agirails.io)",
-    "etherscan": "Etherscan API V2 (system@agirails.io)"
-  },
-  "smokeTests": {
-    "passed": true,
-    "total": 5,
-    "results": "5/5 passed",
-    "status": "✅ All post-deployment checks passed"
-  },
-  "artifacts": {
-    "gasUsage": "Generated",
-    "jsonSummary": "Generated",
-    "auditLogs": "Generated",
-    "broadcastArtifacts": "Stored automatically"
+    "rpc": "Alchemy Base Sepolia"
   },
   "notes": [
-    "LATEST: Redeployed 2025-11-25 with auto-transition fix (linkEscrow now auto-transitions INITIATED/QUOTED → COMMITTED)",
-    "2025-11-25: Fixed BigInt serialization bug in SDK",
-    "2025-11-22: Initial AIP-5 implementation (platformFeeBpsLocked field)",
-    "Deployed using full Apex + Codex integration",
-    "All contracts verified on Basescan",
-    "Safe Mode enabled with full integrity checks",
-    "Arha organism DNA embedded in source code (Apache-2.0)",
-    "Covenant principles encoded as invariant comments",
-    "SDK tests: 360/360 passing, Contract tests: 176/176 passing"
+    "LATEST: Redeployed 2025-12-10 with new deployer wallet after private key security incident",
+    "New deployer: 0x42a2f11555b9363fb7ebdcdc76d7cb26e01dcb00",
+    "Treasury: 0x866ECF4b0E79EA6095c19e4adA4Ed872373fF6b7",
+    "Previous deployment (2025-11-25) deprecated due to compromised deployer key"
   ]
 }
