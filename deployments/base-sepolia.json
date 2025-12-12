@@ -36,6 +36,16 @@
       },
       "deployedAt": "2025-12-10",
       "note": "Redeployed with new kernel address"
+    },
+    "AgentRegistry": {
+      "address": "0xFed6914Aa70c0a53E9c7Cc4d2Ae159e4748fb09D",
+      "verified": false,
+      "explorerUrl": "https://sepolia.basescan.org/address/0xFed6914Aa70c0a53E9c7Cc4d2Ae159e4748fb09D",
+      "constructorArgs": {
+        "actpKernel": "0xD199070F8e9FB9a127F6Fe730Bc13300B4b3d962"
+      },
+      "deployedAt": "2025-12-11",
+      "note": "AIP-7 Agent Identity Registry"
     }
   },
   "treasury": {
@@ -48,9 +58,9 @@
     "rpc": "Alchemy Base Sepolia"
   },
   "notes": [
-    "LATEST: Redeployed 2025-12-10 with new deployer wallet after private key security incident",
+    "2025-12-11: Deployed AgentRegistry (AIP-7) at 0xFed6914Aa70c0a53E9c7Cc4d2Ae159e4748fb09D",
+    "2025-12-10: Redeployed Kernel+Escrow with new deployer wallet after security incident",
     "New deployer: 0x42a2f11555b9363fb7ebdcdc76d7cb26e01dcb00",
-    "Treasury: 0x866ECF4b0E79EA6095c19e4adA4Ed872373fF6b7",
-    "Previous deployment (2025-11-25) deprecated due to compromised deployer key"
+    "Treasury: 0x866ECF4b0E79EA6095c19e4adA4Ed872373fF6b7"
   ]
 }
