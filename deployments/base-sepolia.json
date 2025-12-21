@@ -24,7 +24,7 @@
         "usdc": "0x444b4e1A65949AB2ac75979D5d0166Eb7A248Ccb"
       },
       "deployedAt": "2025-12-10",
-      "note": "Redeployed with new deployer wallet after security incident"
+      "note": "Redeployed with updated infrastructure"
     },
     "EscrowVault": {
       "address": "0x948b9Ea081C4Cec1E112Af2e539224c531d4d585",
@@ -59,7 +59,7 @@
   },
   "notes": [
     "2025-12-11: Deployed AgentRegistry (AIP-7) at 0xFed6914Aa70c0a53E9c7Cc4d2Ae159e4748fb09D",
-    "2025-12-10: Redeployed Kernel+Escrow with new deployer wallet after security incident",
+    "2025-12-10: Redeployed Kernel+Escrow with updated infrastructure",
     "New deployer: 0x42a2f11555b9363fb7ebdcdc76d7cb26e01dcb00",
     "Treasury: 0x866ECF4b0E79EA6095c19e4adA4Ed872373fF6b7"
   ]
