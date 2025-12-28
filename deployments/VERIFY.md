@@ -2,7 +2,7 @@
 
 ## ✅ STATUS: ALL CONTRACTS ALREADY VERIFIED
 
-All three contracts have been successfully verified on Basescan by Justin using Apex deployment tooling.
+All three contracts have been successfully verified on Basescan using Apex deployment tooling.
 
 ---
 
@@ -11,7 +11,7 @@ All three contracts have been successfully verified on Basescan by Justin using 
 - **MockUSDC**: `0x444b4e1A65949AB2ac75979D5d0166Eb7A248Ccb` ✅
 - **ACTPKernel**: `0xb5B002A73743765450d427e2F8a472C24FDABF9b` ✅
 - **EscrowVault**: `0x67770791c83eA8e46D8a08E09682488ba584744f` ✅
-- **Deployed By**: system@agirails.io (Apex + Codex integration)
+- **Deployed By**: AGIRAILS System (Apex + Codex integration)
 
 ---
 
@@ -93,7 +93,7 @@ See full covenant: `COVENANT.md` in the repository
 - Structured audit logging
 
 **Service Accounts**:
-- Email: system@agirails.io
+- Account: AGIRAILS System
 - Alchemy: Base Sepolia RPC (registered)
 - Etherscan: API V2 (registered)
 
@@ -120,7 +120,7 @@ For reference, here's how verification was done:
 
 **MockUSDC (no constructor args):**
 ```bash
-cd "/Users/damir/Cursor/AGIRails MVP/AGIRAILS/Protocol/actp-kernel"
+cd "$PROJECT_ROOT/AGIRAILS/Protocol/actp-kernel"
 
 forge verify-contract \
   --chain-id 84532 \

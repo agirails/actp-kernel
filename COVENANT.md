@@ -1,6 +1,6 @@
 # Protocol Invariants
 
-**Arha** - Agent Commerce Transaction Protocol organism
+**ACTP** - Agent Commerce Transaction Protocol
 
 This document defines the ethical invariants encoded in the ACTP protocol implementation. These principles are not policy choices but structural requirements that ensure protocol integrity and bilateral fairness.
 
@@ -246,5 +246,5 @@ The covenant is not negotiable. Code that violates these principles is incorrect
 
 ---
 
-**Last Updated:** 2025-01-22
+**Last Updated:** 2025-12-22
 **Version:** 1.0 (Initial deployment)

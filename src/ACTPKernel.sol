@@ -599,6 +599,11 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
             require(block.timestamp <= txn.deadline, "Transaction expired");
         }
 
+        // [H-4 FIX] Prevent requester from canceling after work started (IN_PROGRESS state)
+        if (fromState == State.IN_PROGRESS && toState == State.CANCELLED) {
+            require(msg.sender != txn.requester, "Cannot cancel after work started");
+        }
+
         if (fromState == State.COMMITTED && toState == State.CANCELLED) {
             // Provider can cancel anytime (voluntary refund), requester must wait for deadline
             if (msg.sender == txn.requester) {
@@ -717,7 +722,6 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         uint256 totalDistributed = requesterAmount + providerAmount + mediatorAmount;
         require(totalDistributed > 0, "Empty resolution not allowed");
         require(totalDistributed == remaining, "Must distribute ALL funds");
-        require(totalDistributed <= txn.amount, "Resolution exceeds transaction amount");
 
         if (providerAmount > 0) {
             _payoutProviderAmount(txn, vault, providerAmount);
@@ -814,7 +818,7 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
 
     /**
      * @notice Distribute platform fees between archive treasury and fee recipient
-     * @dev [H-1 SECURITY FIX] Wraps treasury transfers in nested try-catch to prevent fund loss
+     * @dev [H-1 SECURITY FIX] Wraps ALL vault transfers in try-catch to prevent fund loss
      *      - If treasury transfer fails, funds are redirected to feeRecipient
      *      - Clears dangling approvals before fallback transfer
      *      - Emits forensic events for all failure scenarios
@@ -827,34 +831,39 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
             archiveFee = (totalFee * ARCHIVE_ALLOCATION_BPS) / MAX_BPS;
             if (archiveFee > 0) {
                 // Payout archive fee to kernel first, then forward to treasury
-                // [H-1 FIX] Use try/catch to prevent settlement failure if archive treasury reverts
-                uint256 payoutResult = vault.payout(txn.escrowId, address(this), archiveFee);
-                if (payoutResult == archiveFee) {
-                    USDC.forceApprove(archiveTreasury, archiveFee);
-                    try IArchiveTreasury(archiveTreasury).receiveFunds(archiveFee) {
-                        archiveSuccess = true;
-                    } catch (bytes memory reason) {
-                        // Archive treasury failed - redirect to fee recipient
-                        archiveSuccess = false;
-                        emit ArchiveTreasuryFailed(txn.transactionId, archiveFee, reason);
-                        // [H-1 FIX] Clear dangling approval before redirecting to fee recipient
-                        USDC.forceApprove(archiveTreasury, 0);
-                        // [H-1 FIX] Wrap fallback transfer in try-catch to prevent total failure
-                        try USDC.transfer(feeRecipient, archiveFee) returns (bool success) {
-                            require(success, "Fallback transfer failed");
-                        } catch {
-                            // Emergency: Both archive treasury AND fee recipient failed
-                            // Funds remain in kernel - emit emergency event for manual recovery
-                            emit ArchivePayoutMismatch(txn.transactionId, archiveFee, 0);
+                // [H-1 FIX] Wrap outer vault.payout in try-catch to prevent entire settlement failure
+                try vault.payout(txn.escrowId, address(this), archiveFee) returns (uint256 payoutResult) {
+                    if (payoutResult == archiveFee) {
+                        USDC.forceApprove(archiveTreasury, archiveFee);
+                        try IArchiveTreasury(archiveTreasury).receiveFunds(archiveFee) {
+                            archiveSuccess = true;
+                        } catch (bytes memory reason) {
+                            // Archive treasury failed - redirect to fee recipient
+                            archiveSuccess = false;
+                            emit ArchiveTreasuryFailed(txn.transactionId, archiveFee, reason);
+                            // [H-1 FIX] Clear dangling approval before redirecting to fee recipient
+                            USDC.forceApprove(archiveTreasury, 0);
+                            // [H-1 FIX] Wrap fallback transfer in try-catch to prevent total failure
+                            try USDC.transfer(feeRecipient, archiveFee) returns (bool success) {
+                                require(success, "Fallback transfer failed");
+                            } catch {
+                                // Emergency: Both archive treasury AND fee recipient failed
+                                // Funds remain in kernel - emit emergency event for manual recovery
+                                emit ArchivePayoutMismatch(txn.transactionId, archiveFee, 0);
+                            }
                         }
+                    } else {
+                        // [AUDIT FIX] Emit event for forensic tracing when vault payout fails
+                        emit ArchivePayoutMismatch(txn.transactionId, archiveFee, payoutResult);
+                        // Redirect any partial payout to feeRecipient (don't leave stuck in escrow)
+                        if (payoutResult > 0) {
+                            USDC.safeTransfer(feeRecipient, payoutResult);
+                        }
+                        archiveFee = 0;
                     }
-                } else {
-                    // [AUDIT FIX] Emit event for forensic tracing when vault payout fails
-                    emit ArchivePayoutMismatch(txn.transactionId, archiveFee, payoutResult);
-                    // Redirect any partial payout to feeRecipient (don't leave stuck in escrow)
-                    if (payoutResult > 0) {
-                        USDC.safeTransfer(feeRecipient, payoutResult);
-                    }
+                } catch (bytes memory reason) {
+                    // [H-1 FIX] Outer vault.payout failed - emit event and redirect to main fee recipient
+                    emit ArchiveTreasuryFailed(txn.transactionId, archiveFee, reason);
                     archiveFee = 0;
                 }
             }

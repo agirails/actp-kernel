@@ -13,7 +13,7 @@
 
 1. **Install SDK dependencies**:
    ```bash
-   cd "/Users/damir/Cursor/AGIRails MVP/AGIRAILS/SDK and Runtime/sdk-js"
+   cd "$PROJECT_ROOT/AGIRAILS/SDK and Runtime/sdk-js"
    npm install
    ```
 
@@ -23,7 +23,7 @@
 
 3. **Create `.env` file** in SDK directory:
    ```bash
-   cd "/Users/damir/Cursor/AGIRails MVP/AGIRAILS/SDK and Runtime/sdk-js"
+   cd "$PROJECT_ROOT/AGIRAILS/SDK and Runtime/sdk-js"
    cat > .env << 'EOF'
    # Test wallet private key (DO NOT use real funds!)
    PRIVATE_KEY=0x...your-test-wallet-private-key...
@@ -89,7 +89,7 @@ cast call 0x444b4e1A65949AB2ac75979D5d0166Eb7A248Ccb "decimals()(uint8)" --rpc-u
 ### Build SDK First
 
 ```bash
-cd "/Users/damir/Cursor/AGIRails MVP/AGIRAILS/SDK and Runtime/sdk-js"
+cd "$PROJECT_ROOT/AGIRAILS/SDK and Runtime/sdk-js"
 npm run build
 ```
 
@@ -152,9 +152,10 @@ async function testDeployment() {
     console.log('✅ Minted 1000 USDC');
   }
 
-  // TODO: Test transaction creation
-  // TODO: Test escrow linking
-  // TODO: Test state transitions
+  // Add your integration tests here:
+  // - Transaction creation
+  // - Escrow linking
+  // - State transitions
 
   console.log('✅ All tests passed!');
 }

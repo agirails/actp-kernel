@@ -146,6 +146,6 @@ Total timeline: **8-12 weeks**
 
 ---
 
-**Last Updated**: 2025-01-17
+**Last Updated**: 2025-12-17
 **Version**: v0.9.0 (pre-mainnet)
-**Security Contact**: security@agirails.io
+**Security Contact**: [agirails.io/contact](https://agirails.io/contact)

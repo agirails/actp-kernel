@@ -29,7 +29,7 @@ contract ACTPKernelFuzzTest is Test {
         usdc.mint(requester, INITIAL_MINT);
     }
 
-    // TODO: Fix balance calculation for all edge cases
+    // @dev Disabled: Balance calculation edge cases need review before enabling
     function skip_testFuzzDisputeResolutionFlow(
         uint96 providerAwardRaw,
         uint96 requesterAwardRaw,
@@ -155,7 +155,9 @@ contract ACTPKernelFuzzTest is Test {
         assertEq(usdc.balanceOf(feeCollector), fee);
     }
 
-    function testFuzzRequesterPenaltyFlow(uint96 warpSeconds) external {
+    // [H-4 FIX] Requester CANNOT cancel from IN_PROGRESS state
+    // This fuzz test verifies the security fix holds for any warp time
+    function testFuzzRequesterCannotCancelFromInProgress(uint96 warpSeconds) external {
         bytes32 txId = _createBaseTx(ONE_USDC, block.timestamp + 3 days);
         _quote(txId);
         _commit(txId, keccak256("escrowPenaltyFuzz"), ONE_USDC);
@@ -166,16 +168,10 @@ contract ACTPKernelFuzzTest is Test {
         uint256 warpDelta = bound(uint256(warpSeconds), 0, 2 days);
         vm.warp(block.timestamp + warpDelta);
 
+        // [H-4 FIX] Requester should NOT be able to cancel after work started
         vm.prank(requester);
+        vm.expectRevert(bytes("Cannot cancel after work started"));
         kernel.transitionState(txId, IACTPKernel.State.CANCELLED, "");
-
-        uint256 penaltyGross = (ONE_USDC * kernel.requesterPenaltyBps()) / kernel.MAX_BPS();
-        (uint256 providerNet, uint256 fee) = _splitAmount(penaltyGross);
-        uint256 expectedRequesterBalance = INITIAL_MINT - penaltyGross;
-
-        assertEq(usdc.balanceOf(provider), providerNet);
-        assertEq(usdc.balanceOf(feeCollector), fee);
-        assertEq(usdc.balanceOf(requester), expectedRequesterBalance);
     }
 
     // ---------------------------------------------------------------------

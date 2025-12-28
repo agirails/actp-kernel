@@ -1,9 +1,27 @@
+# Build
 out/
 cache/
 lib/
 broadcast/
+
+# Coverage
 lcov.info
-.DS_Store
-*.log
+coverage/
+
+# Environment
 .env
 .env.*
+
+# OS
+.DS_Store
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Optional
+node_modules/
+.gas-snapshot

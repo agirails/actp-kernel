@@ -234,7 +234,9 @@ contract ACTPKernelTest is Test {
         kernel.releaseMilestone(txId, ONE_USDC + 1);
     }
 
-    function testRequesterCancellationPenaltyDistribution() external {
+    // [H-4 FIX] Requester CANNOT cancel from IN_PROGRESS state
+    // This test verifies the security fix is working
+    function testRequesterCannotCancelFromInProgress() external {
         bytes32 txId = _createBaseTx();
         _quote(txId);
         bytes32 escrowId = keccak256("escrowPenalty");
@@ -242,16 +244,27 @@ contract ACTPKernelTest is Test {
         vm.prank(provider);
         kernel.transitionState(txId, IACTPKernel.State.IN_PROGRESS, "");
 
+        // [H-4 FIX] Requester should NOT be able to cancel after work started
         vm.prank(requester);
+        vm.expectRevert(bytes("Cannot cancel after work started"));
+        kernel.transitionState(txId, IACTPKernel.State.CANCELLED, "");
+    }
+
+    // [H-4 FIX] Provider CAN still cancel from IN_PROGRESS (voluntary refund)
+    function testProviderCanCancelFromInProgress() external {
+        bytes32 txId = _createBaseTx();
+        _quote(txId);
+        bytes32 escrowId = keccak256("escrowPenalty");
+        _commit(txId, escrowId, ONE_USDC);
+        vm.prank(provider);
+        kernel.transitionState(txId, IACTPKernel.State.IN_PROGRESS, "");
+
+        // Provider should be able to cancel (voluntary refund to requester)
+        vm.prank(provider);
         kernel.transitionState(txId, IACTPKernel.State.CANCELLED, "");
 
-        uint256 penaltyGross = (ONE_USDC * kernel.requesterPenaltyBps()) / kernel.MAX_BPS();
-        (uint256 providerNet, uint256 fee) = _splitAmount(penaltyGross);
-        uint256 expectedRequesterBalance = INITIAL_BALANCE - ONE_USDC + (ONE_USDC - penaltyGross);
-
-        assertEq(usdc.balanceOf(provider), providerNet);
-        assertEq(usdc.balanceOf(feeCollector), fee);
-        assertEq(usdc.balanceOf(requester), expectedRequesterBalance);
+        // Full refund to requester (no penalty for provider-initiated cancel)
+        assertEq(usdc.balanceOf(requester), INITIAL_BALANCE);
     }
 
     function testDisputeResolutionCustomSplit() external {

@@ -175,12 +175,12 @@ contract DeployMultisig is Script {
  * 3. Select network (Base Sepolia or Base Mainnet)
  * 4. Click "Create New Safe"
  * 5. Name: "AGIRAILS ACTP Admin Multisig"
- * 6. Add signers:
- *    - Signer 1: CEO (Damir) - damir [at] agirails.io
- *    - Signer 2: CTO (Justin) - justin [at] agirails.io
- *    - Signer 3: Legal Counsel - legal [at] agirails.io
- *    - Signer 4: Technical Advisor 1 - advisor1 [at] agirails.io
- *    - Signer 5: Technical Advisor 2 - advisor2 [at] agirails.io
+ * 6. Add signers (5 total, see agirails.io/contact for current team):
+ *    - Signer 1: Protocol Lead
+ *    - Signer 2: Technical Lead
+ *    - Signer 3: Legal Counsel
+ *    - Signer 4: Technical Advisor 1
+ *    - Signer 5: Technical Advisor 2
  * 7. Set threshold: 3-of-5
  * 8. Review and deploy
  * 9. Copy Safe address
@@ -241,11 +241,7 @@ contract DeployMultisig is Script {
  *
  * EMERGENCY CONTACTS
  * ==================
- * CEO: +xxx-xxx-xxxx (Telegram TBD)
- * CTO: +xxx-xxx-xxxx (Telegram TBD)
- * Legal: +xxx-xxx-xxxx (Email: legal [at] agirails.io)
- * Advisor 1: +xxx-xxx-xxxx (Discord TBD)
- * Advisor 2: +xxx-xxx-xxxx (Twitter TBD)
+ * See agirails.io/contact for current emergency contacts
  *
  * BACKUP PROCEDURES
  * =================
