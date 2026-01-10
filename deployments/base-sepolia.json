@@ -46,6 +46,30 @@
       },
       "deployedAt": "2025-12-11",
       "note": "AIP-7 Agent Identity Registry"
+    },
+    "AGIRAILSIdentityRegistry": {
+      "address": "0xF64F748C7802a68Cb936a9213881fE74e83FDA97",
+      "verified": true,
+      "verifiedOn": "sourcify",
+      "explorerUrl": "https://sepolia.basescan.org/address/0xF64F748C7802a68Cb936a9213881fE74e83FDA97",
+      "sourcifyUrl": "https://sourcify.dev/#/lookup/0xF64F748C7802a68Cb936a9213881fE74e83FDA97",
+      "constructorArgs": {},
+      "deployedAt": "2026-01-09",
+      "note": "AIP-7 ERC-1056 compatible DID Registry"
+    },
+    "ArchiveTreasury": {
+      "address": "0xeB75DE7cF5ce77ab15BB0fFa3a2A79e6aaa554B0",
+      "verified": true,
+      "verifiedOn": "sourcify",
+      "explorerUrl": "https://sepolia.basescan.org/address/0xeB75DE7cF5ce77ab15BB0fFa3a2A79e6aaa554B0",
+      "sourcifyUrl": "https://sourcify.dev/#/lookup/0xeB75DE7cF5ce77ab15BB0fFa3a2A79e6aaa554B0",
+      "constructorArgs": {
+        "usdc": "0x444b4e1A65949AB2ac75979D5d0166Eb7A248Ccb",
+        "kernel": "0xD199070F8e9FB9a127F6Fe730Bc13300B4b3d962",
+        "uploader": "0x42a2f11555b9363fb7ebdcdc76d7cb26e01dcb00"
+      },
+      "deployedAt": "2026-01-09",
+      "note": "AIP-7 Archive Treasury for Arweave permanent storage funding"
     }
   },
   "treasury": {
@@ -58,6 +82,9 @@
     "rpc": "Alchemy Base Sepolia"
   },
   "notes": [
+    "2026-01-10: Verified AGIRAILSIdentityRegistry and ArchiveTreasury on Sourcify",
+    "2026-01-09: Deployed AGIRAILSIdentityRegistry (AIP-7 §2.2) at 0xF64F748C7802a68Cb936a9213881fE74e83FDA97",
+    "2026-01-09: Deployed ArchiveTreasury (AIP-7 §4) at 0xeB75DE7cF5ce77ab15BB0fFa3a2A79e6aaa554B0",
     "2025-12-11: Deployed AgentRegistry (AIP-7) at 0xFed6914Aa70c0a53E9c7Cc4d2Ae159e4748fb09D",
     "2025-12-10: Redeployed Kernel+Escrow with updated infrastructure",
     "New deployer: 0x42a2f11555b9363fb7ebdcdc76d7cb26e01dcb00",
