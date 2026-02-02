@@ -13,6 +13,7 @@ pragma solidity 0.8.20;
  */
 
 import {IArchiveTreasury} from "../interfaces/IArchiveTreasury.sol";
+import {IACTPKernel} from "../interfaces/IACTPKernel.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
@@ -317,41 +318,4 @@ contract ArchiveTreasury is IArchiveTreasury, Ownable, ReentrancyGuard {
         require(msg.sender == uploader, "Not authorized uploader");
         _;
     }
-}
-
-/**
- * @notice ACTPKernel interface subset (for transaction validation)
- * @dev Only includes what ArchiveTreasury needs to validate transactions
- */
-interface IACTPKernel {
-    enum State {
-        INITIATED,
-        QUOTED,
-        COMMITTED,
-        IN_PROGRESS,
-        DELIVERED,
-        SETTLED,
-        DISPUTED,
-        CANCELLED
-    }
-
-    struct TransactionView {
-        bytes32 transactionId;
-        address requester;
-        address provider;
-        State state;
-        uint256 amount;
-        uint256 createdAt;
-        uint256 updatedAt;
-        uint256 deadline;
-        bytes32 serviceHash;
-        address escrowContract;
-        bytes32 escrowId;
-        bytes32 attestationUID;
-        uint256 disputeWindow;
-        bytes32 metadata;
-        uint16 platformFeeBpsLocked;
-    }
-
-    function getTransaction(bytes32 txId) external view returns (TransactionView memory);
 }
