@@ -25,3 +25,6 @@ coverage/
 # Optional
 node_modules/
 .gas-snapshot
+
+# Local deployment files
+safe-transactions/
