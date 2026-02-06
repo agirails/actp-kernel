@@ -33,7 +33,7 @@ contract ACTPKernelTest is Test {
 
     function _createBaseTx() internal returns (bytes32 txId) {
         vm.prank(requester);
-        txId = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"));
+        txId = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"), 0);
     }
 
     function _quote(bytes32 txId) internal {
@@ -78,11 +78,11 @@ contract ACTPKernelTest is Test {
         // With nonce-based ID generation, identical parameters produce DIFFERENT txIds
         // Create first transaction
         vm.prank(requester);
-        bytes32 txId1 = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"));
+        bytes32 txId1 = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"), 0);
 
         // Create second transaction with SAME inputs - should succeed with DIFFERENT txId
         vm.prank(requester);
-        bytes32 txId2 = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"));
+        bytes32 txId2 = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"), 0);
 
         // Verify both transactions exist with different IDs
         assertTrue(txId1 != txId2, "Nonce should produce different IDs");
@@ -91,6 +91,32 @@ contract ACTPKernelTest is Test {
         IACTPKernel.TransactionView memory tx2 = kernel.getTransaction(txId2);
         assertEq(tx1.amount, ONE_USDC);
         assertEq(tx2.amount, ONE_USDC);
+    }
+
+    function testCreateTransaction_WithAgentId() external {
+        uint256 testAgentId = 12345;
+
+        vm.prank(requester);
+        bytes32 txId = kernel.createTransaction(
+            provider, requester, ONE_USDC,
+            block.timestamp + 7 days, 2 days,
+            keccak256("service"), testAgentId
+        );
+
+        IACTPKernel.TransactionView memory txView = kernel.getTransaction(txId);
+        assertEq(txView.agentId, testAgentId, "agentId should be stored");
+    }
+
+    function testCreateTransaction_WithZeroAgentId() external {
+        vm.prank(requester);
+        bytes32 txId = kernel.createTransaction(
+            provider, requester, ONE_USDC,
+            block.timestamp + 7 days, 2 days,
+            keccak256("service"), 0
+        );
+
+        IACTPKernel.TransactionView memory txView = kernel.getTransaction(txId);
+        assertEq(txView.agentId, 0, "agentId should be zero when not provided");
     }
 
     function testUnauthorizedTransitionReverts() external {
@@ -136,7 +162,7 @@ contract ACTPKernelTest is Test {
     function testCancelBeforeDeadlineFailsUntilExpired() external {
         // Use a short deadline (1 day) for this test to check cancel behavior
         vm.prank(requester);
-        bytes32 txId = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 1 days, 2 days, keccak256("service"));
+        bytes32 txId = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 1 days, 2 days, keccak256("service"), 0);
 
         _quote(txId);
         bytes32 escrowId = keccak256("escrow4");
@@ -480,7 +506,7 @@ contract ACTPKernelTest is Test {
 
         // Create second transaction with new fee
         vm.prank(requester);
-        bytes32 txId2 = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 1 days, 2 days, bytes32(uint256(1)));
+        bytes32 txId2 = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 1 days, 2 days, bytes32(uint256(1)), 0);
 
         // Verify first transaction locked original fee
         IACTPKernel.TransactionView memory txView1 = kernel.getTransaction(txId1);

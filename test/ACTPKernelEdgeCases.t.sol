@@ -38,7 +38,7 @@ contract ACTPKernelEdgeCasesTest is Test {
         uint256 minAmount = kernel.MIN_TRANSACTION_AMOUNT();
 
         vm.prank(requester);
-        bytes32 txId = kernel.createTransaction(provider, requester, minAmount, block.timestamp + 7 days, 2 days, keccak256("service"));
+        bytes32 txId = kernel.createTransaction(provider, requester, minAmount, block.timestamp + 7 days, 2 days, keccak256("service"), 0);
 
         IACTPKernel.TransactionView memory txn = kernel.getTransaction(txId);
         assertEq(txn.amount, minAmount);
@@ -49,7 +49,7 @@ contract ACTPKernelEdgeCasesTest is Test {
 
         vm.prank(requester);
         vm.expectRevert("Amount below minimum");
-        bytes32 txId = kernel.createTransaction(provider, requester, belowMin, block.timestamp + 7 days, 2 days, keccak256("service"));
+        bytes32 txId = kernel.createTransaction(provider, requester, belowMin, block.timestamp + 7 days, 2 days, keccak256("service"), 0);
     }
 
     function testMaxTransactionAmountAccepted() external {
@@ -58,7 +58,7 @@ contract ACTPKernelEdgeCasesTest is Test {
         usdc.mint(requester, maxAmount); // Mint enough
 
         vm.prank(requester);
-        bytes32 txId = kernel.createTransaction(provider, requester, maxAmount, block.timestamp + 7 days, 2 days, keccak256("service"));
+        bytes32 txId = kernel.createTransaction(provider, requester, maxAmount, block.timestamp + 7 days, 2 days, keccak256("service"), 0);
 
         IACTPKernel.TransactionView memory txn = kernel.getTransaction(txId);
         assertEq(txn.amount, maxAmount);
@@ -69,7 +69,7 @@ contract ACTPKernelEdgeCasesTest is Test {
 
         vm.prank(requester);
         vm.expectRevert("Amount exceeds maximum");
-        bytes32 txId = kernel.createTransaction(provider, requester, aboveMax, block.timestamp + 7 days, 2 days, keccak256("service"));
+        bytes32 txId = kernel.createTransaction(provider, requester, aboveMax, block.timestamp + 7 days, 2 days, keccak256("service"), 0);
     }
 
     // ============================================
@@ -80,7 +80,7 @@ contract ACTPKernelEdgeCasesTest is Test {
         uint256 deadline = block.timestamp + kernel.MAX_DEADLINE();
 
         vm.prank(requester);
-        bytes32 txId = kernel.createTransaction(provider, requester, ONE_USDC, deadline, 2 days, keccak256("service"));
+        bytes32 txId = kernel.createTransaction(provider, requester, ONE_USDC, deadline, 2 days, keccak256("service"), 0);
 
         IACTPKernel.TransactionView memory txn = kernel.getTransaction(txId);
         assertEq(txn.deadline, deadline);
@@ -91,7 +91,7 @@ contract ACTPKernelEdgeCasesTest is Test {
 
         vm.prank(requester);
         vm.expectRevert("Deadline too far");
-        bytes32 txId = kernel.createTransaction(provider, requester, ONE_USDC, deadline, 2 days, keccak256("service"));
+        bytes32 txId = kernel.createTransaction(provider, requester, ONE_USDC, deadline, 2 days, keccak256("service"), 0);
     }
 
     function testDeadlineInPastReverts() external {
@@ -99,7 +99,7 @@ contract ACTPKernelEdgeCasesTest is Test {
 
         vm.prank(requester);
         vm.expectRevert("Deadline in past");
-        bytes32 txId = kernel.createTransaction(provider, requester, ONE_USDC, deadline, 2 days, keccak256("service"));
+        bytes32 txId = kernel.createTransaction(provider, requester, ONE_USDC, deadline, 2 days, keccak256("service"), 0);
     }
 
     // ============================================
@@ -145,7 +145,7 @@ contract ACTPKernelEdgeCasesTest is Test {
 
     function testRequesterCanCancelFromCommittedAfterDeadline() external {
         vm.prank(requester);
-        bytes32 txId = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 1 days, 2 days, keccak256("service"));
+        bytes32 txId = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 1 days, 2 days, keccak256("service"), 0);
 
         vm.startPrank(requester);
         usdc.approve(address(escrow), ONE_USDC);
@@ -391,7 +391,7 @@ contract ACTPKernelEdgeCasesTest is Test {
 
     function _createAndCommit() internal returns (bytes32 txId) {
         vm.prank(requester);
-        txId = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"));
+        txId = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"), 0);
 
         vm.startPrank(requester);
         usdc.approve(address(escrow), ONE_USDC);

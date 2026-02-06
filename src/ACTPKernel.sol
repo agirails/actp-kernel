@@ -45,6 +45,7 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         bytes32 metadata; // For quote hash (AIP-2) or other protocol metadata
         uint16 platformFeeBpsLocked; // AIP-5: Lock platform fee % at creation time
         bool wasDisputed; // AIP-7: Track if transaction went through dispute for reputation calculation
+        uint256 agentId; // ERC-8004 agent ID (0 if not applicable)
     }
 
     mapping(bytes32 => Transaction) private transactions;
@@ -174,7 +175,8 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         uint256 amount,
         uint256 deadline,
         uint256 disputeWindow,
-        bytes32 serviceHash
+        bytes32 serviceHash,
+        uint256 agentId
     ) external override whenNotPaused returns (bytes32 transactionId) {
         require(msg.sender == requester, "Requester mismatch");
         require(provider != address(0), "Zero provider");
@@ -207,9 +209,10 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         txn.disputeWindow = disputeWindow;
         txn.serviceHash = serviceHash;
         txn.platformFeeBpsLocked = platformFeeBps; // AIP-5: Lock current platform fee % at creation
+        txn.agentId = agentId; // ERC-8004 agent ID (0 if not applicable)
 
         // State changes must be observable
-        emit TransactionCreated(transactionId, requester, provider, amount, serviceHash, deadline, block.timestamp);
+        emit TransactionCreated(transactionId, requester, provider, amount, serviceHash, deadline, block.timestamp, agentId);
     }
 
     function transitionState(
@@ -278,7 +281,8 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
                 attestationUID: txn.attestationUID,
                 disputeWindow: txn.disputeWindow,
                 metadata: txn.metadata,
-                platformFeeBpsLocked: txn.platformFeeBpsLocked // AIP-5: Return locked fee %
+                platformFeeBpsLocked: txn.platformFeeBpsLocked, // AIP-5: Return locked fee %
+                agentId: txn.agentId // ERC-8004 agent ID
             });
     }
 

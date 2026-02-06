@@ -154,7 +154,7 @@ contract ACTPKernelBranchCoverageTest is Test {
 
         vm.prank(requester);
         vm.expectRevert("Kernel paused");
-        bytes32 txId = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"));
+        bytes32 txId = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"), 0);
     }
 
     function testPausedLinkEscrowReverts() external {
@@ -302,23 +302,23 @@ contract ACTPKernelBranchCoverageTest is Test {
     function testCreateTransactionRejectsZeroProvider() external {
         vm.prank(requester);
         vm.expectRevert("Zero provider");
-        bytes32 txId = kernel.createTransaction(address(0), requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"));
+        bytes32 txId = kernel.createTransaction(address(0), requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"), 0);
     }
 
     function testCreateTransactionRejectsSelfTransaction() external {
         vm.prank(requester);
         vm.expectRevert("Self-transaction not allowed");
-        bytes32 txId = kernel.createTransaction(requester, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"));
+        bytes32 txId = kernel.createTransaction(requester, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"), 0);
     }
 
     function testNonceBasedIdAllowsIdenticalParams() external {
         // Nonce-based ID generation allows identical parameters
         vm.prank(requester);
-        bytes32 txId1 = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"));
+        bytes32 txId1 = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"), 0);
 
         // Second call with identical params succeeds with different ID (due to nonce)
         vm.prank(requester);
-        bytes32 txId2 = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"));
+        bytes32 txId2 = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"), 0);
 
         // Verify both exist and are different
         assertTrue(txId1 != txId2, "Nonce-based IDs should be unique");
@@ -376,7 +376,7 @@ contract ACTPKernelBranchCoverageTest is Test {
 
     function testLinkEscrowRejectsAfterDeadline() external {
         vm.prank(requester);
-        bytes32 txId = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 1 hours, 2 days, keccak256("service"));
+        bytes32 txId = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 1 hours, 2 days, keccak256("service"), 0);
 
         // Warp past deadline
         vm.warp(block.timestamp + 2 hours);
@@ -437,7 +437,7 @@ contract ACTPKernelBranchCoverageTest is Test {
 
     function _createTx() internal returns (bytes32 txId) {
         vm.prank(requester);
-        txId = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"));
+        txId = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"), 0);
     }
 
     function _createCommittedTx() internal returns (bytes32 txId) {

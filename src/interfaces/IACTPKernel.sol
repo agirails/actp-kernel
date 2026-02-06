@@ -29,6 +29,7 @@ interface IACTPKernel {
         uint256 disputeWindow;
         bytes32 metadata;
         uint16 platformFeeBpsLocked; // AIP-5: Locked platform fee % from creation
+        uint256 agentId; // ERC-8004 agent token ID (0 = not ERC-8004 agent). See ADR-001.
     }
 
     event TransactionCreated(
@@ -38,7 +39,8 @@ interface IACTPKernel {
         uint256 amount,
         bytes32 serviceHash,
         uint256 deadline,
-        uint256 timestamp
+        uint256 timestamp,
+        uint256 agentId // ERC-8004 agent ID (0 if not applicable)
     );
 
     event StateTransitioned(
@@ -116,13 +118,28 @@ interface IACTPKernel {
 
     event EconomicParamsUpdated(uint16 platformFeeBps, uint16 requesterPenaltyBps, uint256 timestamp);
 
+    /**
+     * @notice Creates a new transaction between requester and provider
+     * @param provider Address of the service provider
+     * @param requester Address of the requester (must match msg.sender)
+     * @param amount Amount in tokens (must be >= MIN_TRANSACTION_AMOUNT)
+     * @param deadline Timestamp when the transaction expires
+     * @param disputeWindow Duration in seconds for the dispute window
+     * @param serviceHash Hash of the service agreement
+     * @param agentId ERC-8004 agent token ID. Set to 0 if the provider is not registered
+     *        in ERC-8004 Identity Registry. This field is ERC-8004 SPECIFIC - for other
+     *        identity systems (ENS, Lens, etc.), use off-chain correlation via subgraphs.
+     *        See ADR-001 for architectural rationale.
+     * @return transactionId The generated transaction ID
+     */
     function createTransaction(
         address provider,
         address requester,
         uint256 amount,
         uint256 deadline,
         uint256 disputeWindow,
-        bytes32 serviceHash
+        bytes32 serviceHash,
+        uint256 agentId
     ) external returns (bytes32 transactionId);
 
     function transitionState(bytes32 transactionId, State newState, bytes calldata proof) external;

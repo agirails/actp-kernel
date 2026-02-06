@@ -318,7 +318,7 @@ contract ACTPKernelFinalCoverageTest is Test {
 
     function testCannotProgressAfterDeadline() external {
         vm.prank(requester);
-        bytes32 txId = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 1 hours, 2 days, keccak256("service"));
+        bytes32 txId = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 1 hours, 2 days, keccak256("service"), 0);
 
         // Warp past deadline
         vm.warp(block.timestamp + 2 hours);
@@ -351,7 +351,7 @@ contract ACTPKernelFinalCoverageTest is Test {
 
     function testCanCancelAfterDeadline() external {
         vm.prank(requester);
-        bytes32 txId = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 1 hours, 2 days, keccak256("service"));
+        bytes32 txId = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 1 hours, 2 days, keccak256("service"), 0);
 
         // Warp past deadline
         vm.warp(block.timestamp + 2 hours);
@@ -456,7 +456,7 @@ contract ACTPKernelFinalCoverageTest is Test {
 
     function _createTx() internal returns (bytes32 txId) {
         vm.prank(requester);
-        txId = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"));
+        txId = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"), 0);
     }
 
     function _createCommitted() internal returns (bytes32 txId) {

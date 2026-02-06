@@ -396,7 +396,7 @@ contract H2_EmptyDisputeResolutionTest is Test {
 
         // Create transaction
         vm.prank(requester);
-        txId = kernel.createTransaction(provider, requester, TRANSACTION_AMOUNT, block.timestamp + 30 days, 2 days, keccak256("service"));
+        txId = kernel.createTransaction(provider, requester, TRANSACTION_AMOUNT, block.timestamp + 30 days, 2 days, keccak256("service"), 0);
 
         // Link escrow (auto-transitions to COMMITTED)
         vm.startPrank(requester);

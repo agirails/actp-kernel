@@ -128,7 +128,7 @@ contract ACTPKernelFuzzTest is Test {
 
 
         vm.prank(requester);
-        bytes32 txId = kernel.createTransaction(provider, requester, amount, block.timestamp + 1 days, 2 days, keccak256("service"));
+        bytes32 txId = kernel.createTransaction(provider, requester, amount, block.timestamp + 1 days, 2 days, keccak256("service"), 0);
 
         IACTPKernel.TransactionView memory txn = kernel.getTransaction(txId);
         assertEq(txn.amount, amount);
@@ -187,7 +187,7 @@ contract ACTPKernelFuzzTest is Test {
 
     function _createBaseTx(uint256 amount, uint256 deadline) internal returns (bytes32 txId) {
         vm.prank(requester);
-        txId = kernel.createTransaction(provider, requester, amount, deadline, 2 days, keccak256("service"));
+        txId = kernel.createTransaction(provider, requester, amount, deadline, 2 days, keccak256("service"), 0);
     }
 
     function _quote(bytes32 txId) internal {
