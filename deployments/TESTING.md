@@ -3,9 +3,22 @@
 ## Deployed Contracts
 
 - **Network**: Base Sepolia (Chain ID: 84532)
-- **ACTPKernel**: `0xb5B002A73743765450d427e2F8a472C24FDABF9b`
-- **EscrowVault**: `0x67770791c83eA8e46D8a08E09682488ba584744f`
+- **ACTPKernel**: `0x469CBADbACFFE096270594F0a31f0EEC53753411` (redeployed 2026-02-06, agentId support)
+- **EscrowVault**: `0x57f888261b629bB380dfb983f5DA6c70Ff2D49E5` (redeployed 2026-02-06)
 - **MockUSDC**: `0x444b4e1A65949AB2ac75979D5d0166Eb7A248Ccb`
+
+## E2E Test Results
+
+| Date | Test | Tx Hash | Result |
+|------|------|---------|--------|
+| 2026-02-06 | ERC-8004 agentId integration | [`0xbb21f36d...`](https://sepolia.basescan.org/tx/0xbb21f36d574cc228b486d33f20e18e7ef0df09bf14a99d19d2ad91019bf5b9b9) | PASS |
+
+**Details (2026-02-06)**:
+- Transaction ID: `0x5596a895918e9d28e8f93abd6466de1d290e080294fc6b0dedd511dbaa9ef0b7`
+- agentId: `12345` (0x3039 hex) verified in TransactionCreated event data
+- Block: `37306522`
+- Amount: 0.10 USDC (100000 wei)
+- State reached: COMMITTED
 
 ---
 
@@ -32,9 +45,11 @@
    BASE_SEPOLIA_RPC=https://sepolia.base.org
 
    # Deployed contract addresses (already in networks.ts)
-   ACTP_KERNEL=0xb5B002A73743765450d427e2F8a472C24FDABF9b
-   ESCROW_VAULT=0x67770791c83eA8e46D8a08E09682488ba584744f
+   ACTP_KERNEL=0x469CBADbACFFE096270594F0a31f0EEC53753411
+   ESCROW_VAULT=0x57f888261b629bB380dfb983f5DA6c70Ff2D49E5
    MOCK_USDC=0x444b4e1A65949AB2ac75979D5d0166Eb7A248Ccb
+
+   # Deployed contract addresses (updated 2026-02-06)
    EOF
    ```
 
@@ -46,7 +61,7 @@
 
 ```bash
 # Check if ACTPKernel is deployed
-cast code 0xb5B002A73743765450d427e2F8a472C24FDABF9b --rpc-url https://sepolia.base.org
+cast code 0x469CBADbACFFE096270594F0a31f0EEC53753411 --rpc-url https://sepolia.base.org
 
 # Should return bytecode (not 0x)
 # If returns "0x" → Contract not deployed or wrong address
@@ -56,20 +71,20 @@ cast code 0xb5B002A73743765450d427e2F8a472C24FDABF9b --rpc-url https://sepolia.b
 
 ```bash
 # Read public variables from ACTPKernel
-cast call 0xb5B002A73743765450d427e2F8a472C24FDABF9b "admin()(address)" --rpc-url https://sepolia.base.org
+cast call 0x469CBADbACFFE096270594F0a31f0EEC53753411 "admin()(address)" --rpc-url https://sepolia.base.org
 
-cast call 0xb5B002A73743765450d427e2F8a472C24FDABF9b "paused()(bool)" --rpc-url https://sepolia.base.org
+cast call 0x469CBADbACFFE096270594F0a31f0EEC53753411 "paused()(bool)" --rpc-url https://sepolia.base.org
 
-cast call 0xb5B002A73743765450d427e2F8a472C24FDABF9b "platformFeeBps()(uint16)" --rpc-url https://sepolia.base.org
+cast call 0x469CBADbACFFE096270594F0a31f0EEC53753411 "platformFeeBps()(uint16)" --rpc-url https://sepolia.base.org
 ```
 
 ### 3. Check EscrowVault Link
 
 ```bash
 # Check if EscrowVault knows about Kernel
-cast call 0x67770791c83eA8e46D8a08E09682488ba584744f "kernel()(address)" --rpc-url https://sepolia.base.org
+cast call 0x57f888261b629bB380dfb983f5DA6c70Ff2D49E5 "kernel()(address)" --rpc-url https://sepolia.base.org
 
-# Should return ACTPKernel address: 0xb5B002A73743765450d427e2F8a472C24FDABF9b
+# Should return ACTPKernel address: 0x469CBADbACFFE096270594F0a31f0EEC53753411
 ```
 
 ### 4. Check MockUSDC
@@ -207,15 +222,15 @@ npx ts-node test-deployment.ts
 ## Monitoring & Debugging
 
 **View transactions on Basescan**:
-- ACTPKernel: https://sepolia.basescan.org/address/0xb5B002A73743765450d427e2F8a472C24FDABF9b
-- EscrowVault: https://sepolia.basescan.org/address/0x67770791c83eA8e46D8a08E09682488ba584744f
+- ACTPKernel: https://sepolia.basescan.org/address/0x469CBADbACFFE096270594F0a31f0EEC53753411
+- EscrowVault: https://sepolia.basescan.org/address/0x57f888261b629bB380dfb983f5DA6c70Ff2D49E5
 
 **Monitor events**:
 ```bash
 # Watch for TransactionCreated events
-cast logs --address 0xb5B002A73743765450d427e2F8a472C24FDABF9b \
+cast logs --address 0x469CBADbACFFE096270594F0a31f0EEC53753411 \
   --rpc-url https://sepolia.base.org \
-  'TransactionCreated(bytes32,address,address,uint256,bytes32,uint256,uint256)'
+  'TransactionCreated(bytes32,address,address,uint256,bytes32,uint256,uint256,uint256)'
 ```
 
 ---
