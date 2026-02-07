@@ -85,7 +85,8 @@ contract ForkTestPause is Script {
             1_000_000, // $1 USDC (min is $0.05)
             block.timestamp + 1 days,
             1 hours,
-            keccak256("fork-test-1")
+            keccak256("fork-test-1"),
+            0 // agentId
         );
         console.log("SUCCESS: Transaction created");
         console.log("  txId:", vm.toString(txId1));
@@ -115,7 +116,8 @@ contract ForkTestPause is Script {
             1_000_000,
             block.timestamp + 1 days,
             1 hours,
-            keccak256("fork-test-2")
+            keccak256("fork-test-2"),
+            0 // agentId
         ) {
             // Should not reach here
             reverted = false;
@@ -216,7 +218,8 @@ contract ForkTestPause is Script {
             1_000_000,
             block.timestamp + 1 days,
             1 hours,
-            keccak256("fork-test-3")
+            keccak256("fork-test-3"),
+            0 // agentId
         );
         console.log("  createTransaction: SUCCESS");
         console.log("    txId:", vm.toString(txId3));
@@ -242,7 +245,8 @@ contract ForkTestPause is Script {
             1_000_000,
             block.timestamp + 1 days,
             1 hours,
-            keccak256("fork-test-4")
+            keccak256("fork-test-4"),
+            0 // agentId
         );
 
         // Cannot link escrow without USDC approval, so we'll test transition rules directly

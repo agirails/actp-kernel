@@ -49,7 +49,7 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
     }
 
     mapping(bytes32 => Transaction) private transactions;
-    mapping(address => uint256) private requesterNonces;
+    mapping(address => uint256) public requesterNonces;
 
     uint256 public constant DEFAULT_DISPUTE_WINDOW = 2 days;
     uint256 public constant MIN_DISPUTE_WINDOW = 1 hours; // Minimum 1 hour to prevent instant finalization

@@ -28,3 +28,8 @@ node_modules/
 
 # Local deployment files
 safe-transactions/
+
+# Local files
+CLAUDE.md
+.claude/
+.ralph/
