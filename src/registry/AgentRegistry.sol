@@ -125,7 +125,10 @@ contract AgentRegistry is IAgentRegistry, ReentrancyGuard {
             totalVolumeUSDC: 0,
             registeredAt: block.timestamp,
             updatedAt: block.timestamp,
-            isActive: true
+            isActive: true,
+            configHash: bytes32(0),
+            configCID: "",
+            listed: false
         });
 
         require(didToAddress[did] == address(0), "DID already registered");
@@ -202,6 +205,27 @@ contract AgentRegistry is IAgentRegistry, ReentrancyGuard {
         agents[msg.sender].updatedAt = block.timestamp;
 
         emit ActiveStatusUpdated(msg.sender, isActive, block.timestamp);
+    }
+
+    uint256 public constant MAX_CID_LENGTH = 128;
+
+    function publishConfig(string calldata cid, bytes32 hash) external override onlyRegisteredAgent {
+        require(hash != bytes32(0), "Empty config hash");
+        require(bytes(cid).length > 0, "Empty CID");
+        require(bytes(cid).length <= MAX_CID_LENGTH, "CID too long");
+
+        agents[msg.sender].configHash = hash;
+        agents[msg.sender].configCID = cid;
+        agents[msg.sender].updatedAt = block.timestamp;
+
+        emit ConfigPublished(msg.sender, cid, hash);
+    }
+
+    function setListed(bool _listed) external override onlyRegisteredAgent {
+        agents[msg.sender].listed = _listed;
+        agents[msg.sender].updatedAt = block.timestamp;
+
+        emit ListingChanged(msg.sender, _listed);
     }
 
     // ========== VIEW FUNCTIONS ==========

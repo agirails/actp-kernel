@@ -27,6 +27,9 @@ interface IAgentRegistry {
         uint256 registeredAt;           // Block timestamp of registration
         uint256 updatedAt;              // Last profile update timestamp
         bool isActive;                  // Agent is accepting new requests
+        bytes32 configHash;             // keccak256 of canonical AGIRAILS.md
+        string configCID;               // IPFS CID pointing to AGIRAILS.md
+        bool listed;                    // Visible on launchpad (separate from isActive)
     }
 
     /// @notice Service descriptor metadata (stored off-chain, hash on-chain)
@@ -88,6 +91,19 @@ interface IAgentRegistry {
         address indexed agentAddress
     );
 
+    /// @notice Emitted when agent publishes config (AGIRAILS.md)
+    event ConfigPublished(
+        address indexed agent,
+        string configCID,
+        bytes32 configHash
+    );
+
+    /// @notice Emitted when agent changes launchpad listing visibility
+    event ListingChanged(
+        address indexed agent,
+        bool listed
+    );
+
     // ========== CORE FUNCTIONS (msg.sender == agent) ==========
 
     /// @notice Register a new agent profile
@@ -119,6 +135,17 @@ interface IAgentRegistry {
     /// @dev Only callable by the agent itself (msg.sender == agentAddress)
     /// @param isActive New active status
     function setActiveStatus(bool isActive) external;
+
+    /// @notice Publish agent config (AGIRAILS.md hash + IPFS CID)
+    /// @dev Only callable by the agent itself (msg.sender == agentAddress)
+    /// @param cid IPFS CID pointing to the AGIRAILS.md file
+    /// @param hash keccak256 of canonical AGIRAILS.md content
+    function publishConfig(string calldata cid, bytes32 hash) external;
+
+    /// @notice Set launchpad listing visibility (independent from isActive)
+    /// @dev Only callable by the agent itself (msg.sender == agentAddress)
+    /// @param _listed Whether agent should be visible on launchpad
+    function setListed(bool _listed) external;
 
     // ========== VIEW FUNCTIONS ==========
 

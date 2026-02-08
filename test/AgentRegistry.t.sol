@@ -917,6 +917,177 @@ contract AgentRegistryTest is Test {
     }
 
     // ============================================
+    // PUBLISH CONFIG TESTS
+    // ============================================
+
+    event ConfigPublished(address indexed agent, string configCID, bytes32 configHash);
+    event ListingChanged(address indexed agent, bool listed);
+
+    function testPublishConfigSuccess() external {
+        _registerAgent(agent1, "text-generation");
+
+        bytes32 configHash = keccak256("test-config-content");
+        string memory cid = "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi";
+
+        vm.prank(agent1);
+        registry.publishConfig(cid, configHash);
+
+        IAgentRegistry.AgentProfile memory profile = registry.getAgent(agent1);
+        assertEq(profile.configHash, configHash);
+        assertEq(profile.configCID, cid);
+    }
+
+    function testPublishConfigEmitsEvent() external {
+        _registerAgent(agent1, "text-generation");
+
+        bytes32 configHash = keccak256("test-config");
+        string memory cid = "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi";
+
+        vm.expectEmit(true, false, false, true);
+        emit ConfigPublished(agent1, cid, configHash);
+
+        vm.prank(agent1);
+        registry.publishConfig(cid, configHash);
+    }
+
+    function testPublishConfigRejectsNonRegistered() external {
+        vm.prank(nonAgent);
+        vm.expectRevert("Not registered");
+        registry.publishConfig("bafytest", keccak256("test"));
+    }
+
+    function testPublishConfigRejectsEmptyHash() external {
+        _registerAgent(agent1, "text-generation");
+
+        vm.prank(agent1);
+        vm.expectRevert("Empty config hash");
+        registry.publishConfig("bafytest", bytes32(0));
+    }
+
+    function testPublishConfigRejectsEmptyCID() external {
+        _registerAgent(agent1, "text-generation");
+
+        vm.prank(agent1);
+        vm.expectRevert("Empty CID");
+        registry.publishConfig("", keccak256("test"));
+    }
+
+    function testPublishConfigRejectsTooLongCID() external {
+        _registerAgent(agent1, "text-generation");
+
+        // Create CID longer than MAX_CID_LENGTH (128)
+        bytes memory longCid = new bytes(129);
+        for (uint i = 0; i < 129; i++) {
+            longCid[i] = "a";
+        }
+
+        vm.prank(agent1);
+        vm.expectRevert("CID too long");
+        registry.publishConfig(string(longCid), keccak256("test"));
+    }
+
+    function testPublishConfigUpdatesTimestamp() external {
+        _registerAgent(agent1, "text-generation");
+
+        uint256 beforeTimestamp = registry.getAgent(agent1).updatedAt;
+
+        vm.warp(block.timestamp + 100);
+
+        vm.prank(agent1);
+        registry.publishConfig("bafytest", keccak256("test"));
+
+        uint256 afterTimestamp = registry.getAgent(agent1).updatedAt;
+        assertGt(afterTimestamp, beforeTimestamp);
+    }
+
+    function testPublishConfigCanOverwrite() external {
+        _registerAgent(agent1, "text-generation");
+
+        bytes32 hash1 = keccak256("config-v1");
+        bytes32 hash2 = keccak256("config-v2");
+
+        vm.prank(agent1);
+        registry.publishConfig("bafycid1", hash1);
+        assertEq(registry.getAgent(agent1).configHash, hash1);
+
+        vm.prank(agent1);
+        registry.publishConfig("bafycid2", hash2);
+        assertEq(registry.getAgent(agent1).configHash, hash2);
+        assertEq(registry.getAgent(agent1).configCID, "bafycid2");
+    }
+
+    // ============================================
+    // SET LISTED TESTS
+    // ============================================
+
+    function testSetListedSuccess() external {
+        _registerAgent(agent1, "text-generation");
+
+        // Default is false
+        assertFalse(registry.getAgent(agent1).listed);
+
+        vm.prank(agent1);
+        registry.setListed(true);
+
+        assertTrue(registry.getAgent(agent1).listed);
+
+        vm.prank(agent1);
+        registry.setListed(false);
+
+        assertFalse(registry.getAgent(agent1).listed);
+    }
+
+    function testSetListedEmitsEvent() external {
+        _registerAgent(agent1, "text-generation");
+
+        vm.expectEmit(true, false, false, true);
+        emit ListingChanged(agent1, true);
+
+        vm.prank(agent1);
+        registry.setListed(true);
+    }
+
+    function testSetListedRejectsNonRegistered() external {
+        vm.prank(nonAgent);
+        vm.expectRevert("Not registered");
+        registry.setListed(true);
+    }
+
+    function testListedAndActiveAreIndependent() external {
+        _registerAgent(agent1, "text-generation");
+
+        // Set listed=true, isActive stays true (from registration)
+        vm.prank(agent1);
+        registry.setListed(true);
+
+        assertTrue(registry.getAgent(agent1).isActive);
+        assertTrue(registry.getAgent(agent1).listed);
+
+        // Set isActive=false, listed stays true
+        vm.prank(agent1);
+        registry.setActiveStatus(false);
+
+        assertFalse(registry.getAgent(agent1).isActive);
+        assertTrue(registry.getAgent(agent1).listed);
+
+        // Set listed=false, isActive stays false
+        vm.prank(agent1);
+        registry.setListed(false);
+
+        assertFalse(registry.getAgent(agent1).isActive);
+        assertFalse(registry.getAgent(agent1).listed);
+    }
+
+    function testNewAgentHasEmptyConfig() external {
+        _registerAgent(agent1, "text-generation");
+
+        IAgentRegistry.AgentProfile memory profile = registry.getAgent(agent1);
+        assertEq(profile.configHash, bytes32(0));
+        assertEq(bytes(profile.configCID).length, 0);
+        assertFalse(profile.listed);
+    }
+
+    // ============================================
     // FUZZ TESTS
     // ============================================
 
