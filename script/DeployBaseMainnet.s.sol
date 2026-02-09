@@ -77,7 +77,7 @@ contract DeployBaseMainnet is Script {
         console.log("Archive Uploader:", archiveUploader);
         console.log("");
 
-        require(deployer.balance >= 0.02 ether, "Deployer needs at least 0.02 ETH");
+        require(deployer.balance >= 0.005 ether, "Deployer needs at least 0.005 ETH");
 
         vm.startBroadcast(deployerPrivateKey);
 
