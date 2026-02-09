@@ -44,20 +44,9 @@ forge test -vvv
 forge coverage
 ```
 
-## Deployment
+## Deployed Contracts
 
 ### Base Sepolia (Testnet)
-
-```bash
-# Set environment
-export PRIVATE_KEY=0x...
-export BASE_SEPOLIA_RPC=https://sepolia.base.org
-
-# Deploy
-forge script script/DeployBaseSepolia.s.sol --rpc-url $BASE_SEPOLIA_RPC --broadcast --verify
-```
-
-### Current Testnet Deployment
 
 | Contract | Address |
 |----------|---------|
