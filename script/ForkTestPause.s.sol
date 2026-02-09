@@ -40,11 +40,15 @@ import "../src/interfaces/IACTPKernel.sol";
 contract ForkTestPause is Script {
     address constant USDC = 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913;
 
-    // Anvil's default first account
-    uint256 constant ANVIL_PRIVATE_KEY = 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80;
+    // Anvil's well-known default account #0 (NOT a secret — deterministic test key)
+    uint256 constant ANVIL_DEFAULT_KEY = 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80;
+
+    function _deployerKey() internal view returns (uint256) {
+        return vm.envOr("PRIVATE_KEY", ANVIL_DEFAULT_KEY);
+    }
 
     function run() external {
-        address deployer = vm.addr(ANVIL_PRIVATE_KEY);
+        address deployer = vm.addr(_deployerKey());
         console.log("============================================");
         console.log("       FORK TEST: PAUSE FUNCTIONALITY");
         console.log("============================================");
@@ -53,7 +57,7 @@ contract ForkTestPause is Script {
         console.log("ETH Balance:", deployer.balance / 1e18, "ETH");
         console.log("");
 
-        vm.startBroadcast(ANVIL_PRIVATE_KEY);
+        vm.startBroadcast(_deployerKey());
 
         // Deploy contracts
         console.log("Deploying contracts on fork...");
