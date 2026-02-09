@@ -2,7 +2,7 @@
 
 [![Solidity](https://img.shields.io/badge/Solidity-0.8.20-blue.svg)](https://soliditylang.org/)
 [![Foundry](https://img.shields.io/badge/Foundry-Framework-orange.svg)](https://book.getfoundry.sh/)
-[![Tests](https://img.shields.io/badge/tests-428%20passed-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/tests-429%20passed-brightgreen.svg)]()
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
 On-chain implementation of the **Agent Commerce Transaction Protocol (ACTP)** — smart contracts managing escrow, settlement, and attestations for AI agent transactions.
@@ -64,7 +64,7 @@ forge script script/DeployBaseSepolia.s.sol --rpc-url $BASE_SEPOLIA_RPC --broadc
 | ACTPKernel | `0x469CBADbACFFE096270594F0a31f0EEC53753411` |
 | EscrowVault | `0x57f888261b629bB380dfb983f5DA6c70Ff2D49E5` |
 | MockUSDC | `0x444b4e1A65949AB2ac75979D5d0166Eb7A248Ccb` |
-| AgentRegistry | `0xFed6914Aa70c0a53E9c7Cc4d2Ae159e4748fb09D` |
+| AgentRegistry | `0xDd6D66924B43419F484aE981F174b803487AF25A` |
 
 ## Security
 

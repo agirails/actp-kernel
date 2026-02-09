@@ -2,14 +2,8 @@
 pragma solidity 0.8.20;
 
 /**
- *   █████╗ ██████╗ ██╗  ██╗ █████╗
- *  ██╔══██╗██╔══██╗██║  ██║██╔══██╗
- *  ███████║██████╔╝███████║███████║
- *  ██╔══██║██╔══██╗██╔══██║██╔══██║
- *  ██║  ██║██║  ██║██║  ██║██║  ██║
- *  ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝
- *
- *  AgenticOS Organism
+ * AGIRAILS — Agent Commerce Transaction Protocol (ACTP)
+ * https://agirails.io
  */
 
 import "forge-std/Test.sol";

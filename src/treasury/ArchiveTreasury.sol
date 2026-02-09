@@ -2,14 +2,8 @@
 pragma solidity 0.8.20;
 
 /**
- *   █████╗ ██████╗ ██╗  ██╗ █████╗
- *  ██╔══██╗██╔══██╗██║  ██║██╔══██╗
- *  ███████║██████╔╝███████║███████║
- *  ██╔══██║██╔══██╗██╔══██║██╔══██║
- *  ██║  ██║██║  ██║██║  ██║██║  ██║
- *  ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝
- *
- *  AgenticOS Organism
+ * AGIRAILS — Agent Commerce Transaction Protocol (ACTP)
+ * https://agirails.io
  */
 
 import {IArchiveTreasury} from "../interfaces/IArchiveTreasury.sol";
@@ -20,7 +14,7 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 /**
- * @title ArchiveTreasury - Arha Archive Funding Manager
+ * @title ArchiveTreasury - ACTP Archive Funding Manager
  * @notice Manages funding for permanent Arweave storage of settled transactions
  * @dev Receives 0.1% of protocol fees, used to pay for Arweave uploads via Irys/Bundlr
  *

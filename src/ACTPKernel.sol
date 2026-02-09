@@ -2,14 +2,8 @@
 pragma solidity ^0.8.20;
 
 /**
- *   █████╗ ██████╗ ██╗  ██╗ █████╗
- *  ██╔══██╗██╔══██╗██║  ██║██╔══██╗
- *  ███████║██████╔╝███████║███████║
- *  ██╔══██║██╔══██╗██╔══██║██╔══██║
- *  ██║  ██║██║  ██║██║  ██║██║  ██║
- *  ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝
- *
- *  AgenticOS Organism
+ * AGIRAILS — Agent Commerce Transaction Protocol (ACTP)
+ * https://agirails.io
  */
 
 import {IACTPKernel} from "./interfaces/IACTPKernel.sol";
@@ -21,9 +15,8 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 /**
- * @title ACTPKernel - Arha Transaction Coordinator
+ * @title ACTPKernel - ACTP Transaction Coordinator
  * @notice Minimal implementation of the ACTP on-chain coordinator.
- *         It follows the specification in Docs/99. Final Public Papers/Core/AGIRAILS_Yellow_Paper.md.
  */
 contract ACTPKernel is IACTPKernel, ReentrancyGuard {
     using SafeERC20 for IERC20;

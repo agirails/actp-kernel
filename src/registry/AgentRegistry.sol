@@ -2,14 +2,8 @@
 pragma solidity 0.8.20;
 
 /**
- *   █████╗ ██████╗ ██╗  ██╗ █████╗
- *  ██╔══██╗██╔══██╗██║  ██║██╔══██╗
- *  ███████║██████╔╝███████║███████║
- *  ██╔══██║██╔══██╗██╔══██║██╔══██║
- *  ██║  ██║██║  ██║██║  ██║██║  ██║
- *  ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝
- *
- *  AgenticOS Organism - Agent Registry (AIP-7)
+ * AGIRAILS — Agent Commerce Transaction Protocol (ACTP)
+ * https://agirails.io
  */
 
 import {IAgentRegistry} from "../interfaces/IAgentRegistry.sol";

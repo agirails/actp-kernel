@@ -2,15 +2,8 @@
 pragma solidity 0.8.20;
 
 /**
- *   █████╗ ██████╗ ██╗  ██╗ █████╗
- *  ██╔══██╗██╔══██╗██║  ██║██╔══██╗
- *  ███████║██████╔╝███████║███████║
- *  ██╔══██║██╔══██╗██╔══██║██╔══██║
- *  ██║  ██║██║  ██║██║  ██║██║  ██║
- *  ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝
- *
- *  AgenticOS Organism - Identity Registry (AIP-7 §2.2)
- *  ERC-1056 Compatible DID Registry
+ * AGIRAILS — Agent Commerce Transaction Protocol (ACTP)
+ * https://agirails.io
  */
 
 import {IAGIRAILSIdentityRegistry} from "../interfaces/IAGIRAILSIdentityRegistry.sol";

@@ -3,8 +3,8 @@
 ## Deployed Contracts
 
 - **Network**: Base Sepolia (Chain ID: 84532)
-- **ACTPKernel**: `0x469CBADbACFFE096270594F0a31f0EEC53753411` (redeployed 2026-02-06, agentId support)
-- **EscrowVault**: `0x57f888261b629bB380dfb983f5DA6c70Ff2D49E5` (redeployed 2026-02-06)
+- **ACTPKernel**: `0x469CBADbACFFE096270594F0a31f0EEC53753411`
+- **EscrowVault**: `0x57f888261b629bB380dfb983f5DA6c70Ff2D49E5`
 - **MockUSDC**: `0x444b4e1A65949AB2ac75979D5d0166Eb7A248Ccb`
 
 ## E2E Test Results
@@ -26,7 +26,7 @@
 
 1. **Install SDK dependencies**:
    ```bash
-   cd "$PROJECT_ROOT/AGIRAILS/SDK and Runtime/sdk-js"
+   cd "sdk-js"
    npm install
    ```
 
@@ -36,7 +36,7 @@
 
 3. **Create `.env` file** in SDK directory:
    ```bash
-   cd "$PROJECT_ROOT/AGIRAILS/SDK and Runtime/sdk-js"
+   cd "sdk-js"
    cat > .env << 'EOF'
    # Test wallet private key (DO NOT use real funds!)
    PRIVATE_KEY=0x...your-test-wallet-private-key...
@@ -49,7 +49,7 @@
    ESCROW_VAULT=0x57f888261b629bB380dfb983f5DA6c70Ff2D49E5
    MOCK_USDC=0x444b4e1A65949AB2ac75979D5d0166Eb7A248Ccb
 
-   # Deployed contract addresses (updated 2026-02-06)
+   # Deployed contract addresses (already in networks.ts)
    EOF
    ```
 
@@ -104,7 +104,7 @@ cast call 0x444b4e1A65949AB2ac75979D5d0166Eb7A248Ccb "decimals()(uint8)" --rpc-u
 ### Build SDK First
 
 ```bash
-cd "$PROJECT_ROOT/AGIRAILS/SDK and Runtime/sdk-js"
+cd "sdk-js"
 npm run build
 ```
 

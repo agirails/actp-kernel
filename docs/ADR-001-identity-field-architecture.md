@@ -2,8 +2,7 @@
 
 **Status:** Accepted
 **Date:** 2026-02-06
-**Authors:** Arha, Damir Mujic
-**Reviewers:** Ultra-Think Analysis
+**Authors:** AGIRAILS Team
 
 ---
 
@@ -33,7 +32,7 @@ Multi-identity support will be handled off-chain via subgraph indexers, not on-c
 
 ### 2. Strategic Positioning
 
-AGIRAILS is explicitly positioned as "the settlement layer for ERC-8004 agents" (see `/ERC-8004 Moment/04-NEW-POSITIONING.md`). Tight ERC-8004 coupling is strategic, not limiting.
+AGIRAILS is explicitly positioned as "the settlement layer for ERC-8004 agents". Tight ERC-8004 coupling is strategic, not limiting.
 
 ### 3. Identity is Off-Chain Concern
 
@@ -244,9 +243,8 @@ query FindProvider($ensName: String, $lensHandle: String) {
 ## References
 
 - [ERC-8004: Trustless Agents](https://eips.ethereum.org/EIPS/eip-8004)
-- [AGIRAILS Protocol Simplicity Guidelines](/.claude-docs/vitalik-protocol-simplicity.md)
-- [ERC-8004 Integration Plan](/ERC-8004%20Moment/02-INTEGRATION-PLAN.md)
+- [AGIRAILS Protocol Simplicity Guidelines](../COVENANT.md)
 
 ---
 
-*This ADR was created following comprehensive ultra-think analysis examining technical, strategic, and philosophical dimensions of the decision.*
+*This ADR examines technical, strategic, and philosophical dimensions of the identity field decision.*
