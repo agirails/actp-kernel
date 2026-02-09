@@ -7,8 +7,17 @@ import "../src/tokens/MockUSDC.sol";
 
 contract X402RelayTest is Test {
     // Mirror events from X402Relay for expectEmit
-    event X402Payment(address indexed from, address indexed provider, uint256 providerAmount, uint256 fee, bytes32 serviceId);
-    event FeeRecipientUpdated(address indexed oldRecipient, address indexed newRecipient);
+    event X402Payment(
+        address indexed from,
+        address indexed provider,
+        uint256 providerAmount,
+        uint256 fee,
+        bytes32 serviceId
+    );
+    event FeeRecipientUpdated(
+        address indexed oldRecipient,
+        address indexed newRecipient
+    );
     event PlatformFeeBpsUpdated(uint16 oldBps, uint16 newBps);
     event AdminTransferred(address indexed oldAdmin, address indexed newAdmin);
 
