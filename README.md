@@ -74,7 +74,7 @@ forge coverage
 ## Security
 
 - **Invariants**: See `COVENANT.md` for protocol guarantees
-- **Contact**: security@agirails.io
+- **Contact**: [agirails.io/contact](https://agirails.io/contact)
 
 ## Links
 
