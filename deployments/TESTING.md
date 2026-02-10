@@ -235,6 +235,47 @@ cast logs --address 0x469CBADbACFFE096270594F0a31f0EEC53753411 \
 
 ---
 
+## Paymaster Allowlist Sanity Check
+
+Gas sponsorship (ERC-4337 paymaster) only works for calls to whitelisted contracts.
+After deploying or redeploying any contract, **add it to both paymaster allowlists**:
+
+1. **Coinbase CDP**: [dashboard.developer.coinbase.com](https://dashboard.developer.coinbase.com) → Paymaster Policies
+2. **Pimlico**: [dashboard.pimlico.io](https://dashboard.pimlico.io) → Sponsorship Policies
+
+### Required Contracts (both Sepolia + Mainnet)
+
+| Contract | Base Sepolia | Base Mainnet |
+|----------|-------------|-------------|
+| ACTPKernel | `0x469CBADbACFFE096270594F0a31f0EEC53753411` | `0x132B9eB321dBB57c828B083844287171BDC92d29` |
+| EscrowVault | `0x57f888261b629bB380dfb983f5DA6c70Ff2D49E5` | `0x6aAF45882c4b0dD34130ecC790bb5Ec6be7fFb99` |
+| USDC (MockUSDC on testnet) | `0x444b4e1A65949AB2ac75979D5d0166Eb7A248Ccb` | `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` |
+| AgentRegistry | `0xDd6D66924B43419F484aE981F174b803487AF25A` | `0x6fB222CF3DDdf37Bcb248EE7BBBA42Fb41901de8` |
+| X402Relay | `0x4DCD02b276Dbeab57c265B72435e90507b6Ac81A` | `0x81DFb954A3D58FEc24Fc9c946aC2C71a911609F8` |
+| ArchiveTreasury | `0xeB75DE7cF5ce77ab15BB0fFa3a2A79e6aaa554B0` | `0x0516C411C0E8d75D17A768022819a0a4FB3cA2f2` |
+
+**Total: 12 addresses (6 contracts × 2 chains)**
+
+### Quick Verification
+
+If `actp register` or `actp init -m testnet` fails with:
+```
+"called address not in allowlist: 0x..."
+```
+→ The address in the error is NOT on the paymaster allowlist. Add it.
+
+### Symptom → Fix
+
+| Error | Missing from allowlist |
+|-------|----------------------|
+| `not in allowlist: 0x6fB2...` | AgentRegistry (mainnet) |
+| `not in allowlist: 0xDd6D...` | AgentRegistry (sepolia) |
+| `not in allowlist: 0x81DF...` | X402Relay (mainnet) |
+| `not in allowlist: 0x4DCD...` | X402Relay (sepolia) |
+| `require(false)` on ACTPKernel | Check if Kernel itself is on allowlist |
+
+---
+
 ## Support
 
 If tests fail or contracts behave unexpectedly:
@@ -242,3 +283,4 @@ If tests fail or contracts behave unexpectedly:
 2. Verify contracts are not paused
 3. Ensure wallet has sufficient ETH for gas
 4. Check that escrow vault is approved by kernel
+5. **Check paymaster allowlist** (see section above)
