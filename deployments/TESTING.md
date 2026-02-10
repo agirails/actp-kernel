@@ -11,7 +11,14 @@
 
 | Date | Test | Tx Hash | Result |
 |------|------|---------|--------|
+| 2026-02-10 | Testnet init (register + mint, gasless) | [`0x6e51c8f8...`](https://sepolia.basescan.org/tx/0x6e51c8f8739a6de8e387257f6fead8cf139644bea487e261cdbd595bd6c55d7c) | PASS |
 | 2026-02-06 | ERC-8004 agentId integration | [`0xbb21f36d...`](https://sepolia.basescan.org/tx/0xbb21f36d574cc228b486d33f20e18e7ef0df09bf14a99d19d2ad91019bf5b9b9) | PASS |
+
+**Details (2026-02-10)**:
+- Smart Wallet deployed + AgentRegistered + 1000 USDC minted in ONE gasless UserOp
+- Block: `37491140`
+- Smart Wallet: `0xb5990B86a8913389A8f12B5AcEe086502bD10610`
+- Root cause fix: Sepolia ACTPKernel (pre-v2) lacks `requesterNonces` — DualNonceManager now handles gracefully
 
 **Details (2026-02-06)**:
 - Transaction ID: `0x5596a895918e9d28e8f93abd6466de1d290e080294fc6b0dedd511dbaa9ef0b7`
