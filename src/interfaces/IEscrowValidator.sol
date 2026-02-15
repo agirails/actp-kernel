@@ -18,4 +18,11 @@ interface IEscrowValidator {
     function payout(bytes32 escrowId, address recipient, uint256 amount) external returns (uint256 amountReleased);
 
     function remaining(bytes32 escrowId) external view returns (uint256);
+
+    // AIP-14: Dispute bond methods
+    function depositBond(bytes32 escrowId, address from, uint256 amount) external;
+
+    function releaseBond(bytes32 escrowId, address recipient, uint256 amount) external;
+
+    function bondBalance(bytes32 escrowId) external view returns (uint256);
 }

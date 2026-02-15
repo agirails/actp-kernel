@@ -51,6 +51,7 @@ contract H2_EmptyDisputeResolutionTest is Test {
 
     uint256 constant ONE_USDC = 1_000_000;
     uint256 constant TRANSACTION_AMOUNT = 1_000 * ONE_USDC; // $1000
+    uint256 constant DISPUTE_BOND = TRANSACTION_AMOUNT * 500 / 10_000; // AIP-14: 5% bond
 
     function setUp() external {
         usdc = new MockUSDC();
@@ -98,7 +99,7 @@ contract H2_EmptyDisputeResolutionTest is Test {
     function testH2Vulnerability_PartialResolution() external {
         bytes32 txId = _createDisputedTransaction();
         uint256 escrowBalance = usdc.balanceOf(address(escrow));
-        assertEq(escrowBalance, TRANSACTION_AMOUNT); // $1000 in escrow
+        assertEq(escrowBalance, TRANSACTION_AMOUNT + DISPUTE_BOND); // $1000 escrow + $50 bond
 
         // Mediator tries to distribute only $500 (50%)
         // Remaining $500 would go to requester via leftover logic (BEFORE FIX)
@@ -171,7 +172,7 @@ contract H2_EmptyDisputeResolutionTest is Test {
         kernel.transitionState(txId, IACTPKernel.State.SETTLED, correctResolution);
 
         // Verify balances
-        assertEq(usdc.balanceOf(requester), requesterBalanceBefore + 500 * ONE_USDC);
+        assertEq(usdc.balanceOf(requester), requesterBalanceBefore + 500 * ONE_USDC + DISPUTE_BOND); // AIP-14: bond returned
         assertEq(usdc.balanceOf(provider), providerBalanceBefore + 500 * ONE_USDC - _calculateFee(500 * ONE_USDC));
         assertEq(usdc.balanceOf(address(escrow)), 0); // All funds distributed
     }
@@ -196,7 +197,7 @@ contract H2_EmptyDisputeResolutionTest is Test {
 
         kernel.transitionState(txId, IACTPKernel.State.SETTLED, resolution);
 
-        assertEq(usdc.balanceOf(requester), requesterBalanceBefore + 1000 * ONE_USDC);
+        assertEq(usdc.balanceOf(requester), requesterBalanceBefore + 1000 * ONE_USDC + DISPUTE_BOND); // AIP-14: bond returned
         assertEq(usdc.balanceOf(provider), 0);
         assertEq(usdc.balanceOf(address(escrow)), 0);
     }
@@ -255,7 +256,7 @@ contract H2_EmptyDisputeResolutionTest is Test {
 
         kernel.transitionState(txId, IACTPKernel.State.SETTLED, resolution);
 
-        assertEq(usdc.balanceOf(requester), requesterBalanceBefore + 400 * ONE_USDC);
+        assertEq(usdc.balanceOf(requester), requesterBalanceBefore + 400 * ONE_USDC + DISPUTE_BOND); // AIP-14: bond returned
         assertEq(usdc.balanceOf(provider), providerBalanceBefore + 500 * ONE_USDC - expectedProviderFee);
         assertEq(usdc.balanceOf(mediator), mediatorBalanceBefore + 100 * ONE_USDC);
         assertEq(usdc.balanceOf(address(escrow)), 0);
@@ -353,7 +354,7 @@ contract H2_EmptyDisputeResolutionTest is Test {
 
         kernel.transitionState(txId, IACTPKernel.State.CANCELLED, fullResolution);
 
-        assertEq(usdc.balanceOf(requester), requesterBalanceBefore + 600 * ONE_USDC);
+        assertEq(usdc.balanceOf(requester), requesterBalanceBefore + 600 * ONE_USDC + DISPUTE_BOND); // AIP-14: bond returned on cancellation
         assertEq(usdc.balanceOf(provider), providerBalanceBefore + 400 * ONE_USDC - expectedProviderFee);
         assertEq(usdc.balanceOf(address(escrow)), 0);
     }
@@ -396,7 +397,7 @@ contract H2_EmptyDisputeResolutionTest is Test {
 
         // Create transaction
         vm.prank(requester);
-        txId = kernel.createTransaction(provider, requester, TRANSACTION_AMOUNT, block.timestamp + 30 days, 2 days, keccak256("service"), 0);
+        txId = kernel.createTransaction(provider, requester, TRANSACTION_AMOUNT, block.timestamp + 30 days, 2 days, keccak256("service"), 0, 0);
 
         // Link escrow (auto-transitions to COMMITTED)
         vm.startPrank(requester);
@@ -413,8 +414,10 @@ contract H2_EmptyDisputeResolutionTest is Test {
         kernel.transitionState(txId, IACTPKernel.State.DELIVERED, abi.encode(10 days));
 
         // Requester disputes
-        vm.prank(requester);
+        vm.startPrank(requester);
+        usdc.approve(address(escrow), type(uint256).max);
         kernel.transitionState(txId, IACTPKernel.State.DISPUTED, "");
+        vm.stopPrank();
 
         // Verify state
         IACTPKernel.TransactionView memory txn = kernel.getTransaction(txId);

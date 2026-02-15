@@ -37,8 +37,11 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         uint256 disputeWindow; // timestamp (expiry)
         bytes32 metadata; // For quote hash (AIP-2) or other protocol metadata
         uint16 platformFeeBpsLocked; // AIP-5: Lock platform fee % at creation time
-        bool wasDisputed; // AIP-7: Track if transaction went through dispute for reputation calculation
-        uint256 agentId; // ERC-8004 agent ID (0 if not applicable)
+        bool wasDisputed; // AIP-7: Track if transaction went through dispute. AIP-14: semantic change to "provider at fault"
+        uint256 agentId; // ERC-8004 agent ID for provider (0 if not applicable)
+        uint256 requesterAgentId; // AIP-14: Requester's ERC-8004 agent ID (0 if not an agent)
+        address disputeInitiator; // AIP-14: Who opened the dispute (for bond return)
+        uint256 disputeBond; // AIP-14: Bond amount locked at dispute time
     }
 
     mapping(bytes32 => Transaction) private transactions;
@@ -56,6 +59,9 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
     uint256 public constant MAX_DEADLINE = 365 days; // Maximum 1 year deadline
     uint256 public constant ECONOMIC_PARAM_DELAY = 2 days;
     uint256 public constant MEDIATOR_APPROVAL_DELAY = 2 days; // Time-lock for mediator approvals
+    // AIP-14: Dispute bond parameters
+    uint256 public constant MIN_DISPUTE_BOND = 1_000_000; // $1 USDC minimum
+    uint16 public constant MAX_DISPUTE_BOND_BPS = 2_000; // 20% cap
     // Note: No emergency withdraw - kernel never holds funds by design
     address public admin;
     address public pauser;
@@ -65,6 +71,7 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
     uint16 public requesterPenaltyBps;
     bool public paused;
     IAgentRegistry public agentRegistry; // AIP-7: Agent registry for reputation tracking
+    uint16 public disputeBondBps; // AIP-14: Dispute bond percentage (default 500 = 5%)
 
     /// @notice Archive treasury contract for permanent storage funding
     address public archiveTreasury;
@@ -140,6 +147,8 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         platformFeeBps = 100;
         requesterPenaltyBps = 500;
 
+        disputeBondBps = 500; // AIP-14: 5% default
+
         _setInitialAgentRegistry(_agentRegistry);
     }
 
@@ -169,7 +178,8 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         uint256 deadline,
         uint256 disputeWindow,
         bytes32 serviceHash,
-        uint256 agentId
+        uint256 agentId,
+        uint256 requesterAgentId
     ) external override whenNotPaused returns (bytes32 transactionId) {
         require(msg.sender == requester, "Requester mismatch");
         require(provider != address(0), "Zero provider");
@@ -203,6 +213,7 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         txn.serviceHash = serviceHash;
         txn.platformFeeBpsLocked = platformFeeBps; // AIP-5: Lock current platform fee % at creation
         txn.agentId = agentId; // ERC-8004 agent ID (0 if not applicable)
+        txn.requesterAgentId = requesterAgentId; // AIP-14: Requester's ERC-8004 agent ID
 
         // State changes must be observable
         emit TransactionCreated(transactionId, requester, provider, amount, serviceHash, deadline, block.timestamp, agentId);
@@ -236,12 +247,26 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         } else if (newState == State.DISPUTED) {
             // AIP-7: Mark transaction as disputed for reputation tracking
             txn.wasDisputed = true;
+            // AIP-14: Dispute bond + initiator tracking
+            txn.disputeInitiator = msg.sender;
+            uint256 bond = (txn.amount * disputeBondBps) / MAX_BPS;
+            if (bond < MIN_DISPUTE_BOND) bond = MIN_DISPUTE_BOND;
+            // Bond is a separate deposit — does not affect escrow split accounting
+            require(txn.escrowContract != address(0), "Escrow missing for dispute");
+            IEscrowValidator vault = IEscrowValidator(txn.escrowContract);
+            vault.depositBond(txn.escrowId, msg.sender, bond);
+            txn.disputeBond = bond;
         }
 
         txn.state = newState;
         txn.updatedAt = block.timestamp;
 
         emit StateTransitioned(transactionId, oldState, newState, msg.sender, block.timestamp);
+
+        // AIP-14: Emit DisputeOpened event
+        if (newState == State.DISPUTED) {
+            emit DisputeOpened(transactionId, msg.sender, txn.disputeBond, block.timestamp);
+        }
 
         if (newState == State.SETTLED) {
             if (oldState == State.DISPUTED) {
@@ -275,7 +300,10 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
                 disputeWindow: txn.disputeWindow,
                 metadata: txn.metadata,
                 platformFeeBpsLocked: txn.platformFeeBpsLocked, // AIP-5: Return locked fee %
-                agentId: txn.agentId // ERC-8004 agent ID
+                agentId: txn.agentId, // ERC-8004 agent ID
+                requesterAgentId: txn.requesterAgentId, // AIP-14
+                disputeInitiator: txn.disputeInitiator, // AIP-14
+                disputeBond: txn.disputeBond // AIP-14
             });
     }
 
@@ -635,25 +663,46 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
     function _decodeResolutionProof(bytes calldata proof)
         internal
         pure
-        returns (uint256 requesterAmount, uint256 providerAmount, address mediator, uint256 mediatorAmount, bool hasResolution)
+        returns (
+            uint256 requesterAmount,
+            uint256 providerAmount,
+            address mediator,
+            uint256 mediatorAmount,
+            bool hasResolution,
+            bool providerAtFault
+        )
     {
         if (proof.length == 0) {
-            return (0, 0, address(0), 0, false);
+            return (0, 0, address(0), 0, false, false);
         }
         if (proof.length == 64) {
-            // 64-byte proof: only requester/provider split, NO mediator
+            // Legacy: no mediator, assume provider at fault (conservative)
             (requesterAmount, providerAmount) = abi.decode(proof, (uint256, uint256));
             require(requesterAmount > 0 || providerAmount > 0, "Empty resolution");
-            return (requesterAmount, providerAmount, address(0), 0, true);
+            return (requesterAmount, providerAmount, address(0), 0, true, true);
         }
-        // 128-byte proof: requester/provider split + mediator payout
-        require(proof.length == 128, "Invalid resolution proof");
-        (requesterAmount, providerAmount, mediator, mediatorAmount) =
-            abi.decode(proof, (uint256, uint256, address, uint256));
+        if (proof.length == 96) {
+            // AIP-14: no mediator, explicit fault determination
+            (requesterAmount, providerAmount, providerAtFault) =
+                abi.decode(proof, (uint256, uint256, bool));
+            require(requesterAmount > 0 || providerAmount > 0, "Empty resolution");
+            return (requesterAmount, providerAmount, address(0), 0, true, providerAtFault);
+        }
+        if (proof.length == 128) {
+            // Legacy: with mediator, assume provider at fault (conservative)
+            (requesterAmount, providerAmount, mediator, mediatorAmount) =
+                abi.decode(proof, (uint256, uint256, address, uint256));
+            require(requesterAmount > 0 || providerAmount > 0 || mediatorAmount > 0, "Empty resolution");
+            require(mediatorAmount == 0 || mediator != address(0), "Mediator address required");
+            return (requesterAmount, providerAmount, mediator, mediatorAmount, true, true);
+        }
+        // AIP-14: with mediator, explicit fault determination
+        require(proof.length == 160, "Invalid resolution proof");
+        (requesterAmount, providerAmount, mediator, mediatorAmount, providerAtFault) =
+            abi.decode(proof, (uint256, uint256, address, uint256, bool));
         require(requesterAmount > 0 || providerAmount > 0 || mediatorAmount > 0, "Empty resolution");
-        // If mediator payout requested, mediator address MUST be valid
         require(mediatorAmount == 0 || mediator != address(0), "Mediator address required");
-        return (requesterAmount, providerAmount, mediator, mediatorAmount, true);
+        return (requesterAmount, providerAmount, mediator, mediatorAmount, true, providerAtFault);
     }
 
     /**
@@ -690,24 +739,28 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         if (txn.escrowContract == address(0)) return;
         IEscrowValidator vault = IEscrowValidator(txn.escrowContract);
         uint256 remaining = vault.remaining(txn.escrowId);
-        if (remaining == 0) return;
 
-        (uint256 requesterAmount, uint256 providerAmount, address mediator, uint256 mediatorAmount, bool hasResolution) =
+        (uint256 requesterAmount, uint256 providerAmount, address mediator, uint256 mediatorAmount, bool hasResolution, bool providerAtFault) =
             _decodeResolutionProof(proof);
 
         // [C-2 FIX] Update reputation only if not yet processed by current registry (prevents double-counting on registry upgrade)
+        // AIP-14: Pass providerAtFault instead of txn.wasDisputed — only at-fault disputes affect reputation
         if (address(agentRegistry) != address(0) && reputationProcessedBy[txn.transactionId] == address(0)) {
             reputationProcessedBy[txn.transactionId] = address(agentRegistry);
             try agentRegistry.updateReputationOnSettlement{gas: 150000}(
                 txn.provider,
                 txn.transactionId,
                 txn.amount,
-                txn.wasDisputed
+                providerAtFault
             ) {} catch {}
         }
 
         if (!hasResolution) {
-            _payoutProviderAmount(txn, vault, remaining);
+            if (remaining > 0) {
+                _payoutProviderAmount(txn, vault, remaining);
+            }
+            // AIP-14: No-resolution = full payout to provider = provider not at fault → bond to counterparty
+            _distributeBond(txn, vault, false);
             return;
         }
 
@@ -716,19 +769,24 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
             require(block.timestamp >= mediatorApprovedAt[mediator], "Mediator approval pending");
         }
 
-        uint256 totalDistributed = requesterAmount + providerAmount + mediatorAmount;
-        require(totalDistributed > 0, "Empty resolution not allowed");
-        require(totalDistributed == remaining, "Must distribute ALL funds");
+        if (remaining > 0) {
+            uint256 totalDistributed = requesterAmount + providerAmount + mediatorAmount;
+            require(totalDistributed > 0, "Empty resolution not allowed");
+            require(totalDistributed == remaining, "Must distribute ALL funds");
 
-        if (providerAmount > 0) {
-            _payoutProviderAmount(txn, vault, providerAmount);
+            if (providerAmount > 0) {
+                _payoutProviderAmount(txn, vault, providerAmount);
+            }
+            if (requesterAmount > 0) {
+                _refundRequester(txn, vault, requesterAmount);
+            }
+            if (mediatorAmount > 0) {
+                _payoutMediator(txn, vault, mediator, mediatorAmount);
+            }
         }
-        if (requesterAmount > 0) {
-            _refundRequester(txn, vault, requesterAmount);
-        }
-        if (mediatorAmount > 0) {
-            _payoutMediator(txn, vault, mediator, mediatorAmount);
-        }
+
+        // AIP-14: Bond distribution after escrow split (runs even if remaining was 0)
+        _distributeBond(txn, vault, providerAtFault);
     }
 
     function _handleCancellation(
@@ -740,9 +798,8 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         if (txn.escrowContract == address(0)) return;
         IEscrowValidator vault = IEscrowValidator(txn.escrowContract);
         uint256 remaining = vault.remaining(txn.escrowId);
-        if (remaining == 0) return;
 
-        (uint256 requesterAmount, uint256 providerAmount, address mediator, uint256 mediatorAmount, bool hasResolution) =
+        (uint256 requesterAmount, uint256 providerAmount, address mediator, uint256 mediatorAmount, bool hasResolution,) =
             _decodeResolutionProof(proof);
         if (oldState == State.DISPUTED && hasResolution) {
             require(triggeredBy == admin || triggeredBy == pauser, "Resolver only");
@@ -752,22 +809,34 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
                 require(block.timestamp >= mediatorApprovedAt[mediator], "Mediator approval pending");
             }
 
-            uint256 totalDistributed = requesterAmount + providerAmount + mediatorAmount;
-            require(totalDistributed > 0, "Empty resolution not allowed");
-            require(totalDistributed == remaining, "Must distribute ALL funds");
-            require(totalDistributed <= txn.amount, "Resolution exceeds transaction amount");
+            if (remaining > 0) {
+                uint256 totalDistributed = requesterAmount + providerAmount + mediatorAmount;
+                require(totalDistributed > 0, "Empty resolution not allowed");
+                require(totalDistributed == remaining, "Must distribute ALL funds");
+                require(totalDistributed <= txn.amount, "Resolution exceeds transaction amount");
 
-            if (providerAmount > 0) {
-                _payoutProviderAmount(txn, vault, providerAmount);
+                if (providerAmount > 0) {
+                    _payoutProviderAmount(txn, vault, providerAmount);
+                }
+                if (requesterAmount > 0) {
+                    _refundRequester(txn, vault, requesterAmount);
+                }
+                if (mediatorAmount > 0) {
+                    _payoutMediator(txn, vault, mediator, mediatorAmount);
+                }
             }
-            if (requesterAmount > 0) {
-                _refundRequester(txn, vault, requesterAmount);
-            }
-            if (mediatorAmount > 0) {
-                _payoutMediator(txn, vault, mediator, mediatorAmount);
-            }
+
+            // AIP-14: Return bond to disputer on cancellation (no fault determined)
+            _distributeBondOnCancellation(txn, vault);
             return;
         }
+
+        // AIP-14: Return bond on non-resolution DISPUTED→CANCELLED
+        if (oldState == State.DISPUTED) {
+            _distributeBondOnCancellation(txn, vault);
+        }
+
+        if (remaining == 0) return;
 
         if (triggeredBy == txn.requester && (oldState == State.COMMITTED || oldState == State.IN_PROGRESS)) {
             uint256 penalty = (remaining * requesterPenaltyBps) / MAX_BPS;
@@ -893,6 +962,53 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         uint256 actualPayout = vault.payout(txn.escrowId, mediator, amount);
         require(actualPayout == amount, "Partial mediator payout not allowed");
         emit EscrowMediatorPaid(txn.transactionId, mediator, actualPayout, block.timestamp);
+    }
+
+    // AIP-14: Bond distribution helpers
+
+    function _distributeBond(Transaction storage txn, IEscrowValidator vault, bool providerAtFault) internal {
+        if (txn.disputeBond == 0) return;
+
+        // Bond goes to the winning party, regardless of who initiated the dispute
+        address bondRecipient = providerAtFault ? txn.requester : txn.provider;
+        vault.releaseBond(txn.escrowId, bondRecipient, txn.disputeBond);
+
+        emit DisputeResolved(
+            txn.transactionId,
+            bytes32(0),
+            txn.disputeInitiator,
+            providerAtFault,
+            txn.disputeBond,
+            block.timestamp
+        );
+
+        txn.disputeBond = 0; // Defense-in-depth: prevent double distribution
+    }
+
+    function _distributeBondOnCancellation(Transaction storage txn, IEscrowValidator vault) internal {
+        if (txn.disputeBond == 0) return;
+
+        uint256 bondAmount = txn.disputeBond;
+        txn.disputeBond = 0; // Defense-in-depth: prevent double distribution
+
+        // Cancellation: bond always returned to disputer (no fault determined)
+        vault.releaseBond(txn.escrowId, txn.disputeInitiator, bondAmount);
+
+        emit DisputeResolved(
+            txn.transactionId,
+            bytes32(0),
+            txn.disputeInitiator,
+            false,
+            bondAmount,
+            block.timestamp
+        );
+    }
+
+    // AIP-14: Admin setter for dispute bond percentage
+
+    function updateDisputeBondBps(uint16 newBps) external onlyAdmin {
+        require(newBps <= MAX_DISPUTE_BOND_BPS, "Exceeds max bond cap");
+        disputeBondBps = newBps;
     }
 
     /**

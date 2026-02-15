@@ -33,7 +33,7 @@ contract ACTPKernelTest is Test {
 
     function _createBaseTx() internal returns (bytes32 txId) {
         vm.prank(requester);
-        txId = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"), 0);
+        txId = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"), 0, 0);
     }
 
     function _quote(bytes32 txId) internal {
@@ -78,11 +78,11 @@ contract ACTPKernelTest is Test {
         // With nonce-based ID generation, identical parameters produce DIFFERENT txIds
         // Create first transaction
         vm.prank(requester);
-        bytes32 txId1 = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"), 0);
+        bytes32 txId1 = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"), 0, 0);
 
         // Create second transaction with SAME inputs - should succeed with DIFFERENT txId
         vm.prank(requester);
-        bytes32 txId2 = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"), 0);
+        bytes32 txId2 = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"), 0, 0);
 
         // Verify both transactions exist with different IDs
         assertTrue(txId1 != txId2, "Nonce should produce different IDs");
@@ -100,7 +100,7 @@ contract ACTPKernelTest is Test {
         bytes32 txId = kernel.createTransaction(
             provider, requester, ONE_USDC,
             block.timestamp + 7 days, 2 days,
-            keccak256("service"), testAgentId
+            keccak256("service"), testAgentId, 0
         );
 
         IACTPKernel.TransactionView memory txView = kernel.getTransaction(txId);
@@ -112,7 +112,7 @@ contract ACTPKernelTest is Test {
         bytes32 txId = kernel.createTransaction(
             provider, requester, ONE_USDC,
             block.timestamp + 7 days, 2 days,
-            keccak256("service"), 0
+            keccak256("service"), 0, 0
         );
 
         IACTPKernel.TransactionView memory txView = kernel.getTransaction(txId);
@@ -135,8 +135,10 @@ contract ACTPKernelTest is Test {
         _commit(txId, escrowId, ONE_USDC);
         _deliver(txId, 1 days);
 
-        vm.prank(requester);
+        vm.startPrank(requester);
+        usdc.approve(address(escrow), type(uint256).max);
         kernel.transitionState(txId, IACTPKernel.State.DISPUTED, "");
+        vm.stopPrank();
 
         kernel.transitionState(txId, IACTPKernel.State.CANCELLED, "");
         IACTPKernel.TransactionView memory viewData = kernel.getTransaction(txId);
@@ -162,7 +164,7 @@ contract ACTPKernelTest is Test {
     function testCancelBeforeDeadlineFailsUntilExpired() external {
         // Use a short deadline (1 day) for this test to check cancel behavior
         vm.prank(requester);
-        bytes32 txId = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 1 days, 2 days, keccak256("service"), 0);
+        bytes32 txId = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 1 days, 2 days, keccak256("service"), 0, 0);
 
         _quote(txId);
         bytes32 escrowId = keccak256("escrow4");
@@ -300,8 +302,10 @@ contract ACTPKernelTest is Test {
         _commit(txId, escrowId, ONE_USDC);
         _deliver(txId, 1 days);
 
-        vm.prank(requester);
+        vm.startPrank(requester);
+        usdc.approve(address(escrow), type(uint256).max);
         kernel.transitionState(txId, IACTPKernel.State.DISPUTED, "");
+        vm.stopPrank();
 
         uint256 requesterAward = ONE_USDC / 4;
         uint256 providerAward = ONE_USDC - requesterAward;
@@ -323,8 +327,10 @@ contract ACTPKernelTest is Test {
         _commit(txId, escrowId, ONE_USDC);
         _deliver(txId, 1 days);
 
-        vm.prank(requester);
+        vm.startPrank(requester);
+        usdc.approve(address(escrow), type(uint256).max);
         kernel.transitionState(txId, IACTPKernel.State.DISPUTED, "");
+        vm.stopPrank();
 
         uint256 mediatorAward = ONE_USDC / 10;
         uint256 providerAward = ONE_USDC / 2;
@@ -354,8 +360,10 @@ contract ACTPKernelTest is Test {
         _commit(txId, escrowId, ONE_USDC);
         _deliver(txId, 1 days);
 
-        vm.prank(requester);
+        vm.startPrank(requester);
+        usdc.approve(address(escrow), type(uint256).max);
         kernel.transitionState(txId, IACTPKernel.State.DISPUTED, "");
+        vm.stopPrank();
 
         uint256 requesterAward = ONE_USDC * 3 / 4;
         uint256 providerAward = ONE_USDC - requesterAward;
@@ -506,7 +514,7 @@ contract ACTPKernelTest is Test {
 
         // Create second transaction with new fee
         vm.prank(requester);
-        bytes32 txId2 = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 1 days, 2 days, bytes32(uint256(1)), 0);
+        bytes32 txId2 = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 1 days, 2 days, bytes32(uint256(1)), 0, 0);
 
         // Verify first transaction locked original fee
         IACTPKernel.TransactionView memory txView1 = kernel.getTransaction(txId1);

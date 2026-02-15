@@ -29,6 +29,7 @@ contract EscrowVault is IEscrowValidator, ReentrancyGuard {
     address public immutable kernel;
 
     mapping(bytes32 => EscrowData) public escrows;
+    mapping(bytes32 => uint256) public bondBalances; // AIP-14: Dispute bond tracking
 
     event EscrowCreated(bytes32 indexed escrowId, address indexed requester, address indexed provider, uint256 amount);
     event EscrowPayout(bytes32 indexed escrowId, address indexed recipient, uint256 amount);
@@ -93,6 +94,32 @@ contract EscrowVault is IEscrowValidator, ReentrancyGuard {
         EscrowData storage e = escrows[escrowId];
         require(recipient != address(0), "Zero recipient");
         return _disburse(e, escrowId, recipient, amount);
+    }
+
+    // AIP-14: Dispute bond methods
+
+    /// @notice Deposit a dispute bond for an escrow. Called by ACTPKernel during dispute opening.
+    /// @dev The vault pulls the bond from `from` using its own immutable `token` reference,
+    ///      ensuring token consistency (bond always uses the same token as the escrow).
+    function depositBond(bytes32 escrowId, address from, uint256 amount) external override onlyKernel nonReentrant {
+        require(amount > 0, "Amount zero");
+        require(from != address(0), "Zero address");
+        token.safeTransferFrom(from, address(this), amount);
+        bondBalances[escrowId] += amount;
+    }
+
+    /// @notice Release a dispute bond to the designated recipient. Called by ACTPKernel during resolution.
+    function releaseBond(bytes32 escrowId, address recipient, uint256 amount) external override onlyKernel nonReentrant {
+        require(recipient != address(0), "Zero recipient");
+        require(amount > 0, "Amount zero");
+        require(bondBalances[escrowId] >= amount, "Insufficient bond");
+        bondBalances[escrowId] -= amount;
+        token.safeTransfer(recipient, amount);
+    }
+
+    /// @notice View the bond balance for an escrow
+    function bondBalance(bytes32 escrowId) external view override returns (uint256) {
+        return bondBalances[escrowId];
     }
 
     function remaining(bytes32 escrowId) external view override returns (uint256) {

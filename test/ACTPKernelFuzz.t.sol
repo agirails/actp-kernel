@@ -39,8 +39,10 @@ contract ACTPKernelFuzzTest is Test {
     ) external {
         bytes32 txId = _prepareDeliveredTx();
 
-        vm.prank(requester);
+        vm.startPrank(requester);
+        usdc.approve(address(escrow), type(uint256).max);
         kernel.transitionState(txId, IACTPKernel.State.DISPUTED, "");
+        vm.stopPrank();
 
         uint256 providerAward = bound(uint256(providerAwardRaw), 0, ONE_USDC);
         uint256 mediatorAward = bound(uint256(mediatorAwardRaw), 0, ONE_USDC - providerAward);
@@ -128,7 +130,7 @@ contract ACTPKernelFuzzTest is Test {
 
 
         vm.prank(requester);
-        bytes32 txId = kernel.createTransaction(provider, requester, amount, block.timestamp + 1 days, 2 days, keccak256("service"), 0);
+        bytes32 txId = kernel.createTransaction(provider, requester, amount, block.timestamp + 1 days, 2 days, keccak256("service"), 0, 0);
 
         IACTPKernel.TransactionView memory txn = kernel.getTransaction(txId);
         assertEq(txn.amount, amount);
@@ -187,7 +189,7 @@ contract ACTPKernelFuzzTest is Test {
 
     function _createBaseTx(uint256 amount, uint256 deadline) internal returns (bytes32 txId) {
         vm.prank(requester);
-        txId = kernel.createTransaction(provider, requester, amount, deadline, 2 days, keccak256("service"), 0);
+        txId = kernel.createTransaction(provider, requester, amount, deadline, 2 days, keccak256("service"), 0, 0);
     }
 
     function _quote(bytes32 txId) internal {

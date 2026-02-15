@@ -198,8 +198,10 @@ contract ACTPKernelSecurityTest is Test {
         _commit(txId, keccak256("escrowMediator"), ONE_USDC);
         _deliver(txId, 1 days);
         
-        vm.prank(requester);
+        vm.startPrank(requester);
+        usdc.approve(address(escrow), type(uint256).max);
         kernel.transitionState(txId, IACTPKernel.State.DISPUTED, "");
+        vm.stopPrank();
 
         // Try to submit resolution with mediatorAmount > 0 but address(0)
         bytes memory badProof = abi.encode(
@@ -219,8 +221,10 @@ contract ACTPKernelSecurityTest is Test {
         _commit(txId, keccak256("escrowMediatorProvider"), ONE_USDC);
         _deliver(txId, 1 days);
         
-        vm.prank(requester);
+        vm.startPrank(requester);
+        usdc.approve(address(escrow), type(uint256).max);
         kernel.transitionState(txId, IACTPKernel.State.DISPUTED, "");
+        vm.stopPrank();
 
         // Mediator is same as provider (should work but test balance accounting)
         // Mediator fee capped at 10% of transaction amount
@@ -256,7 +260,7 @@ contract ACTPKernelSecurityTest is Test {
     // Helpers
     function _createBaseTx() internal returns (bytes32 txId) {
         vm.prank(requester);
-        txId = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"), 0);
+        txId = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"), 0, 0);
     }
 
     function _quote(bytes32 txId) internal {

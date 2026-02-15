@@ -152,13 +152,13 @@ contract ACTPKernelBranchCoverage2Test is Test {
     function testCreateTransactionRejectsRequesterMismatch() external {
         vm.prank(address(0x999)); // Not the requester
         vm.expectRevert("Requester mismatch");
-        kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"), 0);
+        kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"), 0, 0);
     }
 
     function testCreateTransactionRejectsDisputeWindowTooLong() external {
         vm.prank(requester);
         vm.expectRevert("Dispute window too long");
-        kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 31 days, keccak256("service"), 0);
+        kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 31 days, keccak256("service"), 0, 0);
     }
 
     function testCreateTransactionRejectsNonceOverflow() external {
@@ -166,7 +166,7 @@ contract ACTPKernelBranchCoverage2Test is Test {
         // We can't really test nonce overflow without 2^256 transactions
         // So we just verify the logic exists by checking normal flow works
         vm.prank(requester);
-        bytes32 txId = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"), 0);
+        bytes32 txId = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"), 0, 0);
         assertTrue(txId != bytes32(0));
     }
 
@@ -220,7 +220,7 @@ contract ACTPKernelBranchCoverage2Test is Test {
     function testReleaseEscrowRejectsEscrowMissing() external {
         // Create transaction without escrow
         vm.prank(requester);
-        bytes32 txId = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"), 0);
+        bytes32 txId = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"), 0, 0);
 
         // Can't get to SETTLED without escrow, so this branch is covered by linkEscrow requirement
     }
@@ -321,8 +321,10 @@ contract ACTPKernelBranchCoverage2Test is Test {
         bytes32 txId = _createDeliveredTx();
 
         // Transition to DISPUTED
-        vm.prank(requester);
+        vm.startPrank(requester);
+        usdc.approve(address(escrow), type(uint256).max);
         kernel.transitionState(txId, IACTPKernel.State.DISPUTED, "");
+        vm.stopPrank();
 
         // 64-byte proof: requester/provider split only
         bytes memory proof = abi.encode(
@@ -346,8 +348,10 @@ contract ACTPKernelBranchCoverage2Test is Test {
         bytes32 txId = _createDeliveredTx();
 
         // Transition to DISPUTED
-        vm.prank(requester);
+        vm.startPrank(requester);
+        usdc.approve(address(escrow), type(uint256).max);
         kernel.transitionState(txId, IACTPKernel.State.DISPUTED, "");
+        vm.stopPrank();
 
         // Total escrow is ONE_USDC (1,000,000)
         // After provider gets providerAmount, fee is deducted from provider portion
@@ -367,8 +371,10 @@ contract ACTPKernelBranchCoverage2Test is Test {
     function testDisputeResolutionRejectsEmptyResolution() external {
         bytes32 txId = _createDeliveredTx();
 
-        vm.prank(requester);
+        vm.startPrank(requester);
+        usdc.approve(address(escrow), type(uint256).max);
         kernel.transitionState(txId, IACTPKernel.State.DISPUTED, "");
+        vm.stopPrank();
 
         // 64-byte proof with all zeros
         bytes memory proof = abi.encode(uint256(0), uint256(0));
@@ -381,8 +387,10 @@ contract ACTPKernelBranchCoverage2Test is Test {
     function testDisputeResolutionRejectsMediatorWithoutAddress() external {
         bytes32 txId = _createDeliveredTx();
 
-        vm.prank(requester);
+        vm.startPrank(requester);
+        usdc.approve(address(escrow), type(uint256).max);
         kernel.transitionState(txId, IACTPKernel.State.DISPUTED, "");
+        vm.stopPrank();
 
         // 128-byte proof with mediator amount but zero address
         bytes memory proof = abi.encode(
@@ -538,7 +546,7 @@ contract ACTPKernelBranchCoverage2Test is Test {
 
     function _createTx() internal returns (bytes32 txId) {
         vm.prank(requester);
-        txId = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"), 0);
+        txId = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"), 0, 0);
     }
 
     function _createCommittedTx() internal returns (bytes32 txId) {

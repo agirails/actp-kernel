@@ -563,6 +563,9 @@ contract MockACTPKernel {
         bytes32 metadata;
         uint16 platformFeeBpsLocked;
         uint256 agentId;
+        uint256 requesterAgentId;
+        address disputeInitiator;
+        uint256 disputeBond;
     }
 
     mapping(bytes32 => TransactionView) public transactions;
@@ -593,7 +596,10 @@ contract MockACTPKernel {
             disputeWindow: 2 days,
             metadata: bytes32(0),
             platformFeeBpsLocked: 100, // 1%
-            agentId: 0
+            agentId: 0,
+            requesterAgentId: 0,
+            disputeInitiator: address(0),
+            disputeBond: 0
         });
     }
 

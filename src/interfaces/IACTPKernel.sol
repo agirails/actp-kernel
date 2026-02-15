@@ -30,6 +30,9 @@ interface IACTPKernel {
         bytes32 metadata;
         uint16 platformFeeBpsLocked; // AIP-5: Locked platform fee % from creation
         uint256 agentId; // ERC-8004 agent token ID (0 = not ERC-8004 agent). See ADR-001.
+        uint256 requesterAgentId; // AIP-14: Requester's ERC-8004 agent ID (0 if not an agent)
+        address disputeInitiator; // AIP-14: Who opened the dispute (for bond return)
+        uint256 disputeBond; // AIP-14: Bond amount locked at dispute time
     }
 
     event TransactionCreated(
@@ -86,12 +89,15 @@ interface IACTPKernel {
         uint256 timestamp
     );
 
-    event DisputeOpened(bytes32 indexed transactionId, address indexed initiator, bytes32 disputeId, uint256 timestamp);
+    // AIP-14: Updated dispute events (previously declared but never emitted)
+    event DisputeOpened(bytes32 indexed transactionId, address indexed initiator, uint256 bondAmount, uint256 timestamp);
 
     event DisputeResolved(
         bytes32 indexed transactionId,
         bytes32 indexed disputeId,
-        uint8 resolution,
+        address indexed initiator,
+        bool providerAtFault,
+        uint256 bondAmount,
         uint256 timestamp
     );
 
@@ -126,10 +132,10 @@ interface IACTPKernel {
      * @param deadline Timestamp when the transaction expires
      * @param disputeWindow Duration in seconds for the dispute window
      * @param serviceHash Hash of the service agreement
-     * @param agentId ERC-8004 agent token ID. Set to 0 if the provider is not registered
-     *        in ERC-8004 Identity Registry. This field is ERC-8004 SPECIFIC - for other
-     *        identity systems (ENS, Lens, etc.), use off-chain correlation via subgraphs.
+     * @param agentId ERC-8004 agent token ID for provider. Set to 0 if not registered.
      *        See ADR-001 for architectural rationale.
+     * @param requesterAgentId AIP-14: ERC-8004 agent token ID for requester. Set to 0
+     *        if the requester is not an agent. Used for bilateral reputation reporting.
      * @return transactionId The generated transaction ID
      */
     function createTransaction(
@@ -139,7 +145,8 @@ interface IACTPKernel {
         uint256 deadline,
         uint256 disputeWindow,
         bytes32 serviceHash,
-        uint256 agentId
+        uint256 agentId,
+        uint256 requesterAgentId
     ) external returns (bytes32 transactionId);
 
     function transitionState(bytes32 transactionId, State newState, bytes calldata proof) external;

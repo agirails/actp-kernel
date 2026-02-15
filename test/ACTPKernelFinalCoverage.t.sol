@@ -30,6 +30,7 @@ contract ACTPKernelFinalCoverageTest is Test {
         escrow = new EscrowVault(address(usdc), address(kernel));
         kernel.approveEscrowVault(address(escrow), true);
         usdc.mint(requester, 10_000_000);
+        usdc.mint(provider, 10_000_000); // AIP-14: provider needs USDC for dispute bond
     }
 
     // ============================================
@@ -211,8 +212,10 @@ contract ACTPKernelFinalCoverageTest is Test {
         kernel.transitionState(txId, IACTPKernel.State.DELIVERED, abi.encode(1 days));
 
         // Requester can dispute
-        vm.prank(requester);
+        vm.startPrank(requester);
+        usdc.approve(address(escrow), type(uint256).max);
         kernel.transitionState(txId, IACTPKernel.State.DISPUTED, "");
+        vm.stopPrank();
 
         IACTPKernel.TransactionView memory txn = kernel.getTransaction(txId);
         assertEq(uint8(txn.state), uint8(IACTPKernel.State.DISPUTED));
@@ -228,8 +231,10 @@ contract ACTPKernelFinalCoverageTest is Test {
         kernel.transitionState(txId, IACTPKernel.State.DELIVERED, abi.encode(1 days));
 
         // Provider can also dispute (unusual but allowed)
-        vm.prank(provider);
+        vm.startPrank(provider);
+        usdc.approve(address(escrow), type(uint256).max);
         kernel.transitionState(txId, IACTPKernel.State.DISPUTED, "");
+        vm.stopPrank();
 
         IACTPKernel.TransactionView memory txn = kernel.getTransaction(txId);
         assertEq(uint8(txn.state), uint8(IACTPKernel.State.DISPUTED));
@@ -318,7 +323,7 @@ contract ACTPKernelFinalCoverageTest is Test {
 
     function testCannotProgressAfterDeadline() external {
         vm.prank(requester);
-        bytes32 txId = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 1 hours, 2 days, keccak256("service"), 0);
+        bytes32 txId = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 1 hours, 2 days, keccak256("service"), 0, 0);
 
         // Warp past deadline
         vm.warp(block.timestamp + 2 hours);
@@ -342,8 +347,10 @@ contract ACTPKernelFinalCoverageTest is Test {
         vm.warp(block.timestamp + 8 days);
 
         // Can still dispute even after transaction deadline (within dispute window)
-        vm.prank(requester);
+        vm.startPrank(requester);
+        usdc.approve(address(escrow), type(uint256).max);
         kernel.transitionState(txId, IACTPKernel.State.DISPUTED, "");
+        vm.stopPrank();
 
         IACTPKernel.TransactionView memory txn = kernel.getTransaction(txId);
         assertEq(uint8(txn.state), uint8(IACTPKernel.State.DISPUTED));
@@ -351,7 +358,7 @@ contract ACTPKernelFinalCoverageTest is Test {
 
     function testCanCancelAfterDeadline() external {
         vm.prank(requester);
-        bytes32 txId = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 1 hours, 2 days, keccak256("service"), 0);
+        bytes32 txId = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 1 hours, 2 days, keccak256("service"), 0, 0);
 
         // Warp past deadline
         vm.warp(block.timestamp + 2 hours);
@@ -402,8 +409,10 @@ contract ACTPKernelFinalCoverageTest is Test {
         vm.warp(windowEnd);
 
         // Can still dispute at exact window end
-        vm.prank(requester);
+        vm.startPrank(requester);
+        usdc.approve(address(escrow), type(uint256).max);
         kernel.transitionState(txId, IACTPKernel.State.DISPUTED, "");
+        vm.stopPrank();
 
         txn = kernel.getTransaction(txId);
         assertEq(uint8(txn.state), uint8(IACTPKernel.State.DISPUTED));
@@ -456,7 +465,7 @@ contract ACTPKernelFinalCoverageTest is Test {
 
     function _createTx() internal returns (bytes32 txId) {
         vm.prank(requester);
-        txId = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"), 0);
+        txId = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"), 0, 0);
     }
 
     function _createCommitted() internal returns (bytes32 txId) {
