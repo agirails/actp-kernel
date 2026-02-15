@@ -73,14 +73,18 @@ forge coverage
 
 ## Security
 
+- **Audit Status**: Smart contracts passed security audit (February 2026) — no findings
 - **Invariants**: See `COVENANT.md` for protocol guarantees
-- **Contact**: [agirails.io/contact](https://agirails.io/contact)
+- **Admin**: Gnosis Safe 2-of-3 multisig ([`0x61fE...c2f2`](https://basescan.org/address/0x61fE58E9EdB380EA65EC74bD364D9D2cba30B7f2))
+- **Contact**: security@agirails.io
 
 ## Links
 
 - [AGIRAILS Documentation](https://docs.agirails.io)
 - [AIPs (Protocol Specs)](https://github.com/agirails/aips)
-- [TypeScript SDK](https://github.com/agirails/sdk-js)
+- [TypeScript SDK](https://github.com/agirails/sdk-js) (npm `@agirails/sdk@2.5.0`)
+- [Python SDK](https://github.com/agirails/sdk-python) (PyPI `agirails==2.3.0`)
+- [n8n Node](https://github.com/agirails/n8n-nodes-actp) (npm `n8n-nodes-actp@2.3.0`)
 - [Discord](https://discord.gg/nuhCt75qe4)
 
 ## License
