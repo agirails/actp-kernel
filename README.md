@@ -67,7 +67,7 @@ forge coverage
 | EscrowVault | [`0x57f888261b629bB380dfb983f5DA6c70Ff2D49E5`](https://sepolia.basescan.org/address/0x57f888261b629bB380dfb983f5DA6c70Ff2D49E5) |
 | AgentRegistry | [`0xDd6D66924B43419F484aE981F174b803487AF25A`](https://sepolia.basescan.org/address/0xDd6D66924B43419F484aE981F174b803487AF25A) |
 | X402Relay | [`0x4DCD02b276Dbeab57c265B72435e90507b6Ac81A`](https://sepolia.basescan.org/address/0x4DCD02b276Dbeab57c265B72435e90507b6Ac81A) |
-| ArchiveTreasury | [`0xeB75DE7cF5ce77ab15BB0fFa3a2A79e6aaa554B0`](https://sepolia.basescan.org/address/0xeB75DE7cF5ce77ab15BB0fFa3a2A79e6aaa554B0) |
+| ArchiveTreasury | [`0xACB672de092beaAE2cd286dD61Cb2352AF7159F1`](https://sepolia.basescan.org/address/0xACB672de092beaAE2cd286dD61Cb2352AF7159F1) |
 | AGIRAILSIdentityRegistry | [`0xF64F748C7802a68Cb936a9213881fE74e83FDA97`](https://sepolia.basescan.org/address/0xF64F748C7802a68Cb936a9213881fE74e83FDA97) |
 | MockUSDC | [`0x444b4e1A65949AB2ac75979D5d0166Eb7A248Ccb`](https://sepolia.basescan.org/address/0x444b4e1A65949AB2ac75979D5d0166Eb7A248Ccb) |
 

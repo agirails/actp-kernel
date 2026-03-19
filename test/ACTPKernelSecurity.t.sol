@@ -155,7 +155,8 @@ contract ACTPKernelSecurityTest is Test {
         vm.prank(requester);
         kernel.transitionState(txId, IACTPKernel.State.SETTLED, "");
 
-        uint256 fee = (ONE_USDC * kernel.platformFeeBps()) / kernel.MAX_BPS();
+        uint256 bpsFee = (ONE_USDC * kernel.platformFeeBps()) / kernel.MAX_BPS();
+        uint256 fee = bpsFee > kernel.MIN_FEE() ? bpsFee : kernel.MIN_FEE();
         uint256 providerNet = ONE_USDC - fee;
         
         assertGt(providerNet, 0);
@@ -247,7 +248,8 @@ contract ACTPKernelSecurityTest is Test {
         kernel.transitionState(txId, IACTPKernel.State.SETTLED, proof);
 
         // Provider should receive both provider award (net of fee) + mediator award
-        uint256 providerFee = (providerAward * kernel.platformFeeBps()) / kernel.MAX_BPS();
+        uint256 bpsFee2 = (providerAward * kernel.platformFeeBps()) / kernel.MAX_BPS();
+        uint256 providerFee = bpsFee2 > kernel.MIN_FEE() ? bpsFee2 : kernel.MIN_FEE();
         uint256 expectedBalance = (providerAward - providerFee) + mediatorAward;
         
         assertEq(usdc.balanceOf(provider), expectedBalance);

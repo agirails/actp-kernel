@@ -425,6 +425,7 @@ contract H2_EmptyDisputeResolutionTest is Test {
     }
 
     function _calculateFee(uint256 amount) internal view returns (uint256) {
-        return (amount * kernel.platformFeeBps()) / kernel.MAX_BPS();
+        uint256 bpsFee = (amount * kernel.platformFeeBps()) / kernel.MAX_BPS();
+        return bpsFee > kernel.MIN_FEE() ? bpsFee : kernel.MIN_FEE();
     }
 }

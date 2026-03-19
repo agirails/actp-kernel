@@ -27,6 +27,7 @@ contract X402Relay is ReentrancyGuard {
 
     IERC20 public immutable usdc;
     address public admin;
+    address public pendingAdmin;
     address public feeRecipient;
     uint16 public platformFeeBps;
 
@@ -51,6 +52,7 @@ contract X402Relay is ReentrancyGuard {
     );
     event FeeRecipientUpdated(address indexed oldRecipient, address indexed newRecipient);
     event PlatformFeeBpsUpdated(uint16 oldBps, uint16 newBps);
+    event AdminTransferInitiated(address indexed currentAdmin, address indexed pendingAdmin);
     event AdminTransferred(address indexed oldAdmin, address indexed newAdmin);
 
     // ========================================================================
@@ -149,13 +151,23 @@ contract X402Relay is ReentrancyGuard {
     }
 
     /**
-     * @notice Transfer admin role.
+     * @notice Initiate two-step admin transfer. New admin must call acceptAdmin().
      */
     function transferAdmin(address newAdmin) external onlyAdmin {
         require(newAdmin != address(0), "Zero admin");
-        address old = admin;
-        admin = newAdmin;
-        emit AdminTransferred(old, newAdmin);
+        pendingAdmin = newAdmin;
+        emit AdminTransferInitiated(admin, newAdmin);
+    }
+
+    /**
+     * @notice Accept admin transfer. Must be called by the pending admin.
+     */
+    function acceptAdmin() external {
+        require(msg.sender == pendingAdmin, "Not pending admin");
+        address oldAdmin = admin;
+        admin = pendingAdmin;
+        delete pendingAdmin;
+        emit AdminTransferred(oldAdmin, admin);
     }
 
     // ========================================================================

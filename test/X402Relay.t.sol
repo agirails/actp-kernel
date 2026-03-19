@@ -20,6 +20,7 @@ contract X402RelayTest is Test {
     );
     event PlatformFeeBpsUpdated(uint16 oldBps, uint16 newBps);
     event AdminTransferred(address indexed oldAdmin, address indexed newAdmin);
+    event AdminTransferInitiated(address indexed currentAdmin, address indexed pendingAdmin);
 
     X402Relay relay;
     MockUSDC usdc;
@@ -261,10 +262,21 @@ contract X402RelayTest is Test {
     function test_transferAdmin_works() external {
         address newAdmin = address(0x999);
 
+        // SC-3: Two-step admin transfer — transferAdmin only sets pendingAdmin
+        vm.expectEmit(true, true, false, false);
+        emit AdminTransferInitiated(admin, newAdmin);
+        relay.transferAdmin(newAdmin);
+
+        // Admin hasn't changed yet
+        assertEq(relay.admin(), admin);
+
+        // Step 2: newAdmin accepts
+        vm.prank(newAdmin);
+
         vm.expectEmit(true, true, false, false);
         emit AdminTransferred(admin, newAdmin);
+        relay.acceptAdmin();
 
-        relay.transferAdmin(newAdmin);
         assertEq(relay.admin(), newAdmin);
     }
 

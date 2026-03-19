@@ -243,6 +243,7 @@ contract AgentRegistry is IAgentRegistry, ReentrancyGuard {
         require(didBytes.length >= 20 && didBytes.length <= 100, "Invalid DID length");
 
         address agentAddress = didToAddress[did];
+        require(agentAddress != address(0), "DID not registered");
         return agents[agentAddress];
     }
 

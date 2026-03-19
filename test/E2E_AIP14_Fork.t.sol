@@ -27,6 +27,10 @@ contract E2E_AIP14_Fork is Test {
     uint256 constant TX_AMOUNT = 100_000_000; // $100
 
     function setUp() public {
+        // Skip if not running with --fork-url (no code at deployed addresses)
+        if (address(kernel).code.length == 0) {
+            vm.skip(true);
+        }
         // Mint and approve for requester
         usdc.mint(requester, 10_000_000_000);
         vm.prank(requester);

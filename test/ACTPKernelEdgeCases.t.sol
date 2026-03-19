@@ -294,12 +294,10 @@ contract ACTPKernelEdgeCasesTest is Test {
         assertEq(pendingPenalty, maxPenalty);
     }
 
-    function testEconomicParamZeroFeeAllowed() external {
+    function testEconomicParamZeroFeeRevertsAfterSC7() external {
+        // SC-7: Zero fee is no longer allowed — _validatePlatformFee requires newFee > 0
+        vm.expectRevert("Fee cannot be zero");
         kernel.scheduleEconomicParams(0, 500);
-
-        (uint16 pendingFee, , , bool active) = kernel.getPendingEconomicParams();
-        assertTrue(active);
-        assertEq(pendingFee, 0);
     }
 
     function testEconomicParamZeroPenaltyAllowed() external {
@@ -342,7 +340,8 @@ contract ACTPKernelEdgeCasesTest is Test {
         bytes memory resolution = abi.encode(0, ONE_USDC); // requester gets 0, provider gets all
         kernel.transitionState(txId, IACTPKernel.State.SETTLED, resolution);
 
-        uint256 fee = (ONE_USDC * kernel.platformFeeBps()) / kernel.MAX_BPS();
+        uint256 bpsFee = (ONE_USDC * kernel.platformFeeBps()) / kernel.MAX_BPS();
+        uint256 fee = bpsFee > kernel.MIN_FEE() ? bpsFee : kernel.MIN_FEE();
         assertEq(usdc.balanceOf(provider), ONE_USDC - fee);
         assertEq(usdc.balanceOf(requester), 10_000_000 - ONE_USDC);
     }

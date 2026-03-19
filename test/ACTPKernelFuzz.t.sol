@@ -82,7 +82,8 @@ contract ACTPKernelFuzzTest is Test {
 
     function testFuzzEconomicParams(uint16 platformFeeBps, uint16 requesterPenaltyBps) external {
         // Bound to valid ranges
-        platformFeeBps = uint16(bound(uint256(platformFeeBps), 0, kernel.MAX_PLATFORM_FEE_CAP()));
+        // SC-7: Zero fee no longer allowed, bound to [1, MAX_PLATFORM_FEE_CAP]
+        platformFeeBps = uint16(bound(uint256(platformFeeBps), 1, kernel.MAX_PLATFORM_FEE_CAP()));
         requesterPenaltyBps = uint16(bound(uint256(requesterPenaltyBps), 0, kernel.MAX_REQUESTER_PENALTY_CAP()));
 
         // Schedule
@@ -145,13 +146,13 @@ contract ACTPKernelFuzzTest is Test {
         vm.prank(provider);
         kernel.transitionState(txId, IACTPKernel.State.IN_PROGRESS, "");
 
-        uint256 milestone = bound(uint256(milestoneRaw), 1, ONE_USDC);
+        // MIN_FEE enforced: milestone must be > MIN_FEE to avoid "Fee exceeds amount"
+        uint256 milestone = bound(uint256(milestoneRaw), kernel.MIN_FEE() + 1, ONE_USDC);
 
         vm.prank(requester);
         kernel.releaseMilestone(txId, milestone);
 
-        uint256 fee = (milestone * kernel.platformFeeBps()) / kernel.MAX_BPS();
-        uint256 providerNet = milestone - fee;
+        (uint256 providerNet, uint256 fee) = _splitAmount(milestone);
 
         assertEq(usdc.balanceOf(provider), providerNet);
         assertEq(usdc.balanceOf(feeCollector), fee);
@@ -212,7 +213,8 @@ contract ACTPKernelFuzzTest is Test {
     }
 
     function _splitAmount(uint256 amount) internal view returns (uint256 providerNet, uint256 fee) {
-        fee = (amount * kernel.platformFeeBps()) / kernel.MAX_BPS();
+        uint256 bpsFee = (amount * kernel.platformFeeBps()) / kernel.MAX_BPS();
+        fee = bpsFee > kernel.MIN_FEE() ? bpsFee : kernel.MIN_FEE();
         providerNet = amount - fee;
     }
 }

@@ -364,11 +364,11 @@ contract AgentRegistryTest is Test {
         registry.getAgentByDID(string(longDid));
     }
 
-    function testGetAgentByDIDReturnsZeroForUnregistered() external {
+    function testGetAgentByDIDRevertsForUnregistered() external {
+        // SC-9: getAgentByDID now reverts for unknown DIDs instead of returning zero-struct
         string memory fakeDid = "did:ethr:12345:0x0000000000000000000000000000000000000001";
-        IAgentRegistry.AgentProfile memory profile = registry.getAgentByDID(fakeDid);
-        assertEq(profile.agentAddress, address(0));
-        assertEq(profile.registeredAt, 0);
+        vm.expectRevert("DID not registered");
+        registry.getAgentByDID(fakeDid);
     }
 
     // ============================================
