@@ -68,6 +68,8 @@ interface IACTPKernel {
 
     event EscrowMilestoneReleased(bytes32 indexed transactionId, uint256 amount, uint256 timestamp);
 
+    event QuoteAccepted(bytes32 indexed transactionId, uint256 oldAmount, uint256 newAmount, uint256 timestamp);
+
     event PlatformFeeAccrued(
         bytes32 indexed transactionId,
         address indexed recipient,
@@ -152,6 +154,9 @@ interface IACTPKernel {
     function transitionState(bytes32 transactionId, State newState, bytes calldata proof) external;
 
     function getTransaction(bytes32 transactionId) external view returns (TransactionView memory);
+
+
+    function acceptQuote(bytes32 transactionId, uint256 newAmount) external;
 
     function linkEscrow(bytes32 transactionId, address escrowContract, bytes32 escrowId) external;
 

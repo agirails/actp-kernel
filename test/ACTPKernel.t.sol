@@ -56,7 +56,8 @@ contract ACTPKernelTest is Test {
     }
 
     function _splitAmount(uint256 amount) internal view returns (uint256 providerNet, uint256 fee) {
-        fee = (amount * kernel.platformFeeBps()) / kernel.MAX_BPS();
+        uint256 bpsFee = (amount * kernel.platformFeeBps()) / kernel.MAX_BPS();
+        fee = bpsFee > kernel.MIN_FEE() ? bpsFee : kernel.MIN_FEE();
         providerNet = amount - fee;
     }
 
@@ -468,11 +469,13 @@ contract ACTPKernelTest is Test {
 
     function testAIP5_FeeChangeDoesNotAffectExisting() external {
         uint16 originalFee = kernel.platformFeeBps(); // 100 bps = 1%
+        uint256 TEN_USDC = 10 * ONE_USDC; // Use 10 USDC so 1% = 100K > MIN_FEE = 50K
 
         // Create transaction with original fee (1%)
-        bytes32 txId = _createBaseTx();
+        vm.prank(requester);
+        bytes32 txId = kernel.createTransaction(provider, requester, TEN_USDC, block.timestamp + 1 days, 2 days, keccak256("aip5test1fee"), 0, 0);
         bytes32 escrowId = keccak256("aip5test1");
-        _commit(txId, escrowId, ONE_USDC);
+        _commit(txId, escrowId, TEN_USDC);
         _deliver(txId, 1 days);
 
         // Change platform fee to 2%
@@ -492,9 +495,10 @@ contract ACTPKernelTest is Test {
         vm.prank(requester);
         kernel.transitionState(txId, IACTPKernel.State.SETTLED, "");
 
-        // Expected: 1% fee on 1 USDC = 0.01 USDC
-        uint256 expectedFee = (ONE_USDC * originalFee) / 10000;
-        uint256 expectedProviderAmount = ONE_USDC - expectedFee;
+        // Expected: 1% fee on 10 USDC = 0.10 USDC (100K > MIN_FEE 50K)
+        uint256 bpsFee = (TEN_USDC * originalFee) / 10000;
+        uint256 expectedFee = bpsFee > kernel.MIN_FEE() ? bpsFee : kernel.MIN_FEE();
+        uint256 expectedProviderAmount = TEN_USDC - expectedFee;
 
         assertEq(usdc.balanceOf(provider), expectedProviderAmount, "Provider should get 99% (1% original fee)");
         assertEq(usdc.balanceOf(feeCollector), expectedFee, "Fee collector should get 1% original fee");
@@ -526,12 +530,15 @@ contract ACTPKernelTest is Test {
     }
 
     function testAIP5_SettlementUsesLockedFee() external {
+        uint256 TEN_USDC = 10 * ONE_USDC; // Use 10 USDC so 1% = 100K > MIN_FEE = 50K
+
         // Create transaction with 1% fee
-        bytes32 txId = _createBaseTx();
+        vm.prank(requester);
+        bytes32 txId = kernel.createTransaction(provider, requester, TEN_USDC, block.timestamp + 1 days, 2 days, keccak256("aip5settlement-svc"), 0, 0);
         uint16 lockedFee = kernel.platformFeeBps(); // 100 bps = 1%
 
         bytes32 escrowId = keccak256("aip5settlement");
-        _commit(txId, escrowId, ONE_USDC);
+        _commit(txId, escrowId, TEN_USDC);
         _deliver(txId, 1 days);
 
         // Change fee to 5% (max)
@@ -545,23 +552,27 @@ contract ACTPKernelTest is Test {
         kernel.transitionState(txId, IACTPKernel.State.SETTLED, "");
 
         // Should use locked 1% fee, not current 5%
-        uint256 expectedFee = (ONE_USDC * lockedFee) / 10000; // 1% of 1 USDC
-        uint256 expectedProviderAmount = ONE_USDC - expectedFee;
+        uint256 bpsFee = (TEN_USDC * lockedFee) / 10000; // 1% of 10 USDC = 100K
+        uint256 expectedFee = bpsFee > kernel.MIN_FEE() ? bpsFee : kernel.MIN_FEE();
+        uint256 expectedProviderAmount = TEN_USDC - expectedFee;
 
         assertEq(usdc.balanceOf(provider), expectedProviderAmount, "Provider should get amount with 1% fee deducted");
         assertEq(usdc.balanceOf(feeCollector), expectedFee, "Fee should be 1%, not 5%");
 
-        // Verify fee collector got 1% (0.01 USDC), not 5% (0.05 USDC)
-        assertEq(usdc.balanceOf(feeCollector), ONE_USDC / 100, "Fee collector should receive exactly 1% (0.01 USDC)");
+        // Verify fee collector got 1% (0.10 USDC = 100K), not 5% (0.50 USDC = 500K)
+        assertEq(usdc.balanceOf(feeCollector), TEN_USDC / 100, "Fee collector should receive exactly 1% (0.10 USDC)");
     }
 
     function testAIP5_MilestoneReleaseUsesLockedFee() external {
+        uint256 TEN_USDC = 10 * ONE_USDC; // Use 10 USDC so 1% > MIN_FEE
+
         // Create transaction with 1% fee
-        bytes32 txId = _createBaseTx();
+        vm.prank(requester);
+        bytes32 txId = kernel.createTransaction(provider, requester, TEN_USDC, block.timestamp + 1 days, 2 days, keccak256("aip5milestone-svc"), 0, 0);
         uint16 lockedFee = kernel.platformFeeBps(); // 100 bps = 1%
 
         bytes32 escrowId = keccak256("aip5milestone");
-        _commit(txId, escrowId, ONE_USDC);
+        _commit(txId, escrowId, TEN_USDC);
 
         // Transition to IN_PROGRESS (required for milestone release)
         vm.prank(provider);
@@ -572,16 +583,140 @@ contract ACTPKernelTest is Test {
         vm.warp(block.timestamp + 2 days + 1);
         kernel.executeEconomicParamsUpdate();
 
-        // Release 50% milestone
-        uint256 milestoneAmount = ONE_USDC / 2;
+        // Release 50% milestone (5 USDC — 1% = 50K = MIN_FEE, so bpsFee == MIN_FEE)
+        uint256 milestoneAmount = TEN_USDC / 2;
         vm.prank(requester);
         kernel.releaseMilestone(txId, milestoneAmount);
 
         // Should use locked 1% fee on milestone, not current 3%
-        uint256 expectedFee = (milestoneAmount * lockedFee) / 10000; // 1% of 0.5 USDC
+        uint256 bpsFee = (milestoneAmount * lockedFee) / 10000; // 1% of 5 USDC = 50K
+        uint256 expectedFee = bpsFee > kernel.MIN_FEE() ? bpsFee : kernel.MIN_FEE();
         uint256 expectedProviderAmount = milestoneAmount - expectedFee;
 
         assertEq(usdc.balanceOf(provider), expectedProviderAmount, "Milestone should use 1% locked fee");
         assertEq(usdc.balanceOf(feeCollector), expectedFee, "Milestone fee should be 1%, not 3%");
     }
+
+    // === ACCEPT QUOTE TESTS ===
+
+    function _acceptQuote(bytes32 txId, uint256 newAmount) internal {
+        vm.prank(requester);
+        kernel.acceptQuote(txId, newAmount);
+    }
+
+    function testAcceptQuote_basic() external {
+        bytes32 txId = _createBaseTx();
+        _quote(txId);
+
+        uint256 newAmount = 2 * ONE_USDC;
+        _acceptQuote(txId, newAmount);
+
+        IACTPKernel.TransactionView memory txView = kernel.getTransaction(txId);
+        assertEq(txView.amount, newAmount, "Amount should be updated");
+        assertGt(txView.updatedAt, 0, "updatedAt should be set");
+    }
+
+    function testAcceptQuote_thenLinkEscrow() external {
+        bytes32 txId = _createBaseTx();
+        _quote(txId);
+
+        uint256 newAmount = 5 * ONE_USDC;
+        _acceptQuote(txId, newAmount);
+
+        // Fund requester extra for increased amount
+        usdc.mint(requester, 10 * ONE_USDC);
+
+        bytes32 escrowId = keccak256("escrowAcceptQuote");
+        _commit(txId, escrowId, newAmount);
+
+        IACTPKernel.TransactionView memory txView = kernel.getTransaction(txId);
+        assertEq(uint8(txView.state), uint8(IACTPKernel.State.COMMITTED), "Should be COMMITTED");
+        assertEq(txView.amount, newAmount, "Committed amount should match accepted quote");
+
+        // Verify escrow holds the new amount
+        (bool isActive, uint256 escrowAmount) = escrow.verifyEscrow(
+            escrowId, requester, provider, newAmount
+        );
+        assertTrue(isActive, "Escrow should be active");
+        assertEq(escrowAmount, newAmount, "Escrow should hold new amount");
+    }
+
+    function testAcceptQuote_multipleRounds() external {
+        bytes32 txId = _createBaseTx();
+        _quote(txId);
+
+        _acceptQuote(txId, 2 * ONE_USDC);
+        _acceptQuote(txId, 3 * ONE_USDC);
+
+        IACTPKernel.TransactionView memory txView = kernel.getTransaction(txId);
+        assertEq(txView.amount, 3 * ONE_USDC, "Last accepted amount should stick");
+    }
+
+    function testAcceptQuote_revertsNotQuoted() external {
+        bytes32 txId = _createBaseTx(); // INITIATED state
+
+        vm.prank(requester);
+        vm.expectRevert(bytes("Not quoted"));
+        kernel.acceptQuote(txId, 2 * ONE_USDC);
+    }
+
+    function testAcceptQuote_revertsNotRequester() external {
+        bytes32 txId = _createBaseTx();
+        _quote(txId);
+
+        vm.prank(provider);
+        vm.expectRevert(bytes("Only requester"));
+        kernel.acceptQuote(txId, 2 * ONE_USDC);
+    }
+
+    function testAcceptQuote_revertsBelowMinimum() external {
+        bytes32 txId = _createBaseTx();
+        _quote(txId);
+
+        vm.prank(requester);
+        vm.expectRevert(bytes("Below minimum"));
+        kernel.acceptQuote(txId, 0);
+    }
+
+    function testAcceptQuote_revertsAboveMaximum() external {
+        bytes32 txId = _createBaseTx();
+        _quote(txId);
+
+        vm.prank(requester);
+        vm.expectRevert(bytes("Above maximum"));
+        kernel.acceptQuote(txId, 1_000_000_001e6);
+    }
+
+    function testAcceptQuote_revertsExpired() external {
+        bytes32 txId = _createBaseTx();
+        _quote(txId);
+
+        vm.warp(block.timestamp + 8 days); // past 7-day deadline
+
+        vm.prank(requester);
+        vm.expectRevert(bytes("Expired"));
+        kernel.acceptQuote(txId, 2 * ONE_USDC);
+    }
+
+    function testAcceptQuote_feeBpsRelocked() external {
+        bytes32 txId = _createBaseTx();
+        uint16 originalFee = kernel.platformFeeBps(); // 100 bps = 1%
+
+        _quote(txId);
+
+        // Change fee to 2% via timelock
+        uint16 newFee = 200;
+        kernel.scheduleEconomicParams(newFee, kernel.requesterPenaltyBps());
+        vm.warp(block.timestamp + 2 days + 1);
+        kernel.executeEconomicParamsUpdate();
+        assertEq(kernel.platformFeeBps(), newFee, "Platform fee should be 2%");
+
+        // acceptQuote should re-lock to current 2%
+        _acceptQuote(txId, 2 * ONE_USDC);
+
+        IACTPKernel.TransactionView memory txView = kernel.getTransaction(txId);
+        assertEq(txView.platformFeeBpsLocked, newFee, "Fee should be re-locked to 2%");
+        assertTrue(txView.platformFeeBpsLocked != originalFee, "Should differ from original 1%");
+    }
+
 }

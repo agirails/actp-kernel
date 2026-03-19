@@ -52,9 +52,10 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
     uint256 public constant MAX_DISPUTE_WINDOW = 30 days;
     uint256 public constant MAX_BPS = 10_000;
     uint16 public constant MAX_PLATFORM_FEE_CAP = 500; // 5%
+    uint256 public constant MIN_FEE = 50_000; // $0.05 USDC (6 decimals)
     uint16 public constant MAX_REQUESTER_PENALTY_CAP = 5_000; // 50%
     uint16 public constant MAX_MEDIATOR_FEE_BPS = 1_000; // 10% max mediator fee
-    uint256 public constant MIN_TRANSACTION_AMOUNT = 50_000; // $0.05 USDC (6 decimals) - prevents spam
+    uint256 public constant MIN_TRANSACTION_AMOUNT = 50_000; // $0.05 USDC — anti-spam minimum (original value restored)
     uint256 public constant MAX_TRANSACTION_AMOUNT = 1_000_000_000e6; // 1B USDC (with 6 decimals)
     uint256 public constant MAX_DEADLINE = 365 days; // Maximum 1 year deadline
     uint256 public constant ECONOMIC_PARAM_DELAY = 2 days;
@@ -352,6 +353,24 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         emit StateTransitioned(transactionId, oldState, State.COMMITTED, msg.sender, block.timestamp);
     }
 
+
+    function acceptQuote(bytes32 transactionId, uint256 newAmount) external override whenNotPaused {
+        require(newAmount >= MIN_TRANSACTION_AMOUNT, "Below minimum");
+        require(newAmount <= MAX_TRANSACTION_AMOUNT, "Above maximum");
+
+        Transaction storage txn = _getTransaction(transactionId);
+        require(txn.state == State.QUOTED, "Not quoted");
+        require(msg.sender == txn.requester, "Only requester");
+        require(block.timestamp <= txn.deadline, "Expired");
+
+        uint256 oldAmount = txn.amount;
+        txn.amount = newAmount;
+        txn.platformFeeBpsLocked = platformFeeBps;
+        txn.updatedAt = block.timestamp;
+
+        emit QuoteAccepted(transactionId, oldAmount, newAmount, block.timestamp);
+    }
+
     function releaseMilestone(bytes32 transactionId, uint256 amount) external override whenNotPaused nonReentrant {
         require(amount > 0, "Amount zero");
         Transaction storage txn = _getTransaction(transactionId);
@@ -543,6 +562,9 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         delete pendingEconomicParams;
     }
 
+    /// @notice Execute a scheduled economic params update after timelock expires.
+    /// @dev Intentionally callable by anyone post-timelock — permissionless execution
+    /// prevents admin from holding back a scheduled update. Admin can cancel instead.
     function executeEconomicParamsUpdate() external override {
         PendingEconomicParams memory pending = pendingEconomicParams;
         require(pending.active, "No pending");
@@ -581,6 +603,8 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         if (fromState == State.COMMITTED && toState == State.IN_PROGRESS) return true;
         if (fromState == State.IN_PROGRESS && toState == State.DELIVERED) return true;
         if (fromState == State.DELIVERED && (toState == State.SETTLED || toState == State.DISPUTED)) return true;
+        // Note: DELIVERED → CANCELLED is intentionally omitted. Post-delivery cancellation
+        // must go through DISPUTED → CANCELLED to ensure fair resolution with mediator involvement.
         if (fromState == State.DISPUTED && (toState == State.SETTLED || toState == State.CANCELLED)) return true;
         if (
             (fromState == State.INITIATED || fromState == State.QUOTED || fromState == State.COMMITTED
@@ -592,8 +616,7 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
     function _enforceAuthorization(Transaction storage txn, State fromState, State toState) internal view {
         if (fromState == State.INITIATED && toState == State.QUOTED) {
             require(msg.sender == txn.provider, "Only provider");
-        } else if (fromState == State.QUOTED && toState == State.COMMITTED) {
-            require(msg.sender == txn.requester, "Only requester");
+        // Note: QUOTED → COMMITTED is handled by linkEscrow(), not transitionState()
         } else if (fromState == State.COMMITTED && toState == State.IN_PROGRESS) {
             require(msg.sender == txn.provider, "Only provider");
         } else if (fromState == State.IN_PROGRESS && toState == State.DELIVERED) {
@@ -619,8 +642,10 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
     }
 
     function _enforceTiming(Transaction storage txn, State fromState, State toState) internal view {
-        // Enforce deadline for all forward progressions (not cancellation or dispute)
-        if (toState != State.CANCELLED && toState != State.DISPUTED) {
+        // Enforce deadline for forward progressions (not cancellation, dispute, or settlement)
+        // I-1 fix: DELIVERED → SETTLED is exempt from deadline — delivery is confirmed,
+        // blocking settlement after deadline serves no purpose and forces unnecessary disputes.
+        if (toState != State.CANCELLED && toState != State.DISPUTED && toState != State.SETTLED) {
             require(block.timestamp <= txn.deadline, "Transaction expired");
         }
 
@@ -632,7 +657,7 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         if (fromState == State.COMMITTED && toState == State.CANCELLED) {
             // Provider can cancel anytime (voluntary refund), requester must wait for deadline
             if (msg.sender == txn.requester) {
-                require(block.timestamp > txn.deadline, "Deadline not reached");
+                require(block.timestamp >= txn.deadline, "Deadline not reached");
             }
             // Provider (msg.sender == txn.provider) can cancel immediately without penalty
         }
@@ -848,6 +873,8 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
             return;
         }
 
+        // Provider cancellation from COMMITTED or IN_PROGRESS: full refund to requester.
+        // Provider's penalty is implicit — they forfeit any work effort and earn nothing.
         _refundRequester(txn, vault, remaining);
     }
 
@@ -1018,10 +1045,12 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
      * @param lockedFeeBps Locked platform fee basis points from transaction creation
      */
     function _calculateFee(uint256 grossAmount, uint16 lockedFeeBps) internal pure returns (uint256) {
-        return (grossAmount * lockedFeeBps) / MAX_BPS;
+        uint256 bpsFee = (grossAmount * lockedFeeBps) / MAX_BPS;
+        return bpsFee > MIN_FEE ? bpsFee : MIN_FEE;
     }
 
     function _validatePlatformFee(uint16 newFee) internal pure {
+        require(newFee > 0, "Fee cannot be zero");
         require(newFee <= MAX_PLATFORM_FEE_CAP, "Fee cap");
     }
 
