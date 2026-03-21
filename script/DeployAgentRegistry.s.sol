@@ -14,7 +14,7 @@ import "../src/registry/AgentRegistry.sol";
  */
 contract DeployAgentRegistry is Script {
     // Base Sepolia ACTPKernel address
-    address constant ACTP_KERNEL = 0x469CBADbACFFE096270594F0a31f0EEC53753411;
+    address constant ACTP_KERNEL = 0x0ba0b17554601b30F5406e74d2208f567C12CcFE;
 
     function run() external {
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
