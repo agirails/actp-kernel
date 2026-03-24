@@ -56,17 +56,31 @@
       "constructorArgs": {}
     },
     "ArchiveTreasury": {
-      "address": "0xACB672de092beaAE2cd286dD61Cb2352AF7159F1",
+      "address": "0x7BeE0Ce574643E204FE3EDde76Cd0338B43D9798",
       "verified": true,
-      "explorerUrl": "https://sepolia.basescan.org/address/0xACB672de092beaAE2cd286dD61Cb2352AF7159F1",
+      "verifiedOn": "sourcify",
+      "sourcifyUrl": "https://sourcify.dev/#/lookup/0x7BeE0Ce574643E204FE3EDde76Cd0338B43D9798",
+      "explorerUrl": "https://sepolia.basescan.org/address/0x7BeE0Ce574643E204FE3EDde76Cd0338B43D9798",
       "constructorArgs": {
         "usdc": "0x444b4e1A65949AB2ac75979D5d0166Eb7A248Ccb",
-        "kernel": "0x469CBADbACFFE096270594F0a31f0EEC53753411",
+        "kernel": "0x0ba0b17554601b30F5406e74d2208f567C12CcFE",
         "uploader": "0x42a2f11555b9363fb7ebdcdc76d7cb26e01dcb00"
       },
-      "note": "V2 - deployed 2026-02-20 with old kernel immutable. Needs redeploy to use new kernel.",
+      "note": "V3 - redeployed 2026-03-24 with new kernel 0x0ba0b. Previous: 0xACB672 (old kernel immutable)."
+    },
+    "X402Relay": {
+      "address": "0x0804FC3c04214bC9036E126554aF7EE24d589988",
+      "verified": true,
       "verifiedOn": "sourcify",
-      "sourcifyUrl": "https://sourcify.dev/#/lookup/0xACB672de092beaAE2cd286dD61Cb2352AF7159F1"
+      "sourcifyUrl": "https://sourcify.dev/#/lookup/0x0804FC3c04214bC9036E126554aF7EE24d589988",
+      "explorerUrl": "https://sepolia.basescan.org/address/0x0804FC3c04214bC9036E126554aF7EE24d589988",
+      "constructorArgs": {
+        "usdc": "0x444b4e1A65949AB2ac75979D5d0166Eb7A248Ccb",
+        "treasury": "0x866ECF4b0E79EA6095c19e4adA4Ed872373fF6b7",
+        "feeBps": 100,
+        "admin": "0x42a2f11555b9363fb7ebdcdc76d7cb26e01dcb00"
+      },
+      "note": "Deployed 2026-03-24. Previous Sepolia: 0x4DCD02b276Dbeab57c265B72435e90507b6Ac81A."
     }
   },
   "treasury": {
