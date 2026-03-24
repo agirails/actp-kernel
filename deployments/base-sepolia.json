@@ -13,7 +13,7 @@
     },
     "ACTPKernel": {
       "address": "0x0ba0b17554601b30F5406e74d2208f567C12CcFE",
-      "verified": false,
+      "verified": true,
       "explorerUrl": "https://sepolia.basescan.org/address/0x0ba0b17554601b30F5406e74d2208f567C12CcFE",
       "constructorArgs": {
         "admin": "0x42a2f11555b9363fb7ebdcdc76d7cb26e01dcb00",
@@ -22,24 +22,30 @@
         "agentRegistry": "0x0000000000000000000000000000000000000000",
         "usdc": "0x444b4e1A65949AB2ac75979D5d0166Eb7A248Ccb"
       },
-      "note": "Redeployed 2026-03-21 with AIP-14 8-param createTransaction + acceptQuote + MIN_FEE + deadline fixes"
+      "note": "Redeployed 2026-03-21 with AIP-14 8-param createTransaction + acceptQuote + MIN_FEE + deadline fixes",
+      "verifiedOn": "sourcify",
+      "sourcifyUrl": "https://sourcify.dev/#/lookup/0x0ba0b17554601b30F5406e74d2208f567C12CcFE"
     },
     "EscrowVault": {
       "address": "0xedC62264301A119207f1f89C6bDE4Fd7a7A4CeB4",
-      "verified": false,
+      "verified": true,
       "explorerUrl": "https://sepolia.basescan.org/address/0xedC62264301A119207f1f89C6bDE4Fd7a7A4CeB4",
       "constructorArgs": {
         "token": "0x444b4e1A65949AB2ac75979D5d0166Eb7A248Ccb",
         "kernel": "0x0ba0b17554601b30F5406e74d2208f567C12CcFE"
-      }
+      },
+      "verifiedOn": "sourcify",
+      "sourcifyUrl": "https://sourcify.dev/#/lookup/0xedC62264301A119207f1f89C6bDE4Fd7a7A4CeB4"
     },
     "AgentRegistry": {
       "address": "0x55e7F23AB5700fD0D9f83294be2d0F2eC84013E1",
-      "verified": false,
+      "verified": true,
       "explorerUrl": "https://sepolia.basescan.org/address/0x55e7F23AB5700fD0D9f83294be2d0F2eC84013E1",
       "constructorArgs": {
         "actpKernel": "0x0ba0b17554601b30F5406e74d2208f567C12CcFE"
-      }
+      },
+      "verifiedOn": "sourcify",
+      "sourcifyUrl": "https://sourcify.dev/#/lookup/0x55e7F23AB5700fD0D9f83294be2d0F2eC84013E1"
     },
     "AGIRAILSIdentityRegistry": {
       "address": "0xF64F748C7802a68Cb936a9213881fE74e83FDA97",
@@ -51,14 +57,16 @@
     },
     "ArchiveTreasury": {
       "address": "0xACB672de092beaAE2cd286dD61Cb2352AF7159F1",
-      "verified": false,
+      "verified": true,
       "explorerUrl": "https://sepolia.basescan.org/address/0xACB672de092beaAE2cd286dD61Cb2352AF7159F1",
       "constructorArgs": {
         "usdc": "0x444b4e1A65949AB2ac75979D5d0166Eb7A248Ccb",
         "kernel": "0x469CBADbACFFE096270594F0a31f0EEC53753411",
         "uploader": "0x42a2f11555b9363fb7ebdcdc76d7cb26e01dcb00"
       },
-      "note": "V2 - deployed 2026-02-20 with old kernel immutable. Needs redeploy to use new kernel."
+      "note": "V2 - deployed 2026-02-20 with old kernel immutable. Needs redeploy to use new kernel.",
+      "verifiedOn": "sourcify",
+      "sourcifyUrl": "https://sourcify.dev/#/lookup/0xACB672de092beaAE2cd286dD61Cb2352AF7159F1"
     }
   },
   "treasury": {

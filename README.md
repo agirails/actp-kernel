@@ -63,8 +63,8 @@ forge coverage
 
 | Contract | Address |
 |----------|---------|
-| ACTPKernel | [`0x469CBADbACFFE096270594F0a31f0EEC53753411`](https://sepolia.basescan.org/address/0x469CBADbACFFE096270594F0a31f0EEC53753411) |
-| EscrowVault | [`0x57f888261b629bB380dfb983f5DA6c70Ff2D49E5`](https://sepolia.basescan.org/address/0x57f888261b629bB380dfb983f5DA6c70Ff2D49E5) |
+| ACTPKernel | [`0x0ba0b17554601b30F5406e74d2208f567C12CcFE`](https://sepolia.basescan.org/address/0x0ba0b17554601b30F5406e74d2208f567C12CcFE) |
+| EscrowVault | [`0xedC62264301A119207f1f89C6bDE4Fd7a7A4CeB4`](https://sepolia.basescan.org/address/0xedC62264301A119207f1f89C6bDE4Fd7a7A4CeB4) |
 | AgentRegistry | [`0xDd6D66924B43419F484aE981F174b803487AF25A`](https://sepolia.basescan.org/address/0xDd6D66924B43419F484aE981F174b803487AF25A) |
 | X402Relay | [`0x4DCD02b276Dbeab57c265B72435e90507b6Ac81A`](https://sepolia.basescan.org/address/0x4DCD02b276Dbeab57c265B72435e90507b6Ac81A) |
 | ArchiveTreasury | [`0xACB672de092beaAE2cd286dD61Cb2352AF7159F1`](https://sepolia.basescan.org/address/0xACB672de092beaAE2cd286dD61Cb2352AF7159F1) |

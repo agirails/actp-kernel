@@ -3,8 +3,8 @@
 ## Deployed Contracts
 
 - **Network**: Base Sepolia (Chain ID: 84532)
-- **ACTPKernel**: `0x469CBADbACFFE096270594F0a31f0EEC53753411`
-- **EscrowVault**: `0x57f888261b629bB380dfb983f5DA6c70Ff2D49E5`
+- **ACTPKernel**: `0x0ba0b17554601b30F5406e74d2208f567C12CcFE`
+- **EscrowVault**: `0xedC62264301A119207f1f89C6bDE4Fd7a7A4CeB4`
 - **MockUSDC**: `0x444b4e1A65949AB2ac75979D5d0166Eb7A248Ccb`
 
 ## E2E Test Results
@@ -52,8 +52,8 @@
    BASE_SEPOLIA_RPC=https://sepolia.base.org
 
    # Deployed contract addresses (already in networks.ts)
-   ACTP_KERNEL=0x469CBADbACFFE096270594F0a31f0EEC53753411
-   ESCROW_VAULT=0x57f888261b629bB380dfb983f5DA6c70Ff2D49E5
+   ACTP_KERNEL=0x0ba0b17554601b30F5406e74d2208f567C12CcFE
+   ESCROW_VAULT=0xedC62264301A119207f1f89C6bDE4Fd7a7A4CeB4
    MOCK_USDC=0x444b4e1A65949AB2ac75979D5d0166Eb7A248Ccb
 
    # Deployed contract addresses (already in networks.ts)
@@ -68,7 +68,7 @@
 
 ```bash
 # Check if ACTPKernel is deployed
-cast code 0x469CBADbACFFE096270594F0a31f0EEC53753411 --rpc-url https://sepolia.base.org
+cast code 0x0ba0b17554601b30F5406e74d2208f567C12CcFE --rpc-url https://sepolia.base.org
 
 # Should return bytecode (not 0x)
 # If returns "0x" → Contract not deployed or wrong address
@@ -78,20 +78,20 @@ cast code 0x469CBADbACFFE096270594F0a31f0EEC53753411 --rpc-url https://sepolia.b
 
 ```bash
 # Read public variables from ACTPKernel
-cast call 0x469CBADbACFFE096270594F0a31f0EEC53753411 "admin()(address)" --rpc-url https://sepolia.base.org
+cast call 0x0ba0b17554601b30F5406e74d2208f567C12CcFE "admin()(address)" --rpc-url https://sepolia.base.org
 
-cast call 0x469CBADbACFFE096270594F0a31f0EEC53753411 "paused()(bool)" --rpc-url https://sepolia.base.org
+cast call 0x0ba0b17554601b30F5406e74d2208f567C12CcFE "paused()(bool)" --rpc-url https://sepolia.base.org
 
-cast call 0x469CBADbACFFE096270594F0a31f0EEC53753411 "platformFeeBps()(uint16)" --rpc-url https://sepolia.base.org
+cast call 0x0ba0b17554601b30F5406e74d2208f567C12CcFE "platformFeeBps()(uint16)" --rpc-url https://sepolia.base.org
 ```
 
 ### 3. Check EscrowVault Link
 
 ```bash
 # Check if EscrowVault knows about Kernel
-cast call 0x57f888261b629bB380dfb983f5DA6c70Ff2D49E5 "kernel()(address)" --rpc-url https://sepolia.base.org
+cast call 0xedC62264301A119207f1f89C6bDE4Fd7a7A4CeB4 "kernel()(address)" --rpc-url https://sepolia.base.org
 
-# Should return ACTPKernel address: 0x469CBADbACFFE096270594F0a31f0EEC53753411
+# Should return ACTPKernel address: 0x0ba0b17554601b30F5406e74d2208f567C12CcFE
 ```
 
 ### 4. Check MockUSDC
@@ -229,13 +229,13 @@ npx ts-node test-deployment.ts
 ## Monitoring & Debugging
 
 **View transactions on Basescan**:
-- ACTPKernel: https://sepolia.basescan.org/address/0x469CBADbACFFE096270594F0a31f0EEC53753411
-- EscrowVault: https://sepolia.basescan.org/address/0x57f888261b629bB380dfb983f5DA6c70Ff2D49E5
+- ACTPKernel: https://sepolia.basescan.org/address/0x0ba0b17554601b30F5406e74d2208f567C12CcFE
+- EscrowVault: https://sepolia.basescan.org/address/0xedC62264301A119207f1f89C6bDE4Fd7a7A4CeB4
 
 **Monitor events**:
 ```bash
 # Watch for TransactionCreated events
-cast logs --address 0x469CBADbACFFE096270594F0a31f0EEC53753411 \
+cast logs --address 0x0ba0b17554601b30F5406e74d2208f567C12CcFE \
   --rpc-url https://sepolia.base.org \
   'TransactionCreated(bytes32,address,address,uint256,bytes32,uint256,uint256,uint256)'
 ```
@@ -254,8 +254,8 @@ After deploying or redeploying any contract, **add it to both paymaster allowlis
 
 | Contract | Base Sepolia | Base Mainnet |
 |----------|-------------|-------------|
-| ACTPKernel | `0x469CBADbACFFE096270594F0a31f0EEC53753411` | `0x132B9eB321dBB57c828B083844287171BDC92d29` |
-| EscrowVault | `0x57f888261b629bB380dfb983f5DA6c70Ff2D49E5` | `0x6aAF45882c4b0dD34130ecC790bb5Ec6be7fFb99` |
+| ACTPKernel | `0x0ba0b17554601b30F5406e74d2208f567C12CcFE` | `0x132B9eB321dBB57c828B083844287171BDC92d29` |
+| EscrowVault | `0xedC62264301A119207f1f89C6bDE4Fd7a7A4CeB4` | `0x6aAF45882c4b0dD34130ecC790bb5Ec6be7fFb99` |
 | USDC (MockUSDC on testnet) | `0x444b4e1A65949AB2ac75979D5d0166Eb7A248Ccb` | `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` |
 | AgentRegistry | `0xDd6D66924B43419F484aE981F174b803487AF25A` | `0x6fB222CF3DDdf37Bcb248EE7BBBA42Fb41901de8` |
 | X402Relay | `0x4DCD02b276Dbeab57c265B72435e90507b6Ac81A` | `0x81DFb954A3D58FEc24Fc9c946aC2C71a911609F8` |

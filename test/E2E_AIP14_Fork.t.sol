@@ -16,8 +16,8 @@ import "../src/interfaces/IACTPKernel.sol";
  *   forge test --match-contract E2E_AIP14_Fork --fork-url $BASE_SEPOLIA_RPC -vvv
  */
 contract E2E_AIP14_Fork is Test {
-    ACTPKernel kernel = ACTPKernel(0x480980041f1cfE4750E4B30FFbff160f6ef230e3);
-    EscrowVault escrow = EscrowVault(0xc6D6C06bc65c212915b6Cbb3d8abB287F4b17C7D);
+    ACTPKernel kernel = ACTPKernel(0x0ba0b17554601b30F5406e74d2208f567C12CcFE);
+    EscrowVault escrow = EscrowVault(0xedC62264301A119207f1f89C6bDE4Fd7a7A4CeB4);
     MockUSDC usdc = MockUSDC(0x444b4e1A65949AB2ac75979D5d0166Eb7A248Ccb);
 
     address admin = 0x42a2f11555B9363fB7eBDcdc76D7Cb26e01dCB00;
