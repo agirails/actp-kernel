@@ -2,7 +2,7 @@
 
 [![Solidity](https://img.shields.io/badge/Solidity-0.8.20-blue.svg)](https://soliditylang.org/)
 [![Foundry](https://img.shields.io/badge/Foundry-Framework-orange.svg)](https://book.getfoundry.sh/)
-[![Tests](https://img.shields.io/badge/tests-429%20passed-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/tests-469%20passed-brightgreen.svg)]()
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
 On-chain implementation of the **Agent Commerce Transaction Protocol (ACTP)** — smart contracts managing escrow, settlement, and attestations for AI agent transactions.
@@ -82,9 +82,9 @@ forge coverage
 
 - [AGIRAILS Documentation](https://docs.agirails.io)
 - [AIPs (Protocol Specs)](https://github.com/agirails/aips)
-- [TypeScript SDK](https://github.com/agirails/sdk-js) (npm `@agirails/sdk@2.5.0`)
-- [Python SDK](https://github.com/agirails/sdk-python) (PyPI `agirails==2.3.0`)
-- [n8n Node](https://github.com/agirails/n8n-nodes-actp) (npm `n8n-nodes-actp@2.3.0`)
+- [TypeScript SDK](https://github.com/agirails/sdk-js) (npm `@agirails/sdk@3.0.0`)
+- [Python SDK](https://github.com/agirails/sdk-python) (PyPI `agirails==2.3.1`)
+- [n8n Node](https://github.com/agirails/n8n-nodes-actp) (npm `n8n-nodes-actp@2.4.0`)
 - [Discord](https://discord.gg/nuhCt75qe4)
 
 ## License
