@@ -98,6 +98,13 @@ interface IAgentRegistry {
         bool listed
     );
 
+    /// @notice Emitted when agent fully deregisters from registry
+    event AgentDeregistered(
+        address indexed agentAddress,
+        string did,
+        uint256 timestamp
+    );
+
     // ========== CORE FUNCTIONS (msg.sender == agent) ==========
 
     /// @notice Register a new agent profile
@@ -129,6 +136,10 @@ interface IAgentRegistry {
     /// @dev Only callable by the agent itself (msg.sender == agentAddress)
     /// @param isActive New active status
     function setActiveStatus(bool isActive) external;
+
+    /// @notice Remove agent from registry, freeing a slot for new registrations
+    /// @dev Only callable by the agent itself. Preserves reputation data.
+    function deregisterAgent() external;
 
     /// @notice Publish agent config (AGIRAILS.md hash + IPFS CID)
     /// @dev Only callable by the agent itself (msg.sender == agentAddress)

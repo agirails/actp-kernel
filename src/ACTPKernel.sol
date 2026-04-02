@@ -63,7 +63,8 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
     // AIP-14: Dispute bond parameters
     uint256 public constant MIN_DISPUTE_BOND = 1_000_000; // $1 USDC minimum
     uint16 public constant MAX_DISPUTE_BOND_BPS = 2_000; // 20% cap
-    // Note: No emergency withdraw - kernel never holds funds by design
+    // [M-1 AUDIT FIX] Emergency recovery exists for edge case where archive treasury
+    // AND fallback transfer both fail, leaving USDC stranded in kernel. See _distributeFee().
     address public admin;
     address public pauser;
     address public feeRecipient;
@@ -388,6 +389,10 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         txn.updatedAt = block.timestamp;
     }
 
+    /// @notice Release escrowed funds for a settled transaction
+    /// @dev Intentionally omits whenNotPaused — pause blocks state changes, not fund recovery.
+    ///      This allows participants to withdraw funds even during an emergency pause.
+    ///      Note: fee distribution and reputation updates also execute during pause via this path.
     function releaseEscrow(bytes32 transactionId) external override nonReentrant {
         Transaction storage txn = _getTransaction(transactionId);
         require(txn.state == State.SETTLED, "Not settled");
@@ -418,6 +423,25 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         require(paused, "Not paused");
         paused = false;
         emit KernelUnpaused(msg.sender, block.timestamp);
+    }
+
+    /// @notice Emitted when admin recovers stranded USDC from kernel during emergency
+    event EmergencyUSDCRecovered(address indexed recipient, uint256 amount, uint256 timestamp);
+
+    /// @notice Recover USDC stranded in kernel due to archive treasury double-failure
+    /// @dev [M-1 AUDIT FIX] Only callable by admin while paused. The kernel should never
+    ///      hold USDC under normal operation — this is strictly for the edge case where
+    ///      _distributeFee() archive payout AND fallback transfer both fail.
+    /// @param recipient Address to send recovered USDC to
+    /// @param amount Amount of USDC to recover
+    function emergencyRecoverUSDC(address recipient, uint256 amount) external onlyAdmin {
+        require(paused, "Must be paused");
+        require(recipient != address(0), "Zero recipient");
+        require(amount > 0, "Zero amount");
+        uint256 balance = USDC.balanceOf(address(this));
+        require(amount <= balance, "Exceeds kernel balance");
+        USDC.safeTransfer(recipient, amount);
+        emit EmergencyUSDCRecovered(recipient, amount, block.timestamp);
     }
 
     function updatePauser(address newPauser) external onlyAdmin {
@@ -510,6 +534,9 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         emit AgentRegistryUpdateCancelled(cancelledRegistry, block.timestamp);
     }
 
+    /// @notice Execute a scheduled agent registry update after timelock expires.
+    /// @dev Intentionally callable by anyone post-timelock — permissionless execution
+    /// prevents admin from holding back a scheduled update. Admin can cancel instead.
     function executeAgentRegistryUpdate() external {
         PendingRegistryUpdate memory pending = pendingRegistryUpdate;
         require(pending.active, "No pending update");
@@ -768,6 +795,12 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         (uint256 requesterAmount, uint256 providerAmount, address mediator, uint256 mediatorAmount, bool hasResolution, bool providerAtFault) =
             _decodeResolutionProof(proof);
 
+        // [M-2 AUDIT FIX] Require explicit resolution proof for dispute settlement.
+        // Previously, empty proof defaulted to full payout to provider — this allowed
+        // a compromised admin to resolve disputes without evidence. Now reverts.
+        // Must be checked BEFORE any state changes (CEI pattern).
+        require(hasResolution, "Dispute resolution requires explicit proof");
+
         // [C-2 FIX] Update reputation only if not yet processed by current registry (prevents double-counting on registry upgrade)
         // AIP-14: Pass providerAtFault instead of txn.wasDisputed — only at-fault disputes affect reputation
         if (address(agentRegistry) != address(0) && reputationProcessedBy[txn.transactionId] == address(0)) {
@@ -778,15 +811,6 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
                 txn.amount,
                 providerAtFault
             ) {} catch {}
-        }
-
-        if (!hasResolution) {
-            if (remaining > 0) {
-                _payoutProviderAmount(txn, vault, remaining);
-            }
-            // AIP-14: No-resolution = full payout to provider = provider not at fault → bond to counterparty
-            _distributeBond(txn, vault, false);
-            return;
         }
 
         if (mediator != address(0)) {
@@ -998,18 +1022,18 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
 
         // Bond goes to the winning party, regardless of who initiated the dispute
         address bondRecipient = providerAtFault ? txn.requester : txn.provider;
-        vault.releaseBond(txn.escrowId, bondRecipient, txn.disputeBond);
+        uint256 bondAmount = txn.disputeBond;
+        txn.disputeBond = 0; // [CEI FIX] Zero before external call to prevent double distribution
+        vault.releaseBond(txn.escrowId, bondRecipient, bondAmount);
 
         emit DisputeResolved(
             txn.transactionId,
             bytes32(0),
             txn.disputeInitiator,
             providerAtFault,
-            txn.disputeBond,
+            bondAmount,
             block.timestamp
         );
-
-        txn.disputeBond = 0; // Defense-in-depth: prevent double distribution
     }
 
     function _distributeBondOnCancellation(Transaction storage txn, IEscrowValidator vault) internal {

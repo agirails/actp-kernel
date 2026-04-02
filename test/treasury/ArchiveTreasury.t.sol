@@ -48,7 +48,7 @@ contract ArchiveTreasuryTest is Test {
         address indexed requester,
         address indexed provider
     );
-    event FundsWithdrawn(address indexed to, uint256 amount);
+    event FundsWithdrawn(address indexed to, uint256 amount, string purpose);
     event UploaderUpdated(address indexed oldUploader, address indexed newUploader);
 
     // ========== SETUP ==========
@@ -336,7 +336,7 @@ contract ArchiveTreasuryTest is Test {
 
         // Withdraw
         vm.prank(uploader);
-        treasury.withdrawForArchiving(withdrawAmount);
+        treasury.withdrawForArchiving(withdrawAmount, "test-withdrawal");
 
         assertEq(usdc.balanceOf(uploader), withdrawAmount, "Uploader should receive USDC");
         assertEq(treasury.getBalance(), depositAmount - withdrawAmount, "Treasury balance should decrease");
@@ -352,12 +352,12 @@ contract ArchiveTreasuryTest is Test {
 
         // First withdrawal
         vm.prank(uploader);
-        treasury.withdrawForArchiving(withdraw1);
+        treasury.withdrawForArchiving(withdraw1, "test-withdrawal-1");
         assertEq(treasury.totalSpent(), withdraw1, "totalSpent should be withdraw1");
 
         // Second withdrawal
         vm.prank(uploader);
-        treasury.withdrawForArchiving(withdraw2);
+        treasury.withdrawForArchiving(withdraw2, "test-withdrawal-2");
         assertEq(treasury.totalSpent(), withdraw1 + withdraw2, "totalSpent should be sum");
     }
 
@@ -369,10 +369,10 @@ contract ArchiveTreasuryTest is Test {
 
         // Withdraw
         vm.expectEmit(true, false, false, true);
-        emit FundsWithdrawn(uploader, amount);
+        emit FundsWithdrawn(uploader, amount, "test-withdrawal");
 
         vm.prank(uploader);
-        treasury.withdrawForArchiving(amount);
+        treasury.withdrawForArchiving(amount, "test-withdrawal");
     }
 
     function testWithdrawForArchiving_RevertsIfCallerIsNotUploader() external {
@@ -383,7 +383,7 @@ contract ArchiveTreasuryTest is Test {
 
         vm.prank(address(0x999));
         vm.expectRevert("Not authorized uploader");
-        treasury.withdrawForArchiving(amount);
+        treasury.withdrawForArchiving(amount, "test-withdrawal");
     }
 
     function testWithdrawForArchiving_RevertsIfAmountExceedsBalance() external {
@@ -395,13 +395,13 @@ contract ArchiveTreasuryTest is Test {
 
         vm.prank(uploader);
         vm.expectRevert("Insufficient balance");
-        treasury.withdrawForArchiving(excessiveAmount);
+        treasury.withdrawForArchiving(excessiveAmount, "test-withdrawal");
     }
 
     function testWithdrawForArchiving_RevertsOnZeroAmount() external {
         vm.prank(uploader);
         vm.expectRevert("Amount zero");
-        treasury.withdrawForArchiving(0);
+        treasury.withdrawForArchiving(0, "test-withdrawal");
     }
 
     function testWithdrawForArchiving_IsProtectedByReentrancyGuard() external {
@@ -417,7 +417,7 @@ contract ArchiveTreasuryTest is Test {
 
         // Normal withdrawal should succeed (proves nonReentrant doesn't block normal flow)
         vm.prank(uploader);
-        treasury.withdrawForArchiving(amount);
+        treasury.withdrawForArchiving(amount, "test-withdrawal");
 
         assertEq(usdc.balanceOf(uploader), amount, "Normal withdrawal should succeed");
     }

@@ -115,11 +115,13 @@ contract AGIRAILSIdentityRegistry is IAGIRAILSIdentityRegistry {
     }
 
     /**
-     * @dev Internal function to change owner and emit event
+     * @dev Internal function to change owner and emit event.
+     *      [L-2 AUDIT FIX] Rejects address(0) — use identity address directly for self-owned semantics.
      * @param identity Identity to modify
-     * @param newOwner New owner address
+     * @param newOwner New owner address (must not be zero)
      */
     function _changeOwner(address identity, address newOwner) internal {
+        require(newOwner != address(0), "Zero address owner - identity is self-owned by default");
         uint256 previousChange = changed[identity];
         owners[identity] = newOwner;
         changed[identity] = block.number;

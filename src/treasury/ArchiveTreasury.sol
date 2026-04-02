@@ -199,8 +199,9 @@ contract ArchiveTreasury is IArchiveTreasury, Ownable, ReentrancyGuard {
      *      Uploader will swap USDC → ETH off-chain and fund Irys account.
      * @param amount USDC amount to withdraw
      */
-    function withdrawForArchiving(uint256 amount) external override onlyUploader nonReentrant {
+    function withdrawForArchiving(uint256 amount, string calldata purpose) external override onlyUploader nonReentrant {
         require(amount > 0, "Amount zero");
+        require(bytes(purpose).length > 0, "Purpose required");
         require(amount <= USDC.balanceOf(address(this)), "Insufficient balance");
 
         // SECURITY [M-3 FIX]: Daily withdrawal rate limiting
@@ -221,7 +222,7 @@ contract ArchiveTreasury is IArchiveTreasury, Ownable, ReentrancyGuard {
         // Transfer USDC to uploader
         USDC.safeTransfer(uploader, amount);
 
-        emit FundsWithdrawn(uploader, amount);
+        emit FundsWithdrawn(uploader, amount, purpose);
     }
 
     /**

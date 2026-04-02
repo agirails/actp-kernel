@@ -49,8 +49,9 @@ interface IArchiveTreasury {
      * @notice Emitted when funds are withdrawn for archiving
      * @param to Address that received funds (uploader)
      * @param amount USDC amount withdrawn
+     * @param purpose Human-readable purpose string for off-chain monitoring
      */
-    event FundsWithdrawn(address indexed to, uint256 amount);
+    event FundsWithdrawn(address indexed to, uint256 amount, string purpose);
 
     /**
      * @notice Emitted when uploader address is updated
@@ -75,10 +76,12 @@ interface IArchiveTreasury {
 
     /**
      * @notice Withdraw USDC to pay for Arweave uploads
-     * @dev Only callable by uploader
+     * @dev [L-4 AUDIT FIX] Requires purpose string for off-chain monitoring and accounting.
+     *      Only callable by uploader.
      * @param amount USDC amount to withdraw
+     * @param purpose Human-readable purpose (e.g., "irys-fund-node-1" or "arweave-batch-2026-04")
      */
-    function withdrawForArchiving(uint256 amount) external;
+    function withdrawForArchiving(uint256 amount, string calldata purpose) external;
 
     /**
      * @notice Update authorized uploader address

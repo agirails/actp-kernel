@@ -47,6 +47,7 @@ contract AgentRegistry is IAgentRegistry, ReentrancyGuard {
     mapping(address => mapping(bytes32 => bool)) private supportedServices;
     mapping(bytes32 => bool) private processedTransactions;
     address[] private registeredAgents;
+    mapping(address => uint256) private agentIndex; // [L-3 AUDIT FIX] Reverse index for swap-and-pop deregistration
 
     // ========== MODIFIERS ==========
 
@@ -127,6 +128,7 @@ contract AgentRegistry is IAgentRegistry, ReentrancyGuard {
 
         require(didToAddress[did] == address(0), "DID already registered");
         didToAddress[did] = msg.sender;
+        agentIndex[msg.sender] = registeredAgents.length;
         registeredAgents.push(msg.sender);
 
         emit AgentRegistered(msg.sender, did, endpoint, block.timestamp);
@@ -199,6 +201,52 @@ contract AgentRegistry is IAgentRegistry, ReentrancyGuard {
         agents[msg.sender].updatedAt = block.timestamp;
 
         emit ActiveStatusUpdated(msg.sender, isActive, block.timestamp);
+    }
+
+    /// @notice Remove agent from registry, freeing a slot for new registrations
+    /// @dev [L-3 AUDIT FIX] Uses swap-and-pop to remove from registeredAgents array.
+    ///      Preserves reputation data (totalTransactions, disputedTransactions, totalVolumeUSDC)
+    ///      to prevent reputation laundering via deregister/re-register cycles.
+    ///      Clears: registeredAt, DID mapping, service descriptors, active status.
+    ///      Agent may re-register later with a fresh profile but inherited reputation.
+    ///      Gas note: iterates service descriptors to clear supportedServices mapping.
+    ///      Agents with many descriptors should call removeServiceType() first to reduce gas.
+    function deregisterAgent() external onlyRegisteredAgent {
+        AgentProfile storage profile = agents[msg.sender];
+        string memory did = profile.did;
+
+        // Clear DID mapping
+        delete didToAddress[did];
+
+        // Clear service descriptors and supported services
+        ServiceDescriptor[] storage descriptors = serviceDescriptors[msg.sender];
+        for (uint256 i = 0; i < descriptors.length; i++) {
+            supportedServices[msg.sender][descriptors[i].serviceTypeHash] = false;
+        }
+        delete serviceDescriptors[msg.sender];
+
+        // Swap-and-pop from registeredAgents array
+        uint256 idx = agentIndex[msg.sender];
+        uint256 lastIdx = registeredAgents.length - 1;
+        if (idx != lastIdx) {
+            address lastAgent = registeredAgents[lastIdx];
+            registeredAgents[idx] = lastAgent;
+            agentIndex[lastAgent] = idx;
+        }
+        registeredAgents.pop();
+        delete agentIndex[msg.sender];
+
+        // Clear profile but preserve reputation data
+        profile.registeredAt = 0; // Marks as deregistered (enables re-registration)
+        profile.did = "";
+        profile.endpoint = "";
+        profile.isActive = false;
+        profile.configHash = bytes32(0);
+        profile.configCID = "";
+        profile.listed = false;
+        delete profile.serviceTypes;
+
+        emit AgentDeregistered(msg.sender, did, block.timestamp);
     }
 
     uint256 public constant MAX_CID_LENGTH = 128;

@@ -617,8 +617,8 @@ contract AIP14_DisputeBondTest is Test {
         assertEq(escrow.remaining(escrowId), 0, "Escrow should be drained");
     }
 
-    /// @notice Bond distributed on no-resolution settlement even when escrow remaining == 0
-    function testBondDistributed_WhenEscrowRemainingZero_Settlement() external {
+    /// @notice [M-2 AUDIT FIX] Empty proof settlement now reverts — explicit resolution required
+    function testBondDistributed_WhenEscrowRemainingZero_Settlement_RevertsWithoutProof() external {
         bytes32 txId = _createDisputedTransaction();
 
         uint256 bond = kernel.getTransaction(txId).disputeBond;
@@ -627,15 +627,10 @@ contract AIP14_DisputeBondTest is Test {
         // Drain escrow (simulate milestone payouts)
         _drainEscrowViaStore(txId);
 
-        uint256 providerBalBefore = usdc.balanceOf(provider);
-
-        // No-resolution settle (empty proof): providerAtFault = false → bond to provider
+        // [M-2 FIX] No-resolution settle now reverts
         vm.warp(block.timestamp + 2 days + 1);
+        vm.expectRevert("Dispute resolution requires explicit proof");
         kernel.transitionState(txId, IACTPKernel.State.SETTLED, "");
-
-        // Bond distributed despite zero escrow remaining
-        assertEq(escrow.bondBalance(txId), 0, "Bond must not remain locked");
-        assertEq(usdc.balanceOf(provider), providerBalBefore + bond, "Provider gets bond");
     }
 
     /// @notice Bond returned on cancellation even when escrow remaining == 0
@@ -656,23 +651,20 @@ contract AIP14_DisputeBondTest is Test {
         assertEq(usdc.balanceOf(requester), requesterBalBefore + bond);
     }
 
-    /// @notice No-resolution settlement with remaining==0: bond goes to provider
-    function testSettlement_ZeroRemaining_NoResolution_BondToProvider() external {
+    /// @notice [M-2 AUDIT FIX] No-resolution settlement now reverts — explicit proof required
+    function testSettlement_ZeroRemaining_NoResolution_RevertsWithoutProof() external {
         bytes32 txId = _createDisputedTransaction();
 
         uint256 bond = kernel.getTransaction(txId).disputeBond;
+        assertTrue(bond > 0, "Bond should exist");
 
         // Drain escrow
         _drainEscrowViaStore(txId);
 
-        uint256 providerBalBefore = usdc.balanceOf(provider);
-
         vm.warp(block.timestamp + 2 days + 1);
-        // Empty proof = no-resolution path, providerAtFault = false → bond to provider
+        // [M-2 FIX] Empty proof now reverts instead of defaulting to provider
+        vm.expectRevert("Dispute resolution requires explicit proof");
         kernel.transitionState(txId, IACTPKernel.State.SETTLED, "");
-
-        assertEq(escrow.bondBalance(txId), 0, "Bond must be zero");
-        assertEq(usdc.balanceOf(provider), providerBalBefore + bond, "Provider gets bond");
     }
 
     // ============================================
