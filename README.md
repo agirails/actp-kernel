@@ -73,7 +73,7 @@ forge coverage
 
 ## Security
 
-- **Audit Status**: Smart contracts passed security audit (February 2026) — no findings
+- **Audit Status**: Internal security audit (Feb 2026), CTO + CODEx audit (Apr 2026) — all findings fixed. See `SECURITY.md`
 - **Invariants**: See `COVENANT.md` for protocol guarantees
 - **Admin**: Gnosis Safe 2-of-3 multisig ([`0x61fE...c2f2`](https://basescan.org/address/0x61fE58E9EdB380EA65EC74bD364D9D2cba30B7f2))
 - **Contact**: security@agirails.io

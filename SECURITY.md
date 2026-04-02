@@ -28,44 +28,18 @@ if (fromState == State.DISPUTED && (toState == State.SETTLED || toState == State
 
 **REQUIRED FOR MAINNET**:
 
-1. **3-of-5 Multisig for Admin Role**
+1. **Multisig for Admin Role**
    - Gnosis Safe contract on Base L2
-   - Minimum 3 signatures required for any admin action
-   - Signers: 2 founders + 3 trusted advisors/investors
+   - Multiple signatures required for any admin action
 
 2. **Separate Pauser Role** (already implemented)
    - Can pause contract in emergency
    - CANNOT resolve disputes or steal funds
-   - Can be individual address for fast response
 
 3. **Operational Procedures**
    - All disputes logged off-chain with evidence
    - Dispute resolution follows published arbitration rules
-   - 7-day public review period before execution
    - Transparent decision documentation
-
-#### Alternative: On-Chain Arbitration (Future V2)
-
-**Option A: Kleros Integration**
-- Decentralized jury-based arbitration
-- Cryptographic evidence submission
-- Game-theoretic security
-- Timeline: Month 12-18
-
-**Option B: Optimistic Dispute Resolution**
-- Challenge period (7 days)
-- Fraud proofs
-- Economic security via bonds
-- Timeline: Month 18-24
-
-#### Security Score Impact
-
-| Configuration | Trust Level | Security Score | Production Ready |
-|---------------|-------------|----------------|------------------|
-| Single admin | HIGH TRUST | 5/10 ❌ | NO |
-| 2-of-3 multisig | MEDIUM TRUST | 7/10 ⚠️ | Testnet only |
-| **3-of-5 multisig + procedures** | **LOW TRUST** | **8/10 ✅** | **YES** |
-| On-chain arbitration (Kleros) | ZERO TRUST | 9/10 ✅ | Future V2 |
 
 #### Audit Trail
 
@@ -95,31 +69,13 @@ All dispute resolutions MUST be logged:
 }
 ```
 
-#### Risk Mitigation Checklist
-
-**Before Mainnet Deployment**:
-
-- [ ] Deploy 3-of-5 Gnosis Safe multisig
-- [ ] Transfer admin role to multisig
-- [ ] Publish arbitration rules & procedures
-- [ ] Set up dispute logging infrastructure
-- [ ] Test multisig dispute resolution flow
-- [ ] Document all signer identities publicly
-- [ ] Establish emergency response procedures
-
-**Operational**:
-
-- [ ] Log all disputes to IPFS + centralized backup
-- [ ] 7-day review period before resolution execution
-- [ ] Monthly transparency reports
-- [ ] Annual third-party audit of dispute logs
-
 ---
 
 ## Other Security Considerations
 
 ### Fixed Vulnerabilities
 
+**Prior rounds:**
 ✅ **BLOCKER-1**: Escrow ID reuse attack - FIXED via `delete escrows[escrowId]` after completion
 ✅ **MEDIUM-5**: Mediator time-lock bypass - FIXED via `mediatorApprovedAt[mediator] == 0` check
 ✅ **HIGH-1**: State machine INITIATED→COMMITTED - FIXED via `linkEscrow` auto-transition
@@ -128,24 +84,28 @@ All dispute resolutions MUST be logged:
 ✅ **H-2**: Provider cancel flexibility - FIXED via requester-specific timing check
 ✅ **M-1**: Escrow lifecycle DoS - FIXED via `delete` after completion
 
+**April 2026 audit (CTO + CODEx verification):**
+✅ **H-2**: X402Relay two-step admin transfer - already fixed (confirmed by CODEx)
+✅ **L-5**: ACTPKernel MIN_FEE enforcement - already fixed (confirmed by CODEx)
+✅ **M-1**: Emergency USDC recovery - `emergencyRecoverUSDC()` (admin + paused only)
+✅ **M-2**: Empty-proof dispute default removed - explicit resolution proof required
+✅ **M-3**: `releaseEscrow()` pause bypass documented via NatSpec (intentional design)
+✅ **L-1**: NatSpec on `executeAgentRegistryUpdate()` permissionless design
+✅ **L-2**: Zero-address guard in `IdentityRegistry._changeOwner()`
+✅ **L-3**: `deregisterAgent()` with swap-and-pop + reputation preservation on re-register
+✅ **L-4**: Purpose param on `ArchiveTreasury.withdrawForArchiving()`
+✅ **CEI**: Bond zeroing before external call in `_distributeBond()`
+✅ **DOS**: feeRecipient payout wrapped in try-catch to prevent settlement DOS
+
 ### Known Limitations
 
 1. **Dispute resolution requires trust** (see H-1 above)
-2. **Gas costs 3x target** (~750k vs 250k target for happy path)
+2. **Gas costs ~3x target** (~750k vs 250k target for happy path)
 3. **Off-chain arbitration delay** (~7 days review period)
-
-### Recommended External Audits
-
-Before mainnet:
-1. **Trail of Bits** or **ConsenSys Diligence** - $50-80K, 4-6 weeks
-2. **Certora formal verification** - $30-50K, 2-3 weeks
-3. **Public bug bounty** - $100K max payout, 2-4 weeks
-
-Total estimated cost: **$180-230K**
-Total timeline: **8-12 weeks**
+4. **M-4**: ArchiveTreasury uploader can withdraw up to $1K/day without on-chain proof-of-archiving (rate-limited, monitoring recommended)
 
 ---
 
-**Last Updated**: 2025-12-17
-**Version**: v0.9.0 (pre-mainnet)
+**Last Updated**: 2026-04-02
+**Version**: v0.9.1 (audit fixes applied, pre-professional-audit)
 **Security Contact**: [agirails.io/contact](https://agirails.io/contact)
