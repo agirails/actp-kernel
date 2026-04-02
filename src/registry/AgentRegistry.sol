@@ -108,16 +108,24 @@ contract AgentRegistry is IAgentRegistry, ReentrancyGuard {
             _toLowerAddress(msg.sender)
         ));
 
+        // [L-3 AUDIT FIX] Preserve reputation from previous registration to prevent
+        // reputation laundering via deregister/re-register cycles.
+        AgentProfile storage existing = agents[msg.sender];
+        uint256 prevReputation = existing.reputationScore;
+        uint256 prevTotalTx = existing.totalTransactions;
+        uint256 prevDisputedTx = existing.disputedTransactions;
+        uint256 prevVolume = existing.totalVolumeUSDC;
+
         agents[msg.sender] = AgentProfile({
             agentAddress: msg.sender,
             did: did,
             endpoint: endpoint,
             serviceTypes: serviceTypeHashes,
             stakedAmount: 0,
-            reputationScore: 0,
-            totalTransactions: 0,
-            disputedTransactions: 0,
-            totalVolumeUSDC: 0,
+            reputationScore: prevReputation,
+            totalTransactions: prevTotalTx,
+            disputedTransactions: prevDisputedTx,
+            totalVolumeUSDC: prevVolume,
             registeredAt: block.timestamp,
             updatedAt: block.timestamp,
             isActive: true,

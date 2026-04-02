@@ -987,8 +987,15 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         }
         uint256 treasuryFee = totalFee - (archiveSuccess ? archiveFee : 0);
         if (treasuryFee > 0) {
-            require(vault.payout(txn.escrowId, feeRecipient, treasuryFee) == treasuryFee, "Partial fee");
-            emit PlatformFeeAccrued(txn.transactionId, feeRecipient, treasuryFee, block.timestamp);
+            // [AUDIT FIX] Wrap in try-catch to prevent a misconfigured feeRecipient
+            // from DOSing all settlements. On failure, fee stays in vault (recoverable).
+            try vault.payout(txn.escrowId, feeRecipient, treasuryFee) returns (uint256 feeResult) {
+                require(feeResult == treasuryFee, "Partial fee");
+                emit PlatformFeeAccrued(txn.transactionId, feeRecipient, treasuryFee, block.timestamp);
+            } catch {
+                // Fee remains in escrow vault — admin can update feeRecipient and retry
+                emit ArchivePayoutMismatch(txn.transactionId, treasuryFee, 0);
+            }
         }
     }
 
