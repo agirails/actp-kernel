@@ -12,9 +12,9 @@
       "symbol": "mUSDC"
     },
     "ACTPKernel": {
-      "address": "0x0ba0b17554601b30F5406e74d2208f567C12CcFE",
-      "verified": true,
-      "explorerUrl": "https://sepolia.basescan.org/address/0x0ba0b17554601b30F5406e74d2208f567C12CcFE",
+      "address": "0x90a1Bcc218c148F63D036aB2f7B5329C9ee7868d",
+      "verified": false,
+      "explorerUrl": "https://sepolia.basescan.org/address/0x90a1Bcc218c148F63D036aB2f7B5329C9ee7868d",
       "constructorArgs": {
         "admin": "0x42a2f11555b9363fb7ebdcdc76d7cb26e01dcb00",
         "pauser": "0x42a2f11555b9363fb7ebdcdc76d7cb26e01dcb00",
@@ -22,57 +22,48 @@
         "agentRegistry": "0x0000000000000000000000000000000000000000",
         "usdc": "0x444b4e1A65949AB2ac75979D5d0166Eb7A248Ccb"
       },
-      "note": "Redeployed 2026-03-21 with AIP-14 8-param createTransaction + acceptQuote + MIN_FEE + deadline fixes",
-      "verifiedOn": "sourcify",
-      "sourcifyUrl": "https://sourcify.dev/#/lookup/0x0ba0b17554601b30F5406e74d2208f567C12CcFE"
+      "note": "Redeployed 2026-04-02 with audit fixes: M-1 emergencyRecoverUSDC, M-2 explicit dispute proof, CEI bond fix, feeRecipient try-catch"
     },
     "EscrowVault": {
-      "address": "0xedC62264301A119207f1f89C6bDE4Fd7a7A4CeB4",
-      "verified": true,
-      "explorerUrl": "https://sepolia.basescan.org/address/0xedC62264301A119207f1f89C6bDE4Fd7a7A4CeB4",
+      "address": "0xA336967F4481EeE4A8Bb59e35423D273fbf9f5e7",
+      "verified": false,
+      "explorerUrl": "https://sepolia.basescan.org/address/0xA336967F4481EeE4A8Bb59e35423D273fbf9f5e7",
       "constructorArgs": {
         "token": "0x444b4e1A65949AB2ac75979D5d0166Eb7A248Ccb",
-        "kernel": "0x0ba0b17554601b30F5406e74d2208f567C12CcFE"
-      },
-      "verifiedOn": "sourcify",
-      "sourcifyUrl": "https://sourcify.dev/#/lookup/0xedC62264301A119207f1f89C6bDE4Fd7a7A4CeB4"
+        "kernel": "0x90a1Bcc218c148F63D036aB2f7B5329C9ee7868d"
+      }
     },
     "AgentRegistry": {
-      "address": "0x55e7F23AB5700fD0D9f83294be2d0F2eC84013E1",
-      "verified": true,
-      "explorerUrl": "https://sepolia.basescan.org/address/0x55e7F23AB5700fD0D9f83294be2d0F2eC84013E1",
+      "address": "0x7403426a720f91ea155405e3b63d16aa40a46f98",
+      "verified": false,
+      "explorerUrl": "https://sepolia.basescan.org/address/0x7403426a720f91ea155405e3b63d16aa40a46f98",
       "constructorArgs": {
-        "actpKernel": "0x0ba0b17554601b30F5406e74d2208f567C12CcFE"
+        "actpKernel": "0x90a1Bcc218c148F63D036aB2f7B5329C9ee7868d"
       },
-      "verifiedOn": "sourcify",
-      "sourcifyUrl": "https://sourcify.dev/#/lookup/0x55e7F23AB5700fD0D9f83294be2d0F2eC84013E1"
+      "note": "Redeployed 2026-04-02 with audit fix L-3: deregisterAgent() + reputation preservation"
     },
     "AGIRAILSIdentityRegistry": {
-      "address": "0xF64F748C7802a68Cb936a9213881fE74e83FDA97",
-      "verified": true,
-      "verifiedOn": "sourcify",
-      "explorerUrl": "https://sepolia.basescan.org/address/0xF64F748C7802a68Cb936a9213881fE74e83FDA97",
-      "sourcifyUrl": "https://sourcify.dev/#/lookup/0xF64F748C7802a68Cb936a9213881fE74e83FDA97",
-      "constructorArgs": {}
+      "address": "0xce9749c768b425fab0daa0331047d1340ec99a88",
+      "verified": false,
+      "explorerUrl": "https://sepolia.basescan.org/address/0xce9749c768b425fab0daa0331047d1340ec99a88",
+      "constructorArgs": {},
+      "note": "Redeployed 2026-04-02 with audit fix L-2: zero-address guard in _changeOwner"
     },
     "ArchiveTreasury": {
-      "address": "0x7BeE0Ce574643E204FE3EDde76Cd0338B43D9798",
-      "verified": true,
-      "verifiedOn": "sourcify",
-      "sourcifyUrl": "https://sourcify.dev/#/lookup/0x7BeE0Ce574643E204FE3EDde76Cd0338B43D9798",
-      "explorerUrl": "https://sepolia.basescan.org/address/0x7BeE0Ce574643E204FE3EDde76Cd0338B43D9798",
+      "address": "0xe9aaefae83d206a2e4504f84b6b13c55d09d62a0",
+      "verified": false,
+      "explorerUrl": "https://sepolia.basescan.org/address/0xe9aaefae83d206a2e4504f84b6b13c55d09d62a0",
       "constructorArgs": {
         "usdc": "0x444b4e1A65949AB2ac75979D5d0166Eb7A248Ccb",
-        "kernel": "0x0ba0b17554601b30F5406e74d2208f567C12CcFE",
+        "kernel": "0x90a1Bcc218c148F63D036aB2f7B5329C9ee7868d",
         "uploader": "0x42a2f11555b9363fb7ebdcdc76d7cb26e01dcb00"
       },
-      "note": "V3 - redeployed 2026-03-24 with new kernel 0x0ba0b. Previous: 0xACB672 (old kernel immutable)."
+      "note": "Redeployed 2026-04-02 with audit fix L-4: purpose param on withdrawForArchiving"
     },
     "X402Relay": {
       "address": "0x0804FC3c04214bC9036E126554aF7EE24d589988",
       "verified": true,
       "verifiedOn": "sourcify",
-      "sourcifyUrl": "https://sourcify.dev/#/lookup/0x0804FC3c04214bC9036E126554aF7EE24d589988",
       "explorerUrl": "https://sepolia.basescan.org/address/0x0804FC3c04214bC9036E126554aF7EE24d589988",
       "constructorArgs": {
         "usdc": "0x444b4e1A65949AB2ac75979D5d0166Eb7A248Ccb",
@@ -80,15 +71,18 @@
         "feeBps": 100,
         "admin": "0x42a2f11555b9363fb7ebdcdc76d7cb26e01dcb00"
       },
-      "note": "Deployed 2026-03-24. Previous Sepolia: 0x4DCD02b276Dbeab57c265B72435e90507b6Ac81A."
+      "note": "Unchanged — no audit fixes needed"
     }
   },
-  "treasury": {
-    "address": "0x42a2f11555b9363fb7ebdcdc76d7cb26e01dcb00",
-    "note": "Platform fee recipient (deployer wallet, updated 2026-02-20 from 0x866ECF...)"
+  "postDeploy": {
+    "escrowVaultApproved": true,
+    "archiveTreasurySet": true,
+    "agentRegistryScheduled": true,
+    "agentRegistryNote": "scheduleAgentRegistryUpdate called 2026-04-02, executeAfter ~2026-04-04 (2-day timelock)"
   },
   "deployment": {
     "framework": "Foundry",
-    "rpc": "Alchemy Base Sepolia"
+    "rpc": "Base Sepolia public RPC",
+    "date": "2026-04-02"
   }
 }
