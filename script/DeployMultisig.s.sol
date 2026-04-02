@@ -11,7 +11,6 @@ import "../src/ACTPKernel.sol";
  * SECURITY REQUIREMENTS:
  * - 3-of-5 or 4-of-7 threshold (balance security vs operational speed)
  * - Signers from different geographic locations
- * - Signers with different roles (CEO, CTO, Legal, Advisors)
  * - Hardware wallets for all signers (Ledger, Trezor)
  * - No signers share the same location or device
  *
@@ -60,11 +59,11 @@ contract DeployMultisig is Script {
     address constant ACTP_KERNEL_ADDRESS = address(0); // ⚠️ UPDATE THIS
 
     // Expected multisig signers (for verification)
-    address constant SIGNER_1_CEO = address(0); // ⚠️ UPDATE THIS
-    address constant SIGNER_2_CTO = address(0); // ⚠️ UPDATE THIS
-    address constant SIGNER_3_LEGAL = address(0); // ⚠️ UPDATE THIS
-    address constant SIGNER_4_ADVISOR_1 = address(0); // ⚠️ UPDATE THIS
-    address constant SIGNER_5_ADVISOR_2 = address(0); // ⚠️ UPDATE THIS
+    address constant SIGNER_1 = address(0); // ⚠️ UPDATE THIS
+    address constant SIGNER_2 = address(0); // ⚠️ UPDATE THIS
+    address constant SIGNER_3 = address(0); // ⚠️ UPDATE THIS
+    address constant SIGNER_4 = address(0); // ⚠️ UPDATE THIS
+    address constant SIGNER_5 = address(0); // ⚠️ UPDATE THIS
 
     // Expected threshold (3 for 5 signers, 4 for 7 signers)
     uint256 constant EXPECTED_THRESHOLD = 3; // ⚠️ UPDATE THIS
@@ -147,11 +146,11 @@ contract DeployMultisig is Script {
         console.log("[OK] No pending admin transfer");
 
         // Check 7: All signer addresses configured
-        require(SIGNER_1_CEO != address(0), "Signer 1 (CEO) not configured");
-        require(SIGNER_2_CTO != address(0), "Signer 2 (CTO) not configured");
-        require(SIGNER_3_LEGAL != address(0), "Signer 3 (Legal) not configured");
-        require(SIGNER_4_ADVISOR_1 != address(0), "Signer 4 (Advisor 1) not configured");
-        require(SIGNER_5_ADVISOR_2 != address(0), "Signer 5 (Advisor 2) not configured");
+        require(SIGNER_1 != address(0), "Signer 1 not configured");
+        require(SIGNER_2 != address(0), "Signer 2 not configured");
+        require(SIGNER_3 != address(0), "Signer 3 not configured");
+        require(SIGNER_4 != address(0), "Signer 4 not configured");
+        require(SIGNER_5 != address(0), "Signer 5 not configured");
         console.log("[OK] All 5 signers configured");
 
         // Check 8: Threshold is valid (3 for 5 signers)
@@ -175,12 +174,7 @@ contract DeployMultisig is Script {
  * 3. Select network (Base Sepolia or Base Mainnet)
  * 4. Click "Create New Safe"
  * 5. Name: "AGIRAILS ACTP Admin Multisig"
- * 6. Add signers (5 total, see agirails.io/contact for current team):
- *    - Signer 1: Protocol Lead
- *    - Signer 2: Technical Lead
- *    - Signer 3: Legal Counsel
- *    - Signer 4: Technical Advisor 1
- *    - Signer 5: Technical Advisor 2
+ * 6. Add signers (5 total)
  * 7. Set threshold: 3-of-5
  * 8. Review and deploy
  * 9. Copy Safe address
