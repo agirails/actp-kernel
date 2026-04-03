@@ -577,4 +577,104 @@ contract ACTPKernelBranchCoverage2Test is Test {
         // Note: This may need adjustment based on actual contract implementation
         return (address(0), 0, false);
     }
+
+    // ============================================
+    // PERMISSIONLESS AUTO-SETTLE TESTS
+    // ============================================
+
+    function testThirdPartyCanSettleAfterDisputeWindow() external {
+        bytes32 txId = _createDeliveredTx();
+        IACTPKernel.TransactionView memory txView = kernel.getTransaction(txId);
+
+        // Warp past dispute window
+        vm.warp(txView.disputeWindow + 1);
+
+        // Random third party settles
+        address thirdParty = address(0xBEEF);
+        vm.prank(thirdParty);
+        kernel.transitionState(txId, IACTPKernel.State.SETTLED, "");
+
+        IACTPKernel.TransactionView memory settled = kernel.getTransaction(txId);
+        assertEq(uint8(settled.state), uint8(IACTPKernel.State.SETTLED));
+    }
+
+    function testThirdPartyCannotSettleBeforeDisputeWindow() external {
+        bytes32 txId = _createDeliveredTx();
+
+        // Third party tries to settle before window expires
+        address thirdParty = address(0xBEEF);
+        vm.prank(thirdParty);
+        vm.expectRevert("Not authorized to settle");
+        kernel.transitionState(txId, IACTPKernel.State.SETTLED, "");
+    }
+
+    function testThirdPartySettlePaysProvider() external {
+        bytes32 txId = _createDeliveredTx();
+        IACTPKernel.TransactionView memory txView = kernel.getTransaction(txId);
+
+        uint256 providerBalanceBefore = usdc.balanceOf(provider);
+
+        // Warp past dispute window
+        vm.warp(txView.disputeWindow + 1);
+
+        // Third party settles
+        address thirdParty = address(0xBEEF);
+        vm.prank(thirdParty);
+        kernel.transitionState(txId, IACTPKernel.State.SETTLED, "");
+
+        // Provider received funds (amount minus fee)
+        uint256 providerBalanceAfter = usdc.balanceOf(provider);
+        assertGt(providerBalanceAfter, providerBalanceBefore);
+    }
+
+    function testThirdPartyCannotSettleDisputedTx() external {
+        bytes32 txId = _createDeliveredTx();
+
+        // Requester disputes within window
+        vm.prank(requester);
+        kernel.transitionState(txId, IACTPKernel.State.DISPUTED, "");
+
+        // Warp past any window
+        vm.warp(block.timestamp + 365 days);
+
+        // Third party cannot settle DISPUTED (only admin/pauser can)
+        address thirdParty = address(0xBEEF);
+        vm.prank(thirdParty);
+        vm.expectRevert("Resolver only");
+        kernel.transitionState(txId, IACTPKernel.State.SETTLED, "");
+    }
+
+    function testRequesterCanStillSettleImmediatelyAfterPermissionlessChange() external {
+        bytes32 txId = _createDeliveredTx();
+
+        // Requester settles immediately (before window) — unchanged behavior
+        vm.prank(requester);
+        kernel.transitionState(txId, IACTPKernel.State.SETTLED, "");
+
+        IACTPKernel.TransactionView memory settled = kernel.getTransaction(txId);
+        assertEq(uint8(settled.state), uint8(IACTPKernel.State.SETTLED));
+    }
+
+    function testThirdPartyCannotSettleAtExactDisputeWindowBoundary() external {
+        bytes32 txId = _createDeliveredTx();
+        IACTPKernel.TransactionView memory txView = kernel.getTransaction(txId);
+
+        // Warp to exactly the dispute window boundary (not past it)
+        vm.warp(txView.disputeWindow);
+
+        // Third party still blocked at exact boundary (strict >)
+        address thirdParty = address(0xBEEF);
+        vm.prank(thirdParty);
+        vm.expectRevert("Not authorized to settle");
+        kernel.transitionState(txId, IACTPKernel.State.SETTLED, "");
+    }
+
+    function testProviderStillWaitsForDisputeWindowAfterPermissionlessChange() external {
+        bytes32 txId = _createDeliveredTx();
+
+        // Provider cannot settle before window — unchanged behavior
+        vm.prank(provider);
+        vm.expectRevert("Requester decision pending");
+        kernel.transitionState(txId, IACTPKernel.State.SETTLED, "");
+    }
 }

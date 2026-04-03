@@ -649,7 +649,11 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         } else if (fromState == State.IN_PROGRESS && toState == State.DELIVERED) {
             require(msg.sender == txn.provider, "Only provider");
         } else if (fromState == State.DELIVERED && toState == State.SETTLED) {
-            require(msg.sender == txn.requester || msg.sender == txn.provider, "Only participant");
+            // Permissionless auto-settle: after dispute window, anyone can settle
+            // Before window: only requester/provider. Timing enforced in _enforceTiming.
+            bool isParticipant = msg.sender == txn.requester || msg.sender == txn.provider;
+            bool autoSettleEligible = block.timestamp > txn.disputeWindow;
+            require(isParticipant || autoSettleEligible, "Not authorized to settle");
         } else if (fromState == State.DELIVERED && toState == State.DISPUTED) {
             require(msg.sender == txn.requester || msg.sender == txn.provider, "Party only");
         } else if (
