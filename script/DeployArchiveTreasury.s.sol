@@ -18,7 +18,7 @@ import "../src/treasury/ArchiveTreasury.sol";
 contract DeployArchiveTreasury is Script {
     // Base Sepolia deployed contract addresses (from deployments/base-sepolia.json)
     address constant MOCK_USDC = 0x444b4e1A65949AB2ac75979D5d0166Eb7A248Ccb;
-    address constant ACTP_KERNEL = 0x90a1Bcc218c148F63D036aB2f7B5329C9ee7868d;
+    address constant ACTP_KERNEL = 0xE83cba71C445B4f658D88E4F179FccB9E1454F97;
 
     function run() external {
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
