@@ -74,7 +74,8 @@
     },
     "X402Relay": {
       "address": "0x110b25bb3d45c40dfcf34bb451aa7069b2a1cb3b",
-      "verified": false,
+      "verified": true,
+      "verifiedOn": "sourcify",
       "deployBlock": 40239726,
       "explorerUrl": "https://sepolia.basescan.org/address/0x110b25bb3d45c40dfcf34bb451aa7069b2a1cb3b",
       "constructorArgs": {
@@ -83,7 +84,8 @@
         "feeBps": 100,
         "admin": "0x42a2f11555b9363fb7ebdcdc76d7cb26e01dcb00"
       },
-      "note": "Redeployed 2026-04-15 with providerNet > 0 dust guard.",
+      "status": "deprecated",
+      "deprecationNote": "X402Relay is LEGACY. The SDK's X402Adapter (since x402 v2, SDK 3.3.0) routes payments directly from buyer to seller via the @x402/fetch + facilitator pattern (EIP-3009 / Permit2). This contract is no longer on the active payment path. It is still deployed and verified for any third party that may call it directly (e.g. cast scripts, legacy integrations), but the redeploy on 2026-04-15 (providerNet > 0 dust guard) was not strictly necessary for production operation. Skip this contract in future mainnet redeploys unless a concrete direct-call consumer is identified.",
       "previousDeployment": "0x0804FC3c04214bC9036E126554aF7EE24d589988"
     }
   },
