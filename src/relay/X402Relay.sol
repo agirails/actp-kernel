@@ -116,6 +116,7 @@ contract X402Relay is ReentrancyGuard {
 
         fee = _calculateFee(grossAmount);
         uint256 providerNet = grossAmount - fee;
+        require(providerNet > 0, "Provider would receive nothing");
 
         // CEI: interactions last
         usdc.safeTransferFrom(msg.sender, provider, providerNet);

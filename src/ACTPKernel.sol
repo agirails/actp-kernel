@@ -37,6 +37,7 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         uint256 disputeWindow; // timestamp (expiry)
         bytes32 metadata; // For quote hash (AIP-2) or other protocol metadata
         uint16 platformFeeBpsLocked; // AIP-5: Lock platform fee % at creation time
+        uint16 requesterPenaltyBpsLocked; // Lock penalty rate at creation time
         bool wasDisputed; // AIP-7: Track if transaction went through dispute. AIP-14: semantic change to "provider at fault"
         uint256 agentId; // ERC-8004 agent ID for provider (0 if not applicable)
         uint256 requesterAgentId; // AIP-14: Requester's ERC-8004 agent ID (0 if not an agent)
@@ -214,6 +215,7 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         txn.disputeWindow = disputeWindow;
         txn.serviceHash = serviceHash;
         txn.platformFeeBpsLocked = platformFeeBps; // AIP-5: Lock current platform fee % at creation
+        txn.requesterPenaltyBpsLocked = requesterPenaltyBps; // Lock penalty rate at creation
         txn.agentId = agentId; // ERC-8004 agent ID (0 if not applicable)
         txn.requesterAgentId = requesterAgentId; // AIP-14: Requester's ERC-8004 agent ID
 
@@ -659,7 +661,7 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         } else if (
             fromState == State.DISPUTED && (toState == State.SETTLED || toState == State.CANCELLED)
         ) {
-            require(msg.sender == admin || msg.sender == pauser, "Resolver only");
+            require(msg.sender == admin, "Resolver only");
         } else if (toState == State.CANCELLED) {
             // State-specific cancellation authorization
             if (fromState == State.INITIATED || fromState == State.QUOTED) {
@@ -771,7 +773,6 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         require(txn.escrowContract != address(0), "Escrow missing");
         IEscrowValidator vault = IEscrowValidator(txn.escrowContract);
         uint256 remaining = vault.remaining(txn.escrowId);
-        require(remaining > 0, "Escrow empty");
 
         // [C-2 FIX] Update reputation only if not yet processed by current registry (prevents double-counting on registry upgrade)
         if (address(agentRegistry) != address(0) && reputationProcessedBy[txn.transactionId] == address(0)) {
@@ -784,7 +785,11 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
             ) {} catch {}
         }
 
-        _payoutProviderAmount(txn, vault, remaining);
+        // If milestones already released all funds, settlement still succeeds
+        // (reputation was updated above, state transition was already validated).
+        if (remaining > 0) {
+            _payoutProviderAmount(txn, vault, remaining);
+        }
     }
 
     /**
@@ -855,7 +860,7 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         (uint256 requesterAmount, uint256 providerAmount, address mediator, uint256 mediatorAmount, bool hasResolution,) =
             _decodeResolutionProof(proof);
         if (oldState == State.DISPUTED && hasResolution) {
-            require(triggeredBy == admin || triggeredBy == pauser, "Resolver only");
+            require(triggeredBy == admin, "Resolver only");
 
             if (mediator != address(0)) {
                 require(approvedMediators[mediator], "Mediator not approved");
@@ -892,7 +897,7 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         if (remaining == 0) return;
 
         if (triggeredBy == txn.requester && (oldState == State.COMMITTED || oldState == State.IN_PROGRESS)) {
-            uint256 penalty = (remaining * requesterPenaltyBps) / MAX_BPS;
+            uint256 penalty = (remaining * txn.requesterPenaltyBpsLocked) / MAX_BPS;
             uint256 refund = remaining - penalty;
             _refundRequester(txn, vault, refund);
             if (penalty > 0) {

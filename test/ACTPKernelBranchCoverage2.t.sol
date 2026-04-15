@@ -637,7 +637,8 @@ contract ACTPKernelBranchCoverage2Test is Test {
         // Warp past any window
         vm.warp(block.timestamp + 365 days);
 
-        // Third party cannot settle DISPUTED (only admin/pauser can)
+        // Third party cannot settle DISPUTED (only admin can — pauser was
+        // removed from the resolver allowlist; see ACTPKernelLockedPenaltyTest).
         address thirdParty = address(0xBEEF);
         vm.prank(thirdParty);
         vm.expectRevert("Resolver only");
