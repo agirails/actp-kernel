@@ -29,7 +29,7 @@ contract SmokeExecAutoSettle is Script {
         console2.log("Before: state =", uint8(before.state));
         console2.log("disputeWindow expiry =", before.disputeWindow);
         console2.log("now =", block.timestamp);
-        require(block.timestamp > before.disputeWindow, "Window not expired yet — wait longer");
+        require(block.timestamp > before.disputeWindow, "Window not expired yet - wait longer");
         require(uint8(before.state) == uint8(IACTPKernel.State.DELIVERED), "Not DELIVERED");
 
         // NOTE: on this Sepolia deployment, the treasury wallet that doubles
@@ -50,6 +50,6 @@ contract SmokeExecAutoSettle is Script {
 
         IACTPKernel.TransactionView memory after_ = kernel.getTransaction(TX_ID);
         require(uint8(after_.state) == uint8(IACTPKernel.State.SETTLED), "Settle failed");
-        console2.log("SETTLED ok — auto-settle path exercised");
+        console2.log("SETTLED ok - auto-settle path exercised");
     }
 }
