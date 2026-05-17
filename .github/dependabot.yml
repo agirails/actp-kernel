@@ -1,0 +1,15 @@
+# Dependabot — keeps SHA-pinned GitHub Actions current.
+#
+# Solidity dependencies are managed via git submodules under lib/ (forge-std,
+# OpenZeppelin, etc.), not via npm, so there is no npm/cargo ecosystem to
+# enrol here. Submodule bumps are handled manually as part of audit cycles.
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      actions:
+        patterns:
+          - "*"

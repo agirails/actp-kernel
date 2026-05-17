@@ -1,0 +1,81 @@
+name: CI
+
+# Apex audit 2026-05-17 FIND-002 — adds automated test enforcement for
+# the kernel. Forge unit + invariant tests run on every PR and push to
+# main; Slither static analysis runs non-blocking as a regression screen.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Least-privilege workflow default; widen per-job only where needed.
+permissions:
+  contents: read
+
+jobs:
+  # ── Forge build + test ──────────────────────────────────────────
+  test:
+    name: Forge build + test
+    runs-on: ubuntu-latest
+    steps:
+      # Third-party actions pinned by full-length commit SHA — defends
+      # against the tj-actions-class CVE-2025-30066 attack pattern.
+      # Dependabot's github-actions ecosystem (see .github/dependabot.yml)
+      # tracks upstream tag moves so SHAs don't silently rot.
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          submodules: recursive
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@c7450ba673e133f5ee30098b3b54f444d3a2ca2d # v1
+        with:
+          version: stable
+
+      - name: Show Forge version
+        run: forge --version
+
+      - name: Build (with size report)
+        run: forge build --sizes
+
+      - name: Run tests
+        run: forge test -vvv
+
+      - name: Coverage summary
+        run: forge coverage --report summary || true
+        # `|| true` — coverage occasionally needs special-cased contracts
+        # that don't compile under `forge coverage`'s instrumented profile.
+        # We surface the report in the log but don't gate the pipeline on
+        # it until the suite is split (unit + invariant) for coverage.
+        continue-on-error: true
+
+  # ── Slither static analysis (non-blocking baseline) ─────────────
+  # Per the in-flight Apex audit guidance: first-pass Slither output is
+  # expected to be 20-40 findings, most of which are documented design
+  # patterns (e.g. _releaseEscrow's emergency-recovery on `paused`). The
+  # job runs and surfaces output, but `continue-on-error: true` keeps it
+  # from blocking merges until a baseline `.slither.config.json` is tuned
+  # in a follow-up commit. Once tuned, flip to blocking by removing the
+  # continue-on-error line and adding the config to required status checks.
+  slither:
+    name: Slither (non-blocking)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          submodules: recursive
+
+      - name: Install Foundry (needed for forge build before Slither)
+        uses: foundry-rs/foundry-toolchain@c7450ba673e133f5ee30098b3b54f444d3a2ca2d # v1
+        with:
+          version: stable
+
+      - name: Run Slither
+        uses: crytic/slither-action@f197989dea5b53e986d0f88c60a034ddd77ec9a8 # v0.4.0
+        with:
+          target: "src/"
+          fail-on: none
+          slither-args: "--filter-paths 'lib/|test/|script/'"
