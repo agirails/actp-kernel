@@ -1,11 +1,30 @@
 # Integration Testing - Base Sepolia Deployment
 
-## Deployed Contracts
+> **Current as of**: 2026-05-17. Addresses below reflect the 2026-04-15
+> redeploy (per-tx penalty rate lock, permissionless auto-settle, milestone-
+> fully-drained settle, X402Relay dust guard). Bump this stamp whenever
+> the Sepolia stack is redeployed; cross-check against
+> `deployments/base-sepolia.json` which is the machine-readable source of
+> truth.
+
+## Deployed Contracts (current — 2026-04-15 redeploy)
 
 - **Network**: Base Sepolia (Chain ID: 84532)
-- **ACTPKernel**: `0x0ba0b17554601b30F5406e74d2208f567C12CcFE`
-- **EscrowVault**: `0xedC62264301A119207f1f89C6bDE4Fd7a7A4CeB4`
+- **ACTPKernel**: `0xE83cba71C445B4f658D88E4F179FccB9E1454F97`
+- **EscrowVault**: `0x0DAbBF59C40C1804488a84237C87971b2a7f5f5f`
+- **AgentRegistry**: `0x40Ca9B043220eCc26b0b280FE6A02861eADc2448`
+- **ArchiveTreasury**: `0x6acb954550b6a5135da9df5ac224cff33d697351`
+- **X402Relay** (deprecated, SDK 3.3.0+ direct-routes): `0x110b25bb3d45c40dfcf34bb451aa7069b2a1cb3b`
+- **AGIRAILSIdentityRegistry**: `0xce9749c768b425fab0daa0331047d1340ec99a88`
 - **MockUSDC**: `0x444b4e1A65949AB2ac75979D5d0166Eb7A248Ccb`
+
+### Previous (pre-2026-04-15 redeploy, storage-layout incompatible)
+
+- ACTPKernel: `0x0ba0b17554601b30F5406e74d2208f567C12CcFE` (DEPRECATED)
+- EscrowVault: `0xedC62264301A119207f1f89C6bDE4Fd7a7A4CeB4` (DEPRECATED)
+
+These older addresses are listed here only for historical reference;
+new integrations must use the current addresses above.
 
 ## E2E Test Results
 

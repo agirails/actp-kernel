@@ -5,24 +5,31 @@
 ### H-1: Dispute Resolution Trust Model
 
 **Status**: Known architectural decision
-**Severity**: HIGH (requires trust in admin/pauser roles)
+**Severity**: HIGH (requires trust in the admin role)
 **Mitigation**: Multisig + operational procedures
 
 #### Current Implementation
 
-The ACTP-Kernel uses an **off-chain arbitration model** for dispute resolution:
+The ACTP-Kernel uses an **off-chain arbitration model** for dispute resolution.
+The resolver allowlist was tightened in commit `d9c6e8e` (Sepolia redeploy
+2026-04-15) — pauser is now a pure pause-only operational key and is no
+longer authorised to resolve disputes. Admin (multisig) is the sole
+resolver:
 
 ```solidity
-// Only admin or pauser can resolve disputes
-if (fromState == State.DISPUTED && (toState == State.SETTLED || toState == State.CANCELLED)) {
-    require(msg.sender == admin || msg.sender == pauser, "Resolver only");
+// Only admin can resolve disputes (pauser removed in d9c6e8e, 2026-04-15)
+} else if (
+    fromState == State.DISPUTED && (toState == State.SETTLED || toState == State.CANCELLED)
+) {
+    require(msg.sender == admin, "Resolver only");
 }
 ```
 
 **Implications**:
-- Admin/pauser can distribute disputed funds arbitrarily
+- Admin can distribute disputed funds arbitrarily
 - No on-chain cryptographic proof of arbitration decision
 - Users must trust the AGIRAILS dispute resolution process
+- Pauser key, even if compromised, cannot resolve disputes or steal funds
 
 #### Production Deployment Requirements
 
@@ -106,6 +113,6 @@ All dispute resolutions MUST be logged:
 
 ---
 
-**Last Updated**: 2026-04-02
+**Last Updated**: 2026-05-17
 **Version**: v0.9.1 (audit fixes applied, pre-professional-audit)
 **Security Contact**: [agirails.io/contact](https://agirails.io/contact)
