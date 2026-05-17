@@ -1,0 +1,30 @@
+# Code owners for actp-kernel
+#
+# Lines further down the file override earlier lines for the same path.
+# Per Apex audit 2026-05-17 FIND-003 — couples with the branch protection
+# ruleset's "Require review from Code Owners" toggle (configured separately
+# in Settings → Branches once enabled).
+
+# Default — any file not matched by a more specific rule.
+*                              @DamirAGI @roosch269
+
+# Contract source — every PR touching kernel logic, escrow, registry,
+# identity, treasury, or relay paths needs an owner approval.
+/src/                          @DamirAGI @roosch269
+
+# Deployment scripts — these write to mainnet/testnet on execution.
+/script/                       @DamirAGI @roosch269
+
+# Submodule pins (forge-std, OpenZeppelin) — moving these touches
+# the entire compilation surface.
+/lib/                          @DamirAGI @roosch269
+
+# Deployment metadata — addresses, ABI artefacts, post-deploy state.
+/deployments/                  @DamirAGI @roosch269
+
+# Security and operational docs.
+/SECURITY.md                   @DamirAGI @roosch269
+/COVENANT.md                   @DamirAGI @roosch269
+
+# CI and Dependabot config — release-integrity surface.
+/.github/                      @DamirAGI @roosch269
