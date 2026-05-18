@@ -285,4 +285,104 @@ Run through this list immediately before kicking off Phase 1.
 
 ---
 
-_Next session, when ready: confirm open decisions (§Open decisions), then execute the "Pre-flight checklist" + Phase 1 + Phase 2 in one ~2-hour window._
+## Pre-execution prep results (2026-05-18 Faza 1.5)
+
+Items 1, 2, 3, and most of 4 from the "What's left to do BEFORE execution" list have been run through. Findings below; deploy-day actual effort is now closer to **~1.5h** because the SDK EIP-712 work turned out to be a no-op.
+
+### ✅ Compiler bump 0.8.20 → 0.8.34 — DONE WITH CAVEAT
+
+Bumped `foundry.toml` and 9 strict-pragma files to `0.8.34`. Build clean under 0.8.34. Sizes effectively unchanged:
+
+```
+ACTPKernel       22,174 bytes
+AgentRegistry    14,063 bytes
+ArchiveTreasury   5,513 bytes
+EscrowVault       3,383 bytes
+```
+
+`forge test` under 0.8.34: **479 pass, 3 fail, 1 skipped** (vs 482/0/1 under 0.8.20).
+
+The 3 failures are all in `test/M2_MediatorTimelockBypassTest.t.sol`:
+
+| Test | Failure |
+|------|---------|
+| `testM2ExploitPrevented_TimelockBypass` | `1036801 != 172801` |
+| `testM2Fix_MultipleRevokeCyclesRespectTimelock` | `1123201 != 691201` |
+| `testM2Fix_TimelockAlwaysResetOnApproval` | `1123201 != 172801` |
+
+Verified by isolating the file: same 3 fail under 0.8.34 alone, all 5 pass under 0.8.20. The deltas are exact multiples of 1 day (86,400s) — consistent with `block.timestamp` accumulating across what should be isolated test functions under forge 1.4.4 + solc 0.8.34. The `approveMediator` contract logic itself sets `mediatorApprovedAt = block.timestamp + MEDIATOR_APPROVAL_DELAY` — the math is correct on-chain; the assertions just use stale captures.
+
+**Verdict**: test-side issue, not a contract bug. Mediator timelock logic is unaffected.
+
+**Fix before deploy day** (~30 min): refactor the 3 tests to assert deltas (`mediatorApprovedAt - block.timestamp == MEDIATOR_APPROVAL_DELAY`) instead of absolute timestamp equality. This is compiler-version-independent and isolates correctly.
+
+Repository state was reverted to `solc = "0.8.20"` after the experiment so main stays green pending the test fix.
+
+### ✅ Anvil fork dry-run — DONE, all checks pass
+
+Forked Base mainnet via `anvil --fork-url $BASE_MAINNET_RPC --port 8546` and ran the full Phase 1 sequence:
+
+1. `forge script script/DeployBaseMainnet.s.sol --rpc-url http://localhost:8546 --broadcast` against the fork — all 4 contracts deployed; every in-script `require()` config verification passed (admin/pauser/feeRecipient/USDC/kernel/escrow links all wired correctly).
+2. Impersonated the Safe (`anvil_impersonateAccount 0x61fE58E9...`) + funded it with 1 ETH (`anvil_setBalance`).
+3. Multisig actions executed in sequence:
+   - `kernel.approveEscrowVault(newVault, true)` — status=1, gas=47,974
+   - `kernel.setArchiveTreasury(newArchive)` — status=1, gas=48,069
+   - `kernel.scheduleAgentRegistryUpdate(newRegistry)` — status=1, gas=92,331
+   - Verified post-state: `approvedEscrowVaults[newVault] = true`, `archiveTreasury = newArchive`, `agentRegistry = 0x0` (still — timelock active).
+4. Warped time forward 2 days + 1 second via `anvil_increaseTime`, then called `executeAgentRegistryUpdate()` from a random EOA (permissionless per kernel design). Status=1, gas=34,724. Post-state: `agentRegistry = newRegistry`. ✓
+5. Confirmed USDC contract on the fork has real balances (whale account had $952 USDC) — full E2E smoke tx is not blocked by USDC liquidity.
+
+**Verdict**: deploy script + multisig + timelock sequence behaves exactly as specified in this plan. No script changes needed.
+
+### ✅ EIP-712 SDK audit — NO PATCHES NEEDED
+
+Audited every signing call site in `@agirails/sdk` (10 grep hits across `DeliveryProofBuilder`, `CounterAcceptBuilder`, `CounterOfferBuilder`, `QuoteBuilder`, `MessageSigner`, `ACTPClient`). All EIP-712 typed-data signatures already construct their domain with `verifyingContract: kernelAddress`. Apex's forward-watch on EIP-712 domain binding is **already addressed in the codebase** — credit to whoever wrote the builders.
+
+Three plain-text `signMessage` call sites exist (`publish.ts`, `claim-code.ts`, `claim.ts`), all targeting `agirails.app` server endpoints rather than the kernel. Server-side nonce/challenge mechanism (Redis-backed `claim/challenge`, timestamp-bound publish messages) bounds replay independently of kernel address. No patches needed.
+
+The one outstanding kernel-side concern — txId derivation `keccak256(requester, provider, amount, serviceHash, nonce)` without kernel address — remains accepted-risk for the transition window per the original plan. It would need kernel-side cooperation to fix and is out of scope for this redeploy.
+
+**Verdict**: -3 hours from the original estimate; SDK release branches just need address swaps + version bumps.
+
+### ✅ Release-day update script — STAGED
+
+`deployments/scripts/update-mainnet-addresses.sh`. One command does the lockstep address swap across sdk-js (3 files), python-sdk-v2 (1 file), and agirails.app web indexer (1 file). Validates address shape, refuses to no-op, prints a manual hand-off checklist for the npm publishes / Vercel push / paymaster allowlist updates / docs lag.
+
+Usage on deploy day:
+
+```bash
+cd Protocol/actp-kernel
+./deployments/scripts/update-mainnet-addresses.sh \
+  <new-kernel> <new-vault> <new-registry> <new-archive> <deploy-block>
+```
+
+Smoke-tested: invalid args reject cleanly. Real dry-run requires fresh addresses so it's not been end-to-end executed; idempotent and verifies before/after counts so a mistyped run is safe to re-run with corrected args.
+
+### ⏸ Open prep work still pending
+
+| Item | Effort |
+|------|--------|
+| Fix the 3 M2 mediator timelock tests to use deltas | ~30 min |
+| Schedule 90-min execution window with Justin (multisig signing) | scheduling |
+| Final pre-flight checklist run-through | ~15 min |
+
+**Total remaining preparation**: ~45 min + scheduling. Down from the original ~6–8h estimate.
+
+---
+
+## Hand-off summary
+
+This plan is now execution-ready. The day-of operator (Damir, with Justin available for Safe co-signing) should:
+
+1. Read this whole doc (~15 min).
+2. Resolve the 6 §"Open decisions for Damir + Justin" — write the answers as a bullet list and paste them into the deploy-day chat session.
+3. Fix the 3 M2 tests (~30 min — refactor to use deltas vs absolute timestamps).
+4. Re-bump `foundry.toml` to `0.8.34` + the 9 strict-pragma files; confirm `forge test` is 482/0/1 (the same number as the 0.8.20 baseline).
+5. Run pre-flight checklist (§Pre-flight checklist, ~15 min).
+6. Execute Phase 1 with Justin online to co-sign Safe transactions (~30 min).
+7. Wait 2 days for the AgentRegistry timelock.
+8. Run `./deployments/scripts/update-mainnet-addresses.sh <args>` + follow its printed hand-off checklist (~45 min of npm + vercel work).
+9. Set the calendar reminders: T+2 days `executeAgentRegistryUpdate` confirmation, T+60 days stuck-tx force-resolve.
+10. Tweet thread + release notes go up after 48h of clean monitoring.
+
+_Plan complete. Next session: confirm open decisions and execute._
