@@ -370,6 +370,81 @@ Smoke-tested: invalid args reject cleanly. Real dry-run requires fresh addresses
 
 ---
 
+## 2026-05-19 SDK-side readiness update
+
+> Update appended after the SDK 4.0.0 beta cycle concluded with `4.0.0-beta.11`
+> on the `next` channel. Plan content above remains the authoritative
+> on-chain procedure; this section just maps what the SDK side has finished
+> doing while waiting for the on-chain redeploy window.
+
+### What the SDK has done since this plan was drafted (2026-05-18)
+
+| Track | Status as of 2026-05-19 | Reference |
+|---|---|---|
+| **AA bypass cascade (beta.1..9)** | 10+ provider/requester routing fixes, full state-machine walk validated end-to-end | sdk-js `CHANGELOG.md` 4.0.0-beta.1 … 4.0.0-beta.9 |
+| **Apex structural audit follow-up (beta.10)** | publish workflow with provenance + tag-driven attested releases, CodeQL JS/TS baseline, RelayChannel SSRF guard, `publishConfig.provenance: true` | beta.10 entry + `.github/workflows/{publish,codeql}.yml` |
+| **Apex source-level audit follow-up (beta.11)** | `parseAgirailsMd` 256 KB cap + tightened `maxAliasCount`, `actp init` writes `.env.example` + extends `.gitignore`, README runtime-secret disclosure, `PUBLISH_CLIENT_KEY` docstring | beta.11 entry + `src/config/agirailsmd.ts` + `src/cli/utils/config.ts` |
+| **Production canary (Sepolia, against the new-kernel d9c6e8e build)** | 10/10 SETTLED across ~20h soak, mean elapsed 27s, range 22–34s; alternating wallets; zero RPC race retries; zero bundler/paymaster failovers | `/tmp/canary-soak.jsonl`, `/tmp/canary-soak-summary.txt` |
+| **Dispute path (AIP-14 bond + admin resolve)** | End-to-end SETTLED on Sepolia: requester deposits $1 bond, admin resolves with full-refund + provider-at-fault proof, bond returns to disputer per fault attribution | tx `0x24b677ff71280948e001e51484ff36a5a3e1d6732bd519d6c225a9e44bd836f6` |
+| **Matrix coverage** | $0.05 / $1 / $5 happy paths, cancel pre-commit + cancel post-commit, $11 over-budget filter rejection | session log; per-tx hashes recorded |
+| **2293 unit tests** | green; lint 0 errors; tsc clean; tarball 698 files | every beta release validated this gate |
+
+**What's confirmed working on the new-kernel build that this plan deploys to mainnet**:
+
+- Requester-driven `linkEscrow` flow (kernel `Only requester` guard)
+- Provider-side `transitionState` for `IN_PROGRESS` / `DELIVERED` routed via SmartWalletRouter / Paymaster (gasless)
+- `Agent.pollForJobs` mode-gated (mock polls `INITIATED`, blockchain polls `COMMITTED` + `IN_PROGRESS`)
+- Orphan IN_PROGRESS recovery (re-entry-safe `processJob` state gating)
+- Permanent-revert classifier (`Transaction expired`, `Only requester`, `Only provider`, etc.) — matches both plaintext AND hex-encoded forms in bundler simulation reverts
+- Retry-with-backoff on RPC propagation lag in `StandardAdapter.linkEscrow`
+- `SettleOnInteract` routed via StandardAdapter so the expired-DELIVERED sweep is AA-aware
+- AIP-14 dispute bond deposit + distribution + fault-attributed reputation hook
+
+These are all kernel-version-aware — they were written and validated against the d9c6e8e build, which is what this plan deploys to mainnet.
+
+### What the SDK side still needs from the on-chain redeploy
+
+Exactly the operations the plan already names in **Phase 2 step 2**:
+
+1. **`src/config/networks.ts`** — replace `base-mainnet.contracts.{actpKernel, escrowVault, agentRegistry, archiveTreasury}` with the new addresses
+2. **`src/config/networks.test.ts`** — fixture refresh
+3. **`src/protocol/ACTPKernel.test.ts`** — fixture refresh (per plan's surface map)
+4. **`package.json` version**: `4.0.0-beta.11` → `4.0.0` (drop the pre-release suffix)
+5. **`CHANGELOG.md`** entry: `## [4.0.0] — <deploy date>` confirming stable release of the same code as beta.11 + the address swap
+6. **`actpKernelDeploymentBlock`** under `base-mainnet` — set to the new-kernel deploy block (catch-up sweep window pivots on this)
+7. **Publish via the new tag-driven workflow** (`v4.0.0` annotated tag → `.github/workflows/publish.yml` fires → npm publish with provenance attestation, dist-tag `latest`)
+8. **`npm dist-tag rm @agirails/sdk next`** (optional) once `latest` is on 4.0.0 — keeps tag discipline clean
+
+No SDK code changes other than the address swap + version bump. Everything else needed for 4.0.0 stable has already landed in beta.11 and is on `feat/4.0.0-event-driven-provider-listening` (and tagged `v4.0.0-beta.11`).
+
+### Pre-staged for execution day
+
+- `feat/4.0.0-event-driven-provider-listening` branch is current with beta.1..11 + all audit fixes — base for the 4.0.0 stable commit
+- `v4.0.0-beta.11` tag anchors the npm release on the `next` channel
+- `publish.yml` workflow ready to fire on `v4.0.0` tag push (assumes `NPM_TOKEN` secret OR npm trusted publisher configured)
+- CodeQL + secret-scanning enabled at repo level
+- 698 files / 837 KB tarball baseline (`npm pack --dry-run` from beta.11)
+
+### What the SDK side is NOT prepared for (and the plan above correctly defers)
+
+- **CDP paymaster allowlist** — Coinbase dashboard task (Phase 1 step 10). The audit observed Sepolia is currently relying on Pimlico fallback because CDP hasn't allowlisted the new Sepolia kernel; mainnet must NOT ship with that single-provider risk. Adding new mainnet kernel + vault + registry to BOTH CDP and Pimlico dashboards before Phase 2 starts is load-bearing for gasless flows.
+- **Old-kernel stuck-tx outreach (Option C, 60-day window)** — operational task, not SDK.
+- **Tweet thread + release notes** — Damir's call per plan §"What I'm explicitly NOT planning for".
+
+### Pending plan-level open decisions (from "Open decisions for Damir + Justin")
+
+The 6 questions in that section are unchanged by the SDK work. Recommended SDK-side defaults:
+
+| # | Question | Recommended default | Rationale |
+|---|---|---|---|
+| 4 | SDK breaking version | **4.0.0 stable (drop -beta.N suffix)** | Major bump correctly signals breaking changes from 3.x; `^3.x.x` consumers won't auto-upgrade |
+| — | New mainnet `actpKernelDeploymentBlock` | Use the deploy block from `forge script` output | Catch-up sweep window starts here |
+| — | Tag-driven publish workflow first attested release | **Yes, this is 4.0.0** | Closes Apex FIND-007 for `4.0.0+`; betas remain unattested but anchored by git tags |
+
+Other open decisions (compiler bump, pauser separation, outreach window, tweet timing, cron reminder) are kernel/operational scope — no SDK input needed.
+
+---
+
 ## Hand-off summary
 
 This plan is now execution-ready. The day-of operator (Damir, with Justin available for Safe co-signing) should:
