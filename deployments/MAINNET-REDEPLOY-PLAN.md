@@ -20,8 +20,17 @@ Current mainnet kernel `0x132B9eB321dBB57c828B083844287171BDC92d29` (deployed 20
 | `acceptQuote()` for negotiation price updates | `ed1bfb3` | AIP-2.1 multi-round negotiation broken |
 | Permissionless auto-settle after dispute window | `91f4f90` | **6 of 9 live mainnet txs stuck right now** |
 | Per-tx `requesterPenaltyBpsLocked` + pauser removed from resolver + dust guard + milestone-drained settle fix | `d9c6e8e` | Governance bumps retroactively re-price open txs; pauser can resolve disputes; some legitimate flows revert |
+| **INV-30: per-tx `disputeBondBpsLocked`** (Phase 0 kernel hardening, v2.1 verification plan; see AIP-5 §5.5.1) | `<fill before merge>` | Without it, admin `updateDisputeBondBps()` silently re-prices the bond on every in-flight transaction (no timelock on the live rate). Locked at creation closes the gap. |
 
 The kernel also has `agentRegistry()` set to `0x0` on-chain — the schedule/execute timelock dance was never run on mainnet, so AIP-7 reputation tracking has never functioned in production. Same gap we closed on Sepolia 2026-05-12 with `executeAgentRegistryUpdate()`.
+
+### Storage layout change (INV-30)
+
+The `Transaction` struct gains one new field — `uint16 disputeBondBpsLocked` — inserted between `requesterPenaltyBpsLocked` and `wasDisputed` for slot-packing efficiency (three `uint16` + `bool` = 7 bytes, single 32-byte slot, **no new storage slot consumed for the struct**).
+
+The `IACTPKernel.TransactionView` struct gains the same field in the same position so `getTransaction()` exposes it; downstream contracts that decode `TransactionView` (notably `ArchiveTreasury` via `kernel.getTransaction()` on settled / cancelled transactions) **must redeploy** against the new interface. The redeploy bundle below already covers this (kernel + vault + treasury + agent registry all redeploy together).
+
+**Migration:** no in-place migration of existing transactions. Pre-redeploy transactions remain on the old kernel; new transactions are created on the new kernel. The stuck-tx migration strategy below (§"Stuck-tx migration strategy") covers the 60-day window for honest counterparties to resolve open transactions on the old kernel before any force-resolution.
 
 **Conclusion**: this is a clean replacement, not an upgrade. Storage layout changes alone forbid an in-place upgrade; the diff scope and pause/resolver auth tightening make it the right time to retire the old kernel.
 
@@ -229,6 +238,21 @@ Maximum rollback wall time: ~30 min, gated on `npm publish` and `vercel deploy` 
 1. Add new kernel address to the existing dashboards' `network` label dimension (no schema change — same Prometheus label, new value seen).
 2. The 10% → 50% → 100% canary applies to **client-side traffic** (SDK fraction-rolling). Since we're flipping the SDK config atomically in npm, the canary is implicit in npm-update cadence — agents that update SDK first hit the new kernel; laggers stay on old until they `npm install` again. This is naturally gradual rollout over days/weeks, which is what we want.
 3. Set a hard kill-switch on the SDK side too: `ACTP_KERNEL_OVERRIDE` env var can point any agent back to the old kernel if needed during transition. Document for integrators in release notes.
+
+---
+
+## Deploy actors (2026-05-19)
+
+Recorded values for the execution-day hand-off. Update when ETH funding lands.
+
+| Role | Address | Notes |
+|---|---|---|
+| **Deployer EOA** | `0x1c4e1E01aDc3bbBc7b2336E690aAE54A6Eb4EB1A` | Generated 2026-05-19 via `cast wallet new` on Damir's machine. Encrypted keystore + password held in 1Password / separate vaults per Apex audit guidance. Used for `forge script` broadcast (Phase 1 steps 3–6) and Sourcify verifies. **Awaiting ETH funding: 0.02 ETH on Base mainnet.** |
+| **Admin Safe** | `0x61fE58E9EdB380EA65EC74bD364D9D2cba30B7f2` | Existing 2-of-3 treasury Safe. Carries continuity from the old kernel. Used for Phase 1 step 7 multisig wiring (`approveEscrowVault`, `setArchiveTreasury`, `scheduleAgentRegistryUpdate`) and the T+2-day `executeAgentRegistryUpdate` follow-up. |
+| **Pauser** | Same as Admin Safe | Per the 2026-05-19 decision above — pauser = treasury Safe for the 4.0.0 cut. Tech debt: split into a dedicated hot EOA before 5.0.0 / higher volume. |
+| **Available co-signers** | Damir, Justin | 2-of-3 met. Third signer not needed unless one of those two unavailable on deploy day. |
+
+> Private key never leaves Damir's encrypted keystore. The `DEPLOYER_KEY` env var on deploy day is sourced via `cast wallet decrypt-keystore deployer-mainnet` immediately before `forge script`, then unset.
 
 ---
 
