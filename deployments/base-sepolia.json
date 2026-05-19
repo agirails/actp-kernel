@@ -112,9 +112,10 @@
     "agentRegistryScheduledEtaIso": "2026-05-21T19:41:12Z",
     "agentRegistryScheduledNote": "scheduleAgentRegistryUpdate(0xD91F9aBf…) in same broadcast as deploy script. executeAgentRegistryUpdate callable after ETA (2-day timelock).",
     "paymasterAllowlist": {
-      "cdp": "pending",
-      "pimlico": "pending",
-      "note": "Pending — add 0x9d25A874… (kernel), 0x7dF07327… (vault), 0xD91F9aBf… (registry), 0x2eE4f7bE… (archive) to both CDP and Pimlico paymaster dashboards for Base Sepolia (chain 84532) before SDK 4.0.0 publish."
+      "cdp": "allowlisted",
+      "pimlico": "allowlisted",
+      "allowlistedAt": "2026-05-19",
+      "note": "kernel + vault + registry + archive added to both CDP and Pimlico paymaster dashboards for Base Sepolia (chain 84532) on 2026-05-19, ahead of SDK 4.0.0 publish."
     },
     "smokeE2E": {
       "passed": false,
