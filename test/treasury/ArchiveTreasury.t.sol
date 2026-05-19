@@ -562,6 +562,8 @@ contract MockACTPKernel {
         uint256 disputeWindow;
         bytes32 metadata;
         uint16 platformFeeBpsLocked;
+        uint16 requesterPenaltyBpsLocked; // mirror IACTPKernel.TransactionView field order
+        uint16 disputeBondBpsLocked; // INV-30: mirror IACTPKernel.TransactionView field order
         uint256 agentId;
         uint256 requesterAgentId;
         address disputeInitiator;
@@ -596,6 +598,8 @@ contract MockACTPKernel {
             disputeWindow: 2 days,
             metadata: bytes32(0),
             platformFeeBpsLocked: 100, // 1%
+            requesterPenaltyBpsLocked: 500, // default requester penalty rate (5%)
+            disputeBondBpsLocked: 500, // INV-30: default dispute bond rate (5%)
             agentId: 0,
             requesterAgentId: 0,
             disputeInitiator: address(0),

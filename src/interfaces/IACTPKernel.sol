@@ -29,6 +29,8 @@ interface IACTPKernel {
         uint256 disputeWindow;
         bytes32 metadata;
         uint16 platformFeeBpsLocked; // AIP-5: Locked platform fee % from creation
+        uint16 requesterPenaltyBpsLocked; // AIP-14 / d9c6e8e: Locked requester-penalty rate from creation
+        uint16 disputeBondBpsLocked; // INV-30: Locked dispute bond rate from creation (immune to live updateDisputeBondBps)
         uint256 agentId; // ERC-8004 agent token ID (0 = not ERC-8004 agent). See ADR-001.
         uint256 requesterAgentId; // AIP-14: Requester's ERC-8004 agent ID (0 if not an agent)
         address disputeInitiator; // AIP-14: Who opened the dispute (for bond return)

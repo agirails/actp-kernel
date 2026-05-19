@@ -38,6 +38,7 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         bytes32 metadata; // For quote hash (AIP-2) or other protocol metadata
         uint16 platformFeeBpsLocked; // AIP-5: Lock platform fee % at creation time
         uint16 requesterPenaltyBpsLocked; // Lock penalty rate at creation time
+        uint16 disputeBondBpsLocked; // INV-30: Lock dispute bond rate at creation
         bool wasDisputed; // AIP-7: Track if transaction went through dispute. AIP-14: semantic change to "provider at fault"
         uint256 agentId; // ERC-8004 agent ID for provider (0 if not applicable)
         uint256 requesterAgentId; // AIP-14: Requester's ERC-8004 agent ID (0 if not an agent)
@@ -216,6 +217,7 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         txn.serviceHash = serviceHash;
         txn.platformFeeBpsLocked = platformFeeBps; // AIP-5: Lock current platform fee % at creation
         txn.requesterPenaltyBpsLocked = requesterPenaltyBps; // Lock penalty rate at creation
+        txn.disputeBondBpsLocked = disputeBondBps; // INV-30: Lock dispute bond rate at creation (immune to live updateDisputeBondBps changes)
         txn.agentId = agentId; // ERC-8004 agent ID (0 if not applicable)
         txn.requesterAgentId = requesterAgentId; // AIP-14: Requester's ERC-8004 agent ID
 
@@ -253,7 +255,8 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
             txn.wasDisputed = true;
             // AIP-14: Dispute bond + initiator tracking
             txn.disputeInitiator = msg.sender;
-            uint256 bond = (txn.amount * disputeBondBps) / MAX_BPS;
+            // INV-30: use rate locked at creation, not live disputeBondBps, so admin changes cannot affect in-flight transactions
+            uint256 bond = (txn.amount * txn.disputeBondBpsLocked) / MAX_BPS;
             if (bond < MIN_DISPUTE_BOND) bond = MIN_DISPUTE_BOND;
             // Bond is a separate deposit — does not affect escrow split accounting
             require(txn.escrowContract != address(0), "Escrow missing for dispute");
@@ -304,6 +307,8 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
                 disputeWindow: txn.disputeWindow,
                 metadata: txn.metadata,
                 platformFeeBpsLocked: txn.platformFeeBpsLocked, // AIP-5: Return locked fee %
+                requesterPenaltyBpsLocked: txn.requesterPenaltyBpsLocked, // AIP-14 / d9c6e8e
+                disputeBondBpsLocked: txn.disputeBondBpsLocked, // INV-30: Return locked dispute bond rate
                 agentId: txn.agentId, // ERC-8004 agent ID
                 requesterAgentId: txn.requesterAgentId, // AIP-14
                 disputeInitiator: txn.disputeInitiator, // AIP-14
