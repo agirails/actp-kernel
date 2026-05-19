@@ -5,6 +5,8 @@ import "forge-std/Script.sol";
 import "../src/ACTPKernel.sol";
 import "../src/escrow/EscrowVault.sol";
 import "../src/tokens/MockUSDC.sol";
+import "../src/registry/AgentRegistry.sol";
+import "../src/treasury/ArchiveTreasury.sol";
 
 /**
  * @title DeployBaseSepolia
@@ -67,26 +69,58 @@ contract DeployBaseSepolia is Script {
         EscrowVault escrow = new EscrowVault(address(usdc), address(kernel));
         console.log("EscrowVault deployed at:", address(escrow));
 
-        // 4. Approve EscrowVault in Kernel
+        // 4. Deploy AgentRegistry
+        console.log("\nDeploying AgentRegistry...");
+        AgentRegistry registry = new AgentRegistry(address(kernel));
+        console.log("AgentRegistry deployed at:", address(registry));
+
+        // 5. Deploy ArchiveTreasury
+        console.log("\nDeploying ArchiveTreasury...");
+        ArchiveTreasury archive = new ArchiveTreasury(address(usdc), address(kernel), admin);
+        console.log("ArchiveTreasury deployed at:", address(archive));
+
+        // 6. Approve EscrowVault in Kernel
         console.log("\nApproving EscrowVault...");
         kernel.approveEscrowVault(address(escrow), true);
         console.log("EscrowVault approved");
+
+        // 7. Set ArchiveTreasury on Kernel
+        console.log("\nSetting ArchiveTreasury...");
+        kernel.setArchiveTreasury(address(archive));
+        console.log("ArchiveTreasury set");
+
+        // 8. Schedule AgentRegistry update (2-day timelock starts)
+        console.log("\nScheduling AgentRegistry update (2-day timelock)...");
+        kernel.scheduleAgentRegistryUpdate(address(registry));
+        console.log("Registry scheduled. Run executeAgentRegistryUpdate() after timelock expires.");
+
+        // 9. Transfer ArchiveTreasury ownership to admin (if different from deployer)
+        // On Sepolia admin typically == deployer, so this is a no-op when they match.
+        if (admin != deployer) {
+            console.log("\nTransferring ArchiveTreasury ownership to admin...");
+            archive.transferOwnership(admin);
+            console.log("Ownership transferred");
+        }
 
         vm.stopBroadcast();
 
         // Print deployment summary
         console.log("\n=== DEPLOYMENT SUMMARY ===");
-        console.log("Network:     Base Sepolia (Chain ID 84532)");
-        console.log("ACTPKernel:  ", address(kernel));
-        console.log("EscrowVault: ", address(escrow));
-        console.log("MockUSDC:    ", address(usdc));
-        console.log("Admin:       ", kernel.admin());
-        console.log("FeeRecipient:", kernel.feeRecipient());
+        console.log("Network:           Base Sepolia (Chain ID 84532)");
+        console.log("ACTPKernel:       ", address(kernel));
+        console.log("EscrowVault:      ", address(escrow));
+        console.log("AgentRegistry:    ", address(registry));
+        console.log("ArchiveTreasury:  ", address(archive));
+        console.log("MockUSDC:         ", address(usdc));
+        console.log("Admin:            ", kernel.admin());
+        console.log("FeeRecipient:     ", kernel.feeRecipient());
         console.log("\n=== UPDATE SDK CONFIG ===");
         console.log("contracts: {");
-        console.log("  actpKernel: '", vm.toString(address(kernel)), "',");
-        console.log("  escrowVault: '", vm.toString(address(escrow)), "',");
-        console.log("  usdc: '", vm.toString(address(usdc)), "'");
+        console.log("  actpKernel: '",      vm.toString(address(kernel)),   "',");
+        console.log("  escrowVault: '",     vm.toString(address(escrow)),   "',");
+        console.log("  agentRegistry: '",   vm.toString(address(registry)), "',");
+        console.log("  archiveTreasury: '", vm.toString(address(archive)),  "',");
+        console.log("  usdc: '",            vm.toString(address(usdc)),     "'");
         console.log("}");
     }
 }

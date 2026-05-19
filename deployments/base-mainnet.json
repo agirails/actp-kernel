@@ -120,7 +120,7 @@
       "0x22F474327c49d80cEA60a3Da05C63bf361BBbaf0",
       "0xaB9Bd33fA0bE5dd42704be176027FDb206835df1"
     ],
-    "note": "2-of-4 multisig (plan originally stated 2-of-3; verified 2026-05-19 — 4 owners, all under Damir+team custody). Used as admin, pauser, feeRecipient, ArchiveTreasury.uploader."
+    "note": "2-of-4 multisig. Used as admin, pauser, feeRecipient, ArchiveTreasury.uploader."
   },
   "deployment": {
     "framework": "Foundry",

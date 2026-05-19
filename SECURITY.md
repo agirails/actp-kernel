@@ -113,6 +113,6 @@ All dispute resolutions MUST be logged:
 
 ---
 
-**Last Updated**: 2026-05-17
-**Version**: v0.9.1 (audit fixes applied, pre-professional-audit)
+**Last Updated**: 2026-05-19
+**Version**: v1.0 (Base mainnet redeploy 2026-05-19; internal review, independent code review, and external source-level audit findings closed)
 **Security Contact**: [agirails.io/contact](https://agirails.io/contact)

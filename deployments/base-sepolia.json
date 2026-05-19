@@ -12,11 +12,12 @@
       "symbol": "mUSDC"
     },
     "ACTPKernel": {
-      "address": "0xE83cba71C445B4f658D88E4F179FccB9E1454F97",
-      "verified": false,
-      "deployBlock": 40239703,
-      "deployTx": "0x4b5221b0de56fe1b355718efeb5f9de541190bc994282f211290b0baea18a714",
-      "explorerUrl": "https://sepolia.basescan.org/address/0xE83cba71C445B4f658D88E4F179FccB9E1454F97",
+      "address": "0x9d25A874f046185d9237Cd4954C88D2B74B0021b",
+      "verified": true,
+      "verifiedOn": "sourcify",
+      "deployBlock": 41725686,
+      "deployTx": "0xe976b7005b4a35f066fedb782d69974f2f491b3608d2803375fa46987546db5c",
+      "explorerUrl": "https://sepolia.basescan.org/address/0x9d25A874f046185d9237Cd4954C88D2B74B0021b",
       "constructorArgs": {
         "admin": "0x42a2f11555b9363fb7ebdcdc76d7cb26e01dcb00",
         "pauser": "0x42a2f11555b9363fb7ebdcdc76d7cb26e01dcb00",
@@ -24,32 +25,38 @@
         "agentRegistry": "0x0000000000000000000000000000000000000000",
         "usdc": "0x444b4e1A65949AB2ac75979D5d0166Eb7A248Ccb"
       },
-      "note": "Redeployed 2026-04-15 with: requesterPenaltyBpsLocked (per-tx penalty rate lock), permissionless auto-settle after dispute window (commit 91f4f90), pauser removed from resolver allowlist, milestone-fully-released settle path. Storage layout incompatible with prior 0x90a1Bcc...",
-      "previousDeployment": "0x90a1Bcc218c148F63D036aB2f7B5329C9ee7868d (2026-04-02)"
+      "compiler": "0.8.34",
+      "note": "Redeployed 2026-05-19 alongside mainnet to align ABI shape (INV-30 disputeBondBpsLocked + AIP-14 / d9c6e8e requesterPenaltyBpsLocked). Same source as mainnet kernel 0x048c8113…. Storage layout incompatible with prior 0xE83cba71….",
+      "previousDeployment": "0xE83cba71C445B4f658D88E4F179FccB9E1454F97 (2026-04-15)"
     },
     "EscrowVault": {
-      "address": "0x0DAbBF59C40C1804488a84237C87971b2a7f5f5f",
+      "address": "0x7dF07327090efcA73DCBa70414aA3131Fc6d2efB",
       "verified": true,
       "verifiedOn": "sourcify",
-      "explorerUrl": "https://sepolia.basescan.org/address/0x0DAbBF59C40C1804488a84237C87971b2a7f5f5f",
+      "deployBlock": 41725687,
+      "deployTx": "0x0194b83d02fe31482d346db0d445a1245ec8ac35d66995a465af217c22beca59",
+      "explorerUrl": "https://sepolia.basescan.org/address/0x7dF07327090efcA73DCBa70414aA3131Fc6d2efB",
       "constructorArgs": {
         "token": "0x444b4e1A65949AB2ac75979D5d0166Eb7A248Ccb",
-        "kernel": "0xE83cba71C445B4f658D88E4F179FccB9E1454F97"
+        "kernel": "0x9d25A874f046185d9237Cd4954C88D2B74B0021b"
       },
-      "note": "Redeployed 2026-04-15 alongside kernel (immutable kernel ref forces fresh deploy). E2E smoke tested.",
-      "previousDeployment": "0xA336967F4481EeE4A8Bb59e35423D273fbf9f5e7"
+      "compiler": "0.8.34",
+      "note": "Redeployed 2026-05-19 alongside kernel (immutable kernel ref forces fresh deploy).",
+      "previousDeployment": "0x0DAbBF59C40C1804488a84237C87971b2a7f5f5f (2026-04-15)"
     },
     "AgentRegistry": {
-      "address": "0x40ca9b043220ecc26b0b280fe6a02861eadc2448",
+      "address": "0xD91F9aBfBf60b4a2Fd5317ab0cDF3F44faB5D656",
       "verified": true,
       "verifiedOn": "sourcify",
-      "deployBlock": 40240186,
-      "explorerUrl": "https://sepolia.basescan.org/address/0x40ca9b043220ecc26b0b280fe6a02861eadc2448",
+      "deployBlock": 41725688,
+      "deployTx": "0xa0b7ac96550590f8269ca245e7f6ba618ab5821dfe33d3e48f919d7bd650484c",
+      "explorerUrl": "https://sepolia.basescan.org/address/0xD91F9aBfBf60b4a2Fd5317ab0cDF3F44faB5D656",
       "constructorArgs": {
-        "actpKernel": "0xE83cba71C445B4f658D88E4F179FccB9E1454F97"
+        "actpKernel": "0x9d25A874f046185d9237Cd4954C88D2B74B0021b"
       },
-      "note": "Redeployed 2026-04-15 alongside kernel. Pending scheduleAgentRegistryUpdate on kernel — call executeAgentRegistryUpdate() after ~2026-04-17 (2-day timelock).",
-      "previousDeployment": "0x7403426a720f91ea155405e3b63d16aa40a46f98"
+      "compiler": "0.8.34",
+      "note": "Redeployed 2026-05-19 alongside kernel. scheduleAgentRegistryUpdate called at deploy time. executeAgentRegistryUpdate callable after 2026-05-21 19:41 UTC (2-day timelock).",
+      "previousDeployment": "0x40ca9b043220ecc26b0b280fe6a02861eadc2448 (2026-04-15)"
     },
     "AGIRAILSIdentityRegistry": {
       "address": "0xce9749c768b425fab0daa0331047d1340ec99a88",
@@ -59,18 +66,21 @@
       "note": "Redeployed 2026-04-02 with audit fix L-2: zero-address guard in _changeOwner"
     },
     "ArchiveTreasury": {
-      "address": "0x6acb954550b6a5135da9df5ac224cff33d697351",
+      "address": "0x2eE4f7bE289fc9EFC2F9f2D6E53e50abDF23A3eb",
       "verified": true,
       "verifiedOn": "sourcify",
-      "deployBlock": 40240208,
-      "explorerUrl": "https://sepolia.basescan.org/address/0x6acb954550b6a5135da9df5ac224cff33d697351",
+      "deployBlock": 41725689,
+      "deployTx": "0xd3dc0dd2f630abb32480061a51522efde9234539687ccbae037f56ef2da36808",
+      "explorerUrl": "https://sepolia.basescan.org/address/0x2eE4f7bE289fc9EFC2F9f2D6E53e50abDF23A3eb",
       "constructorArgs": {
         "usdc": "0x444b4e1A65949AB2ac75979D5d0166Eb7A248Ccb",
-        "kernel": "0xE83cba71C445B4f658D88E4F179FccB9E1454F97",
+        "kernel": "0x9d25A874f046185d9237Cd4954C88D2B74B0021b",
         "uploader": "0x42a2f11555b9363fb7ebdcdc76d7cb26e01dcb00"
       },
-      "note": "Redeployed 2026-04-15 alongside kernel. setArchiveTreasury already invoked on the new kernel.",
-      "previousDeployment": "0xe9aaefae83d206a2e4504f84b6b13c55d09d62a0"
+      "compiler": "0.8.34",
+      "owner": "0x42a2f11555b9363fb7ebdcdc76d7cb26e01dcb00",
+      "note": "Redeployed 2026-05-19 alongside kernel. setArchiveTreasury already invoked on the new kernel at deploy time. owner = deployer EOA (Sepolia admin); no transferOwnership needed since admin == deployer.",
+      "previousDeployment": "0x6acb954550b6a5135da9df5ac224cff33d697351 (2026-04-15)"
     },
     "X402Relay": {
       "address": "0x110b25bb3d45c40dfcf34bb451aa7069b2a1cb3b",
@@ -91,17 +101,19 @@
   },
   "postDeploy": {
     "escrowVaultApproved": true,
-    "escrowVaultApprovedTx": "0x447702ad3895b670199e46e322c25bfc1573b0e6c58cde754d89e4ebd13a56e5",
-    "escrowVaultNote": "approved for 0x0DAbBF59... (new vault); earlier 0xA336967F... approval cancelled since its immutable kernel no longer matches",
+    "escrowVaultApprovedBlock": 41725690,
+    "escrowVaultApprovedNote": "Approved in same broadcast as deploy script (admin == deployer).",
     "archiveTreasurySet": true,
-    "archiveTreasurySetTx": "0x8cbad57f05e95348335092db2271fe51ed107d9c6ecf9e55b48ee46f9986c20c",
+    "archiveTreasurySetBlock": 41725691,
+    "archiveTreasurySetNote": "Set in same broadcast as deploy script.",
     "agentRegistryScheduled": true,
-    "agentRegistryScheduledTx": "0x506eacf83774f279a2563b578f822d8e7178cfd4dc6b9f8ce20043b5d50341ff",
-    "agentRegistryNote": "scheduleAgentRegistryUpdate for 0x40ca9b04... called 2026-04-15 after cancelling the earlier schedule for the stale registry; executeAgentRegistryUpdate callable after ~2026-04-17 (2-day timelock)",
+    "agentRegistryScheduledBlock": 41725692,
+    "agentRegistryScheduledEta": 1779392472,
+    "agentRegistryScheduledEtaIso": "2026-05-21T19:41:12Z",
+    "agentRegistryScheduledNote": "scheduleAgentRegistryUpdate(0xD91F9aBf…) in same broadcast as deploy script. executeAgentRegistryUpdate callable after ETA (2-day timelock).",
     "smokeE2E": {
-      "passed": true,
-      "txId": "0xfb26586f0c4e737a786e39da45b0d9cb8a02b48a250c8e99b3dac6be72d6edb9",
-      "note": "Full happy-path INITIATED → QUOTED → COMMITTED → IN_PROGRESS → DELIVERED → SETTLED verified against new kernel + new vault."
+      "passed": false,
+      "note": "Pending — re-run dispute canary against new Sepolia kernel after SDK config swap lands."
     }
   },
   "deployment": {

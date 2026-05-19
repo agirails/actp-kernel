@@ -246,5 +246,5 @@ The covenant is not negotiable. Code that violates these principles is incorrect
 
 ---
 
-**Last Updated:** 2025-12-22
-**Version:** 1.0 (Initial deployment)
+**Last Updated:** 2026-05-19
+**Version:** 1.1 (Base mainnet redeploy 2026-05-19 — AIP-14 dispute bonds, INV-30 per-tx bond rate lock, M-2 mediator timelock hardening, ERC-8004 agentId integration; Sourcify EXACT_MATCH verified.)

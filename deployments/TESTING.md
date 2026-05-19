@@ -1,19 +1,19 @@
 # Integration Testing - Base Sepolia Deployment
 
-> **Current as of**: 2026-05-17. Addresses below reflect the 2026-04-15
+> **Current as of**: 2026-05-19. Addresses below reflect the 2026-05-19
 > redeploy (per-tx penalty rate lock, permissionless auto-settle, milestone-
 > fully-drained settle, X402Relay dust guard). Bump this stamp whenever
 > the Sepolia stack is redeployed; cross-check against
 > `deployments/base-sepolia.json` which is the machine-readable source of
 > truth.
 
-## Deployed Contracts (current — 2026-04-15 redeploy)
+## Deployed Contracts (current — 2026-05-19 redeploy)
 
 - **Network**: Base Sepolia (Chain ID: 84532)
-- **ACTPKernel**: `0xE83cba71C445B4f658D88E4F179FccB9E1454F97`
-- **EscrowVault**: `0x0DAbBF59C40C1804488a84237C87971b2a7f5f5f`
-- **AgentRegistry**: `0x40Ca9B043220eCc26b0b280FE6A02861eADc2448`
-- **ArchiveTreasury**: `0x6acb954550b6a5135da9df5ac224cff33d697351`
+- **ACTPKernel**: `0x9d25A874f046185d9237Cd4954C88D2B74B0021b`
+- **EscrowVault**: `0x7dF07327090efcA73DCBa70414aA3131Fc6d2efB`
+- **AgentRegistry**: `0xD91F9aBfBf60b4a2Fd5317ab0cDF3F44faB5D656`
+- **ArchiveTreasury**: `0x2eE4f7bE289fc9EFC2F9f2D6E53e50abDF23A3eb`
 - **X402Relay** (deprecated, SDK 3.3.0+ direct-routes): `0x110b25bb3d45c40dfcf34bb451aa7069b2a1cb3b`
 - **AGIRAILSIdentityRegistry**: `0xce9749c768b425fab0daa0331047d1340ec99a88`
 - **MockUSDC**: `0x444b4e1A65949AB2ac75979D5d0166Eb7A248Ccb`
@@ -71,8 +71,8 @@ new integrations must use the current addresses above.
    BASE_SEPOLIA_RPC=https://sepolia.base.org
 
    # Deployed contract addresses (already in networks.ts)
-   ACTP_KERNEL=0x0ba0b17554601b30F5406e74d2208f567C12CcFE
-   ESCROW_VAULT=0xedC62264301A119207f1f89C6bDE4Fd7a7A4CeB4
+   ACTP_KERNEL=0x9d25A874f046185d9237Cd4954C88D2B74B0021b
+   ESCROW_VAULT=0x7dF07327090efcA73DCBa70414aA3131Fc6d2efB
    MOCK_USDC=0x444b4e1A65949AB2ac75979D5d0166Eb7A248Ccb
 
    # Deployed contract addresses (already in networks.ts)
@@ -87,7 +87,7 @@ new integrations must use the current addresses above.
 
 ```bash
 # Check if ACTPKernel is deployed
-cast code 0x0ba0b17554601b30F5406e74d2208f567C12CcFE --rpc-url https://sepolia.base.org
+cast code 0x9d25A874f046185d9237Cd4954C88D2B74B0021b --rpc-url https://sepolia.base.org
 
 # Should return bytecode (not 0x)
 # If returns "0x" → Contract not deployed or wrong address
@@ -97,20 +97,20 @@ cast code 0x0ba0b17554601b30F5406e74d2208f567C12CcFE --rpc-url https://sepolia.b
 
 ```bash
 # Read public variables from ACTPKernel
-cast call 0x0ba0b17554601b30F5406e74d2208f567C12CcFE "admin()(address)" --rpc-url https://sepolia.base.org
+cast call 0x9d25A874f046185d9237Cd4954C88D2B74B0021b "admin()(address)" --rpc-url https://sepolia.base.org
 
-cast call 0x0ba0b17554601b30F5406e74d2208f567C12CcFE "paused()(bool)" --rpc-url https://sepolia.base.org
+cast call 0x9d25A874f046185d9237Cd4954C88D2B74B0021b "paused()(bool)" --rpc-url https://sepolia.base.org
 
-cast call 0x0ba0b17554601b30F5406e74d2208f567C12CcFE "platformFeeBps()(uint16)" --rpc-url https://sepolia.base.org
+cast call 0x9d25A874f046185d9237Cd4954C88D2B74B0021b "platformFeeBps()(uint16)" --rpc-url https://sepolia.base.org
 ```
 
 ### 3. Check EscrowVault Link
 
 ```bash
 # Check if EscrowVault knows about Kernel
-cast call 0xedC62264301A119207f1f89C6bDE4Fd7a7A4CeB4 "kernel()(address)" --rpc-url https://sepolia.base.org
+cast call 0x7dF07327090efcA73DCBa70414aA3131Fc6d2efB "kernel()(address)" --rpc-url https://sepolia.base.org
 
-# Should return ACTPKernel address: 0x0ba0b17554601b30F5406e74d2208f567C12CcFE
+# Should return ACTPKernel address: 0x9d25A874f046185d9237Cd4954C88D2B74B0021b
 ```
 
 ### 4. Check MockUSDC
@@ -248,13 +248,13 @@ npx ts-node test-deployment.ts
 ## Monitoring & Debugging
 
 **View transactions on Basescan**:
-- ACTPKernel: https://sepolia.basescan.org/address/0x0ba0b17554601b30F5406e74d2208f567C12CcFE
-- EscrowVault: https://sepolia.basescan.org/address/0xedC62264301A119207f1f89C6bDE4Fd7a7A4CeB4
+- ACTPKernel: https://sepolia.basescan.org/address/0x9d25A874f046185d9237Cd4954C88D2B74B0021b
+- EscrowVault: https://sepolia.basescan.org/address/0x7dF07327090efcA73DCBa70414aA3131Fc6d2efB
 
 **Monitor events**:
 ```bash
 # Watch for TransactionCreated events
-cast logs --address 0x0ba0b17554601b30F5406e74d2208f567C12CcFE \
+cast logs --address 0x9d25A874f046185d9237Cd4954C88D2B74B0021b \
   --rpc-url https://sepolia.base.org \
   'TransactionCreated(bytes32,address,address,uint256,bytes32,uint256,uint256,uint256)'
 ```
@@ -273,12 +273,12 @@ After deploying or redeploying any contract, **add it to both paymaster allowlis
 
 | Contract | Base Sepolia | Base Mainnet |
 |----------|-------------|-------------|
-| ACTPKernel | `0x0ba0b17554601b30F5406e74d2208f567C12CcFE` | `0x132B9eB321dBB57c828B083844287171BDC92d29` |
-| EscrowVault | `0xedC62264301A119207f1f89C6bDE4Fd7a7A4CeB4` | `0x6aAF45882c4b0dD34130ecC790bb5Ec6be7fFb99` |
+| ACTPKernel | `0x9d25A874f046185d9237Cd4954C88D2B74B0021b` | `0x048c811352e8a3fECd5b0Ec4AA2c2b94083CC842` |
+| EscrowVault | `0x7dF07327090efcA73DCBa70414aA3131Fc6d2efB` | `0x262D5912A9612F0c66dA5d13B4E678D50ebC44b5` |
 | USDC (MockUSDC on testnet) | `0x444b4e1A65949AB2ac75979D5d0166Eb7A248Ccb` | `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` |
-| AgentRegistry | `0xDd6D66924B43419F484aE981F174b803487AF25A` | `0x6fB222CF3DDdf37Bcb248EE7BBBA42Fb41901de8` |
-| X402Relay | `0x4DCD02b276Dbeab57c265B72435e90507b6Ac81A` | `0x81DFb954A3D58FEc24Fc9c946aC2C71a911609F8` |
-| ArchiveTreasury | `0xACB672de092beaAE2cd286dD61Cb2352AF7159F1` | `0x0516C411C0E8d75D17A768022819a0a4FB3cA2f2` |
+| AgentRegistry | `0xDd6D66924B43419F484aE981F174b803487AF25A` | `0x64Cb18bfb3CC1aCb1370a3B01613391D3561a009` |
+| X402Relay | `0x4DCD02b276Dbeab57c265B72435e90507b6Ac81A` | `(mainnet: X402Relay deprecated, not deployed — see Sepolia for legacy address)` |
+| ArchiveTreasury | `0xACB672de092beaAE2cd286dD61Cb2352AF7159F1` | `0x6159A80Ce8362aBB2307FbaB4Ed4D3F4A4231Acc` |
 
 **Total: 12 addresses (6 contracts × 2 chains)**
 

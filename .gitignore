@@ -35,3 +35,7 @@ CLAUDE.md
 .ralph/
 docs/
 .sepolia-autosettle-armed.txt
+
+# Internal operational playbooks — never commit
+deployments/*PLAN*.md
+deployments/internal/
