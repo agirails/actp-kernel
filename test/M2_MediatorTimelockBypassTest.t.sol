@@ -57,7 +57,13 @@ contract M2_MediatorTimelockBypassTest is Test {
         // Day 0: Admin approves malicious mediator
         kernel.approveMediator(maliciousMediator, true);
         uint256 timelockDay0 = kernel.mediatorApprovedAt(maliciousMediator);
-        assertEq(timelockDay0, block.timestamp + 2 days); // Timelock = Day 2
+        // Delta form (per MAINNET-REDEPLOY-PLAN §"Pre-execution prep results"):
+        // under solc 0.8.34 + forge 1.4.4 the absolute `block.timestamp + 2 days`
+        // form drifted because of test-isolation timestamp accumulation. The
+        // delta is invariant — the contract sets `now + MEDIATOR_APPROVAL_DELAY`
+        // at approveMediator() time, read happens in the same tx, so the delta
+        // is exactly MEDIATOR_APPROVAL_DELAY regardless of where "now" is.
+        assertEq(timelockDay0 - block.timestamp, 2 days, "Day 0 timelock delta");
 
         // Day 1: Admin revokes mediator (but in OLD code, timelock stayed at Day 2)
         vm.warp(block.timestamp + 1 days);
@@ -72,7 +78,7 @@ contract M2_MediatorTimelockBypassTest is Test {
         uint256 timelockDay10 = kernel.mediatorApprovedAt(maliciousMediator);
 
         // M-2 FIX: New timelock should be set to Day 12 (Day 10 + 2 days)
-        assertEq(timelockDay10, block.timestamp + 2 days); // ✅ FIXED!
+        assertEq(timelockDay10 - block.timestamp, 2 days, "Day 10 timelock delta");
 
         // EXPLOIT PREVENTED: Mediator is NOT immediately active at Day 10
         // Create a disputed transaction at Day 10
@@ -126,10 +132,10 @@ contract M2_MediatorTimelockBypassTest is Test {
      * @notice Verifies timelock is properly reset on each approval
      */
     function testM2Fix_TimelockAlwaysResetOnApproval() external {
-        // First approval
+        // First approval — delta form (see testM2ExploitPrevented_TimelockBypass for rationale)
         kernel.approveMediator(maliciousMediator, true);
         uint256 timelock1 = kernel.mediatorApprovedAt(maliciousMediator);
-        assertEq(timelock1, block.timestamp + 2 days);
+        assertEq(timelock1 - block.timestamp, 2 days, "first approval timelock delta");
 
         // Revoke
         vm.warp(block.timestamp + 1 days);
@@ -142,7 +148,7 @@ contract M2_MediatorTimelockBypassTest is Test {
         uint256 timelock2 = kernel.mediatorApprovedAt(maliciousMediator);
 
         // New timelock should be current timestamp + 2 days
-        assertEq(timelock2, block.timestamp + 2 days);
+        assertEq(timelock2 - block.timestamp, 2 days, "re-approval timelock delta");
         assertGt(timelock2, timelock1); // New timelock is later than old one
     }
 
@@ -169,11 +175,11 @@ contract M2_MediatorTimelockBypassTest is Test {
         kernel.approveMediator(maliciousMediator, false);
         assertEq(kernel.mediatorApprovedAt(maliciousMediator), 0);
 
-        // Cycle 2: Re-approve → Revoke
+        // Cycle 2: Re-approve → Revoke — delta form (see testM2ExploitPrevented_TimelockBypass)
         vm.warp(block.timestamp + 5 days);
         kernel.approveMediator(maliciousMediator, true);
         uint256 timelock2 = kernel.mediatorApprovedAt(maliciousMediator);
-        assertEq(timelock2, block.timestamp + 2 days);
+        assertEq(timelock2 - block.timestamp, 2 days, "cycle 2 timelock delta");
 
         vm.warp(block.timestamp + 1 days);
         kernel.approveMediator(maliciousMediator, false);
@@ -185,7 +191,7 @@ contract M2_MediatorTimelockBypassTest is Test {
         uint256 timelock3 = kernel.mediatorApprovedAt(maliciousMediator);
 
         // Each re-approval sets NEW timelock
-        assertEq(timelock3, block.timestamp + 2 days);
+        assertEq(timelock3 - block.timestamp, 2 days, "cycle 3 timelock delta");
         assertGt(timelock3, timelock2);
     }
 
