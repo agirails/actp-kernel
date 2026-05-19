@@ -111,6 +111,11 @@
     "agentRegistryScheduledEta": 1779392472,
     "agentRegistryScheduledEtaIso": "2026-05-21T19:41:12Z",
     "agentRegistryScheduledNote": "scheduleAgentRegistryUpdate(0xD91F9aBf…) in same broadcast as deploy script. executeAgentRegistryUpdate callable after ETA (2-day timelock).",
+    "paymasterAllowlist": {
+      "cdp": "pending",
+      "pimlico": "pending",
+      "note": "Pending — add 0x9d25A874… (kernel), 0x7dF07327… (vault), 0xD91F9aBf… (registry), 0x2eE4f7bE… (archive) to both CDP and Pimlico paymaster dashboards for Base Sepolia (chain 84532) before SDK 4.0.0 publish."
+    },
     "smokeE2E": {
       "passed": false,
       "note": "Pending — re-run dispute canary against new Sepolia kernel after SDK config swap lands."
@@ -119,6 +124,6 @@
   "deployment": {
     "framework": "Foundry",
     "rpc": "Base Sepolia public RPC",
-    "date": "2026-04-15"
+    "date": "2026-05-19"
   }
 }

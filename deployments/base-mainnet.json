@@ -102,9 +102,10 @@
     "agentRegistryScheduledEtaIso": "2026-05-21T18:37:53Z",
     "agentRegistryScheduledNote": "scheduleAgentRegistryUpdate(0x64Cb18bf…) via Safe multiSend; 2-day timelock expires 2026-05-21T18:37:53Z. executeAgentRegistryUpdate() permissionless after ETA.",
     "paymasterAllowlist": {
-      "cdp": "pending",
-      "pimlico": "pending",
-      "note": "Allowlist new kernel + vault + registry on both paymaster dashboards BEFORE Phase 2 SDK config swap, otherwise gasless flows break."
+      "cdp": "allowlisted",
+      "pimlico": "allowlisted",
+      "allowlistedAt": "2026-05-19",
+      "note": "New kernel + vault + registry + archive added to both CDP and Pimlico paymaster dashboards 2026-05-19, ahead of SDK 4.0.0 publish."
     },
     "sourcifyVerified": true,
     "sourcifyVerifiedAt": "2026-05-19T18:43Z",
