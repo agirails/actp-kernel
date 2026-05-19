@@ -469,6 +469,59 @@ Other open decisions (compiler bump, pauser separation, outreach window, tweet t
 
 ---
 
+## 2026-05-19 Phase 1 execution log
+
+Phase 1 executed by Damir + Arha on 2026-05-19 (no Justin co-sign needed — Damir signed both as Safe owner). All contracts live, verified, wired.
+
+### Deploy step (~60s wall time)
+
+`forge script DeployBaseMainnet.s.sol --broadcast --slow` against Tenderly mainnet gateway. 4 contracts deployed in blocks 46,212,266 – 46,212,270, total gas 10,299,828 (~0.000058 ETH ≈ $0.15 at deploy gas price ~0.011 gwei).
+
+| Contract | Address | Deploy block | Deploy tx |
+|---|---|---|---|
+| ACTPKernel | `0x048c811352e8a3fECd5b0Ec4AA2c2b94083CC842` | 46,212,266 | `0x0ec9bec2…` |
+| EscrowVault | `0x262D5912A9612F0c66dA5d13B4E678D50ebC44b5` | 46,212,268 | `0x55b44cd0…` |
+| AgentRegistry | `0x64Cb18bfb3CC1aCb1370a3B01613391D3561a009` | 46,212,269 | `0xdbf9158e…` |
+| ArchiveTreasury | `0x6159A80Ce8362aBB2307FbaB4Ed4D3F4A4231Acc` | 46,212,270 | `0x4ebddaeb…` |
+
+### Post-deploy wiring (~10 min wall time)
+
+| # | Action | Block | Tx | Signer |
+|---|---|---|---|---|
+| 3 | `archive.transferOwnership(safe)` — CRITICAL | 46,212,430 | `0xe8cd5c5c…` | Deployer EOA (archive's owner pre-transfer) |
+| 1 | `kernel.approveEscrowVault(vault, true)` | 46,213,263 | `0x2e905ae4…` | Safe multiSend batch (2-of-4 sigs) |
+| 2 | `kernel.setArchiveTreasury(archive)` | 46,213,263 | same tx | same batch |
+| 4 | `kernel.scheduleAgentRegistryUpdate(registry)` | 46,213,263 | same tx | same batch |
+
+Registry execute ETA: **2026-05-21 18:37:53 UTC** (T+48h exact). `executeAgentRegistryUpdate()` is permissionless after ETA; anyone can call.
+
+### Sourcify verification (~3 min wall time)
+
+All 4 contracts EXACT_MATCH verified on Sourcify (creationMatch + runtimeMatch + chainId 8453). Sourcify IDs:
+- ACTPKernel: 29292305
+- EscrowVault: 29292306
+- AgentRegistry: 29292353
+- ArchiveTreasury: 29292341
+
+### Safe owner reconciliation
+
+Plan assumed 2-of-3; on-chain inspection 2026-05-19 showed 2-of-4. Damir confirmed all 4 owners are under his/team's custody (no outside party). Updated `base-mainnet.json` accordingly. No security impact — same custody model, one extra hot-EOA slot.
+
+### Deviations from plan
+
+1. `--verify` flag omitted at broadcast time (`BASESCAN_API_KEY` empty in `.env`). Sourcify verification ran successfully as a separate step. Etherscan verification still pending (low priority — Sourcify is authoritative).
+2. `read -s -p` zsh syntax fix (bash-specific `-p` flag fails in zsh).
+3. Stale `PRIVATE_KEY` in `.env` (Sepolia admin EOA) initially overrode mainnet deployer key; added derived-address sanity check before broadcast to prevent recurrence.
+
+### Remaining post-deploy work
+
+- [ ] Paymaster allowlist (CDP + Pimlico) — add new kernel + vault + registry to both dashboards BEFORE Phase 2 SDK config swap
+- [ ] T+48h: `executeAgentRegistryUpdate()` on or after 2026-05-21 18:37 UTC
+- [ ] Phase 2: SDK 4.0.0 stable cut (after registry executed + paymaster live)
+- [ ] T+60 days (2026-07-18): stuck-tx force-resolve outreach window closes
+
+---
+
 ## Hand-off summary
 
 This plan is now execution-ready. The day-of operator (Damir, with Justin available for Safe co-signing) should:

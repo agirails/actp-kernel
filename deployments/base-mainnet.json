@@ -1,0 +1,134 @@
+{
+  "network": "Base Mainnet",
+  "chainId": 8453,
+  "deployedBy": "0x1c4e1E01aDc3bbBc7b2336E690aAE54A6Eb4EB1A",
+  "blockExplorer": "https://basescan.org",
+  "contracts": {
+    "USDC": {
+      "address": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+      "verified": true,
+      "explorerUrl": "https://basescan.org/address/0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+      "decimals": 6,
+      "symbol": "USDC",
+      "note": "Circle's official USDC on Base mainnet — not deployed by us"
+    },
+    "ACTPKernel": {
+      "address": "0x048c811352e8a3fECd5b0Ec4AA2c2b94083CC842",
+      "verified": true,
+      "verifiedOn": "sourcify",
+      "verifiedAt": "2026-05-19T18:41Z",
+      "deployBlock": 46212266,
+      "deployTx": "0x0ec9bec21a33f3f316993e3b85e550132ef082651e0be0a75eb5237f08ee1104",
+      "explorerUrl": "https://basescan.org/address/0x048c811352e8a3fECd5b0Ec4AA2c2b94083CC842",
+      "constructorArgs": {
+        "admin": "0x61fE58E9EdB380EA65EC74bD364D9D2cba30B7f2",
+        "pauser": "0x61fE58E9EdB380EA65EC74bD364D9D2cba30B7f2",
+        "feeRecipient": "0x61fE58E9EdB380EA65EC74bD364D9D2cba30B7f2",
+        "agentRegistry": "0x0000000000000000000000000000000000000000",
+        "usdc": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
+      },
+      "compiler": "0.8.34",
+      "note": "Initial Base mainnet deployment 2026-05-19. Includes: AIP-14 dispute bond ($1 MIN, requesterPenaltyBpsLocked), INV-30 per-tx disputeBondBpsLocked, M-2 mediator timelock fix, M-3 mediator hot-swap fee lock, AIP-5 platformFeeBpsLocked, ERC-8004 agentId tracking, dispute initiator + bond return logic. Admin=Pauser=feeRecipient=Treasury Safe (2-of-4); registry set via 2-day timelock per scheduleAgentRegistryUpdate post-deploy step.",
+      "platformFeeBps": 100,
+      "disputeBondBps": 500,
+      "minDisputeBondMicroUSDC": 1000000
+    },
+    "EscrowVault": {
+      "address": "0x262D5912A9612F0c66dA5d13B4E678D50ebC44b5",
+      "verified": true,
+      "verifiedOn": "sourcify",
+      "verifiedAt": "2026-05-19T18:41Z",
+      "deployBlock": 46212268,
+      "deployTx": "0x55b44cd01b57ef7a9bf5c3672dd439c6261899880b60ac1ef9a570a415b81e64",
+      "explorerUrl": "https://basescan.org/address/0x262D5912A9612F0c66dA5d13B4E678D50ebC44b5",
+      "constructorArgs": {
+        "token": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+        "kernel": "0x048c811352e8a3fECd5b0Ec4AA2c2b94083CC842"
+      },
+      "compiler": "0.8.34",
+      "note": "Approved by kernel via Safe transaction (see postDeploy.escrowVaultApproved). Holds locked USDC + dispute bonds for all in-flight transactions."
+    },
+    "AgentRegistry": {
+      "address": "0x64Cb18bfb3CC1aCb1370a3B01613391D3561a009",
+      "verified": true,
+      "verifiedOn": "sourcify",
+      "verifiedAt": "2026-05-19T18:41Z",
+      "deployBlock": 46212269,
+      "deployTx": "0xdbf9158ef85f8d064e2f6624e7d34ed5852b720edb7af7d0dfe548b19ba66c89",
+      "explorerUrl": "https://basescan.org/address/0x64Cb18bfb3CC1aCb1370a3B01613391D3561a009",
+      "constructorArgs": {
+        "actpKernel": "0x048c811352e8a3fECd5b0Ec4AA2c2b94083CC842"
+      },
+      "compiler": "0.8.34",
+      "note": "Reputation + endpoint registry. Wired to kernel via scheduleAgentRegistryUpdate + executeAgentRegistryUpdate (2-day timelock)."
+    },
+    "ArchiveTreasury": {
+      "address": "0x6159A80Ce8362aBB2307FbaB4Ed4D3F4A4231Acc",
+      "verified": true,
+      "verifiedOn": "sourcify",
+      "verifiedAt": "2026-05-19T18:41Z",
+      "deployBlock": 46212270,
+      "deployTx": "0x4ebddaebd203afceb5d3592a927787061b8b2981d0a289bb740c397ef1ab5481",
+      "explorerUrl": "https://basescan.org/address/0x6159A80Ce8362aBB2307FbaB4Ed4D3F4A4231Acc",
+      "constructorArgs": {
+        "usdc": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+        "kernel": "0x048c811352e8a3fECd5b0Ec4AA2c2b94083CC842",
+        "uploader": "0x61fE58E9EdB380EA65EC74bD364D9D2cba30B7f2"
+      },
+      "compiler": "0.8.34",
+      "owner": "0x61fE58E9EdB380EA65EC74bD364D9D2cba30B7f2",
+      "ownerTransferTx": "0xe8cd5c5c9c86953bcde2891484eb01672b9930f5fcd4126a0f79f2fc279d601f",
+      "ownerTransferBlock": 46212430,
+      "note": "Ownership transferred from deployer (0x1c4e1E…EB1A) to Treasury Safe (0x61fE58E9…b7f2) at block 46212430 on 2026-05-19. Safe has full pause/admin authority."
+    }
+  },
+  "postDeploy": {
+    "escrowVaultApproved": true,
+    "escrowVaultApprovedTx": "0x2e905ae462b1971720b90dd68e39f9e254b56eea58870a8569c11570a260f701",
+    "escrowVaultApprovedBlock": 46213263,
+    "escrowVaultApprovedNote": "Approved via Safe multiSend batch at block 46213263 (single tx, 3 actions atomic).",
+    "archiveTreasurySet": true,
+    "archiveTreasurySetTx": "0x2e905ae462b1971720b90dd68e39f9e254b56eea58870a8569c11570a260f701",
+    "archiveTreasurySetBlock": 46213263,
+    "archiveTreasurySetNote": "Set via Safe multiSend batch (same tx as escrowVault approval).",
+    "archiveOwnershipTransferred": true,
+    "archiveOwnershipTransferredTx": "0xe8cd5c5c9c86953bcde2891484eb01672b9930f5fcd4126a0f79f2fc279d601f",
+    "archiveOwnershipTransferredBlock": 46212430,
+    "archiveOwnershipTransferredNote": "Deployer EOA → Treasury Safe at block 46212430. archive.owner() = Safe.",
+    "agentRegistryScheduled": true,
+    "agentRegistryScheduledTx": "0x2e905ae462b1971720b90dd68e39f9e254b56eea58870a8569c11570a260f701",
+    "agentRegistryScheduledBlock": 46213263,
+    "agentRegistryScheduledEta": 1779388673,
+    "agentRegistryScheduledEtaIso": "2026-05-21T18:37:53Z",
+    "agentRegistryScheduledNote": "scheduleAgentRegistryUpdate(0x64Cb18bf…) via Safe multiSend; 2-day timelock expires 2026-05-21T18:37:53Z. executeAgentRegistryUpdate() permissionless after ETA.",
+    "paymasterAllowlist": {
+      "cdp": "pending",
+      "pimlico": "pending",
+      "note": "Allowlist new kernel + vault + registry on both paymaster dashboards BEFORE Phase 2 SDK config swap, otherwise gasless flows break."
+    },
+    "sourcifyVerified": true,
+    "sourcifyVerifiedAt": "2026-05-19T18:43Z",
+    "sourcifyVerifiedNote": "All 4 contracts EXACT_MATCH verified on Sourcify (creationMatch + runtimeMatch). Verified via `forge verify-contract --verifier sourcify --chain base`."
+  },
+  "treasurySafe": {
+    "address": "0x61fE58E9EdB380EA65EC74bD364D9D2cba30B7f2",
+    "threshold": 2,
+    "ownerCount": 4,
+    "owners": [
+      "0xf797ae30b93fC5198e1695df7394b5682e27c166",
+      "0x9CA5F2d429e936b6A06C408D568c414E2c9318c2",
+      "0x22F474327c49d80cEA60a3Da05C63bf361BBbaf0",
+      "0xaB9Bd33fA0bE5dd42704be176027FDb206835df1"
+    ],
+    "note": "2-of-4 multisig (plan originally stated 2-of-3; verified 2026-05-19 — 4 owners, all under Damir+team custody). Used as admin, pauser, feeRecipient, ArchiveTreasury.uploader."
+  },
+  "deployment": {
+    "framework": "Foundry",
+    "rpc": "Tenderly Base mainnet gateway",
+    "date": "2026-05-19",
+    "totalGasUsed": 10299828,
+    "totalEthSpent": "0.000058239729687350",
+    "compiler": "0.8.34",
+    "broadcastArtifact": "broadcast/DeployBaseMainnet.s.sol/8453/run-latest.json"
+  }
+}
