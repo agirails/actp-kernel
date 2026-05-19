@@ -128,7 +128,7 @@ The on-chain pieces and off-chain pieces have different change-control surfaces,
 2. **Deploy MockUSDC stand-in** — N/A (mainnet uses Circle's USDC `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`).
 
 3. **Deploy new ACTPKernel** via `forge script script/DeployBaseMainnet.s.sol --broadcast --rpc-url $BASE_MAINNET_RPC --private-key $DEPLOYER_KEY`
-   - Sets `admin = Safe`, `pauser = <new dedicated pauser EOA>` (NOT the Safe — role separation per d9c6e8e), `feeRecipient = ArchiveTreasury`, `agentRegistry = 0x0` (constructor default), `usdc = 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`
+   - Sets `admin = Safe (0x61fE58E9…)`, `pauser = same Safe` (Damir 2026-05-19 decision: skip role separation for the initial 4.0.0 deploy; treasury Safe doubles as admin AND pauser for continuity with the old kernel. Tech debt — split pauser into a dedicated hot EOA before a 5.0.0 / higher-volume cut.), `feeRecipient = ArchiveTreasury`, `agentRegistry = 0x0` (constructor default), `usdc = 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`
    - Verify Sourcify exact-match in the same step (Apex FIND-015 carry-forward)
 
 4. **Deploy new EscrowVault** with `token = USDC`, `kernel = <new kernel>`. Verify Sourcify.
@@ -264,7 +264,7 @@ Run through this list immediately before kicking off Phase 1.
 ## Open decisions for Damir + Justin
 
 1. **Compiler bump 0.8.20 → 0.8.34**: yes/no. Default: yes (this plan assumes yes).
-2. **Pauser key separation** (new dedicated EOA vs reusing Safe). Default: NEW dedicated EOA. Per d9c6e8e role separation intent — Safe stays admin, pauser becomes a hot-wallet operational key with a single privilege (`pause()`).
+2. **Pauser key separation** (new dedicated EOA vs reusing Safe). ~~Default: NEW dedicated EOA.~~ **Decided 2026-05-19**: pauser = Safe = admin for the 4.0.0 cut. Continuity over emergency-response speed at this scale; revisit at production volume.
 3. **Stuck-tx outreach window** — 60 days suggested. Adjust if outreach effort is higher/lower priority.
 4. **SDK breaking version**: bump to 4.0.0 (TS) + 3.0.0 (Python)? Default: yes — mainnet address change is a breaking API for production integrators. Major-version signals "act now".
 5. **Tweet thread coordination** — fire `18-04.md` thread the day this lands? Default: yes, but only after 48h of clean monitoring.
