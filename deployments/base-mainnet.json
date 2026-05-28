@@ -10,7 +10,7 @@
       "explorerUrl": "https://basescan.org/address/0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
       "decimals": 6,
       "symbol": "USDC",
-      "note": "Circle's official USDC on Base mainnet — not deployed by us"
+      "note": "Circle's official USDC on Base mainnet (not deployed by us)"
     },
     "ACTPKernel": {
       "address": "0x048c811352e8a3fECd5b0Ec4AA2c2b94083CC842",
