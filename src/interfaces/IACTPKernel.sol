@@ -155,6 +155,13 @@ interface IACTPKernel {
 
     function transitionState(bytes32 transactionId, State newState, bytes calldata proof) external;
 
+    /// @notice [F-2 AUDIT FIX] Pause-exempt entrypoint restricted to DISPUTED→{SETTLED,CANCELLED}
+    ///         by an approved resolver. Lets honest dispute recovery (CompositeMediator.resolve →
+    ///         BondEscalation finalize / forceResolveStale / UMA callback) survive a kernel pause,
+    ///         preserving the INV-9 walk-away guarantee. Grants no power beyond the existing resolver
+    ///         set on the existing DISPUTED-exit transition.
+    function resolveDisputeWhilePaused(bytes32 transactionId, State newState, bytes calldata proof) external;
+
     function getTransaction(bytes32 transactionId) external view returns (TransactionView memory);
 
 

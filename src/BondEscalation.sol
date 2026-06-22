@@ -55,6 +55,16 @@ contract BondEscalation is IBondEscalation, IBondEscalationAdmin, ReentrancyGuar
     );
 
     // ---------------------------------------------------------------------
+    // Local events (F-4 graceful-degradation recovery; not part of IBondEscalation)
+    // ---------------------------------------------------------------------
+    /// @notice Emitted when the UMA callback distributed Tier-1 bonds + locally resolved the dispute,
+    ///         but the kernel-side escrow leg (`compositeMediator.resolve`) reverted/OOG'd and was
+    ///         deferred. The escrow movement is re-drivable permissionlessly via `retryMediatorResolution`.
+    event MediatorResolutionDeferred(bytes32 indexed disputeId, bytes32 indexed txId, uint8 ruling, uint16 splitBps);
+    /// @notice Emitted when a previously-deferred escrow leg was successfully re-driven.
+    event MediatorResolutionRetried(bytes32 indexed disputeId, bytes32 indexed txId, uint8 ruling, uint16 splitBps);
+
+    // ---------------------------------------------------------------------
     // Wiring (immutable where possible — §G4 write-once not needed here)
     // ---------------------------------------------------------------------
     IACTPKernel public immutable kernel;
@@ -114,6 +124,28 @@ contract BondEscalation is IBondEscalation, IBondEscalationAdmin, ReentrancyGuar
     uint64[2] public fixedEvaluatorUnlockTime;
     address[] public pendingRotatingAdditions;
     uint64[] public rotatingAdditionUnlockTime;
+
+    // ---------------------------------------------------------------------
+    // F-4 / F-6 storage (appended at the END of the layout so the slots of all pre-existing state —
+    // notably `rotatingPool` (slot 8) which some adversarial tests address via `vm.store` — are
+    // UNCHANGED. Do NOT relocate these above the evaluator registry.)
+    // ---------------------------------------------------------------------
+    /// @notice F-6 settle-bounty: the keeper that drove the current UMA settlement, recorded by
+    ///         `settleUMAAssertion` immediately BEFORE it calls `OOV3.settleAssertion`, so the
+    ///         synchronous `assertionResolvedCallback` (which runs with `msg.sender == UMA_OOV3`,
+    ///         NOT the keeper) can pay the settle-bounty to the right address. Cleared after use.
+    ///         A bare `OOV3.settleAssertion` (not routed through our helper) leaves this zero → no
+    ///         bounty is paid and the full Tier-1 pool is preserved for the winner (safe degradation).
+    mapping(bytes32 disputeId => address settler) public pendingSettler;
+
+    /// @notice F-4 graceful degradation: set true when `assertionResolvedCallback` distributed the
+    ///         Tier-1 bonds and locally resolved the dispute, but the kernel-side escrow leg
+    ///         (`compositeMediator.resolve`) reverted/OOG'd. The callback then does NOT revert (so the
+    ///         UMA settlement still commits and the UMA bond is returned); instead the escrow leg is
+    ///         left re-drivable, permissionlessly, via `retryMediatorResolution` (or, after 30 days,
+    ///         `forceResolveStale` — but that path is blocked once `d.resolved` latches, so the retry
+    ///         entrypoint is the primary escrow-recovery route for this case).
+    mapping(bytes32 disputeId => bool pending) public mediatorRetryPending;
 
     // ---------------------------------------------------------------------
     // Modifiers
@@ -518,8 +550,15 @@ contract BondEscalation is IBondEscalation, IBondEscalationAdmin, ReentrancyGuar
         d.tier = 2;
         // NOTE: UMA bond is NOT added to accumulatedBonds - UMA now holds it.
 
-        // Escalator asserts "provider delivered" = ruling 0.
-        lastProposerForRuling[disputeId][0] = msg.sender;
+        // F-3 (audit HIGH) FIX: do NOT overwrite the ruling-0 winner-of-record with the escalator.
+        // The escalator is merely the party that posts the $500 UMA bond (returned by UMA on a TRUE
+        // resolution); they are NOT necessarily a Tier-1 bond depositor. Overwriting the slot let a
+        // zero-bond, front-running non-participant displace the genuine last ruling-0 proposer and
+        // capture the whole Tier-1 pool (assertionResolvedCallback pays accumulatedBonds to
+        // lastProposerForRuling[ruling]). By leaving the slot untouched, the honest last ruling-0
+        // proposer keeps it; the Tier-1 pool flows to the genuine Tier-1 bonders. If NO ruling-0
+        // proposer ever existed and UMA resolves ruling 0, the callback's winner==address(0) branch
+        // degrades to a 50/50 split so depositors recover proportionally (no stranded funds).
 
         emit EscalatedToUMA(disputeId, assertionId, msg.sender, UMA_BOND, evidenceCID);
     }
@@ -563,9 +602,22 @@ contract BondEscalation is IBondEscalation, IBondEscalationAdmin, ReentrancyGuar
         uint8 ruling = assertedTruthfully ? 0 : 1;
 
         d.resolved = true;
-        d.originalPool = d.accumulatedBonds;
+        d.originalPool = d.accumulatedBonds; // snapshot BEFORE the bounty deduction (mirrors finalize()).
         d.currentRuling = ruling;
         d.splitBps = 0;
+
+        // F-6 (audit MED) settle-bounty — EXACTLY mirrors finalize()'s keeper bounty so a clean UMA win
+        // does not silently degrade to a forced 50/50 at 30 days for lack of a settle incentive. Funded
+        // from the Tier-1 pool (this contract's own bonds), deducted BEFORE the winner payout, and
+        // capped at the pool so Σ(bounty + winner payout) == originalPool — never exceeds the pool
+        // (solvency preserved). The recipient is the keeper that drove settlement via
+        // `settleUMAAssertion` (recorded in `pendingSettler`); a bare OOV3.settleAssertion path leaves
+        // it zero → no bounty, full pool to the winner. The bounty is paid only on the winner-takes-all
+        // leg; on the no-winner SPLIT leg the pool stays intact for proportional `claimEscalationRefund`
+        // (matching finalize(), which pays the bounty then leaves the split pool for depositors — but
+        // here we MUST NOT pre-deduct from a split pool because the snapshot/originalPool divisor is the
+        // FULL pool; deducting only on the winner leg keeps the split refund math exact).
+        address settler = pendingSettler[disputeId];
 
         // Winner of Tier 1 bonds is whoever last proposed the winning direction.
         address winner = lastProposerForRuling[disputeId][ruling];
@@ -573,21 +625,102 @@ contract BondEscalation is IBondEscalation, IBondEscalationAdmin, ReentrancyGuar
         // Distribute Tier 1 bonds ONLY (UMA already handled the UMA bond distribution).
         if (winner != address(0)) {
             d.winnerPaid = true;
+
+            // Settle-bounty: max(pool * bps, floor), clamped to the pool. Deducted from accumulatedBonds
+            // BEFORE the winner payout, identical in shape to finalize() (FINALIZATION_BOUNTY_BPS /
+            // MIN_FINALIZATION_BOUNTY). Only paid when a real settler is recorded.
+            uint256 bounty = 0;
+            if (settler != address(0)) {
+                bounty = (d.accumulatedBonds * FINALIZATION_BOUNTY_BPS) / 10000;
+                if (bounty < MIN_FINALIZATION_BOUNTY) bounty = MIN_FINALIZATION_BOUNTY;
+                if (bounty > d.accumulatedBonds) bounty = d.accumulatedBonds;
+            }
+            d.accumulatedBonds -= bounty;
+
             uint256 payout = d.accumulatedBonds;
             d.accumulatedBonds = 0;
+            if (bounty > 0) {
+                USDC.safeTransfer(settler, bounty);
+            }
             if (payout > 0) {
                 USDC.safeTransfer(winner, payout);
             }
             emit UMAResolutionReceived(disputeId, assertionId, ruling, winner, payout);
         } else {
             // Edge case: no one proposed the winning direction in Tier 1.
-            // Treat as split - depositors can claim proportionally.
+            // Treat as split - depositors can claim proportionally. NO bounty is taken here: the split
+            // refund divisor (`originalPool`) is the FULL pool and every depositor's share is
+            // deposits[addr] * accumulatedBonds / originalPool; deducting a bounty would make Σ shares <
+            // accumulatedBonds and strand the bounty-sized remainder. The settle incentive is therefore
+            // only attached to the clean (winner-takes-all) UMA win, which is the F-6 degradation case.
             d.currentRuling = 2;
             d.splitBps = 5000;
             emit UMAResolutionReceived(disputeId, assertionId, ruling, address(0), 0);
         }
 
+        // F-4 (audit MED) graceful degradation: the kernel-side escrow leg is the unbounded part of this
+        // callback (mediator -> kernel.transitionState -> _distributeFee/_releaseEscrow/reputation). The
+        // real OOV3 reverts the WHOLE settlement (and strands the UMA bond) if this callback reverts, so
+        // an under-provisioned settle caller could brick the dispute. Mirror the reputation-leg
+        // try/catch: attempt the mediator resolve, and on failure DO NOT revert — flag the escrow leg as
+        // re-drivable via retryMediatorResolution (permissionless). The Tier-1 bonds are already
+        // distributed correctly above; only the escrow movement is deferred, and the dispute stays
+        // recoverable. CEI is preserved: all state writes/payouts above complete before this external
+        // call, and nonReentrant still guards the whole callback.
+        try compositeMediator.resolve(d.transactionId, d.currentRuling, d.splitBps) {
+            // Escrow settled in the same tx — nothing pending.
+        } catch {
+            mediatorRetryPending[disputeId] = true;
+            emit MediatorResolutionDeferred(disputeId, d.transactionId, d.currentRuling, d.splitBps);
+        }
+    }
+
+    // =====================================================================
+    // §8.5b settleUMAAssertion — permissionless settle helper (F-6 settle-bounty)
+    // -----------------------------------------------------------------------------------------------
+    // Drives UMA's `settleAssertion`, which synchronously fires `assertionResolvedCallback` back into
+    // this contract. Records the caller as `pendingSettler` FIRST so the callback (whose msg.sender is
+    // the OOV3, not the keeper) can pay the settle-bounty to the keeper. INTENTIONALLY NOT
+    // `nonReentrant`: the real OOV3 invokes the (nonReentrant) callback from inside settleAssertion, so
+    // guarding this wrapper too would self-deadlock against the genuine oracle. Reentrancy safety is
+    // unaffected — this function performs no fund movement itself; every payout happens inside the
+    // already-guarded callback under CEI. A second concurrent call is a no-op: the first callback latches
+    // d.resolved, after which any re-entry to the callback returns early (UMACallbackIgnored).
+    // =====================================================================
+    function settleUMAAssertion(bytes32 disputeId) external whenNotPaused {
+        DisputeState storage d = disputes[disputeId];
+        require(d.disputedAt != 0, "Dispute not opened");
+        require(!d.resolved, "Already resolved");
+        require(d.tier == 2, "Not escalated to UMA");
+
+        bytes32 assertionId = disputeToAssertion[disputeId];
+        require(assertionId != bytes32(0), "No assertion");
+
+        // Record the settler for the callback's bounty payout, then clear after settlement returns.
+        pendingSettler[disputeId] = msg.sender;
+        IOptimisticOracleV3(UMA_OOV3).settleAssertion(assertionId);
+        delete pendingSettler[disputeId];
+    }
+
+    // =====================================================================
+    // §8.5c retryMediatorResolution — re-drive a deferred escrow leg (F-4 recovery, NOT pausable — INV-9)
+    // -----------------------------------------------------------------------------------------------
+    // When the UMA callback distributed the Tier-1 bonds and locally resolved the dispute but the escrow
+    // leg (compositeMediator.resolve) reverted/OOG'd, the dispute is left `mediatorRetryPending`. Anyone
+    // can re-drive the (now well-provisioned) escrow movement here. Idempotent: clears the flag only on a
+    // successful resolve, so a still-failing kernel state leaves it retryable.
+    // =====================================================================
+    function retryMediatorResolution(bytes32 disputeId) external nonReentrant {
+        DisputeState storage d = disputes[disputeId];
+        require(d.resolved, "Not resolved");
+        require(mediatorRetryPending[disputeId], "No pending retry");
+
+        // Clear BEFORE the external call (CEI). If resolve reverts, the whole tx reverts and the flag is
+        // restored — so the dispute stays retryable.
+        mediatorRetryPending[disputeId] = false;
         compositeMediator.resolve(d.transactionId, d.currentRuling, d.splitBps);
+
+        emit MediatorResolutionRetried(disputeId, d.transactionId, d.currentRuling, d.splitBps);
     }
 
     function assertionDisputedCallback(bytes32 assertionId) external nonReentrant {
@@ -671,7 +804,13 @@ contract BondEscalation is IBondEscalation, IBondEscalationAdmin, ReentrancyGuar
     // =====================================================================
     function _calculateInitialBond(uint256 escrowAmount) internal pure returns (uint256) {
         uint256 percentBond = (escrowAmount * ESCALATION_INITIAL_BPS) / 10000;
-        return percentBond > MIN_ESCALATION_BOND ? percentBond : MIN_ESCALATION_BOND;
+        uint256 bond = percentBond > MIN_ESCALATION_BOND ? percentBond : MIN_ESCALATION_BOND;
+        // F-5 (audit MED) FIX: cap the initial bond at MAX_ESCALATION_BOND so it is symmetric with the
+        // $500-capped challenge ceiling (challenge clamps `nextBond` to MAX_ESCALATION_BOND at L320-322).
+        // Without this cap a large escrow (e.g. $1M) yields a ~$20k uncapped initial bond while a griefer
+        // re-defends each round for only $500, enabling cheap large-bond winner-takes-all griefing.
+        if (bond > MAX_ESCALATION_BOND) bond = MAX_ESCALATION_BOND;
+        return bond;
     }
 
     function _livenessForEscrow(uint256 escrowAmount) internal pure returns (uint64) {

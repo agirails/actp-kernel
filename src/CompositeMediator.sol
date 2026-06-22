@@ -146,7 +146,13 @@ contract CompositeMediator is ICompositeMediator {
             //         ordering is deterministic for indexers.
             emit DisputeSplitRecorded(txId, txn.requester, txn.provider, splitBps);
 
-            kernel.transitionState(txId, IACTPKernel.State.CANCELLED, proof);
+            // F-2 AUDIT FIX: route the DISPUTED→CANCELLED exit through the kernel's pause-exempt
+            // resolver entrypoint so honest dispute recovery (finalize / forceResolveStale /
+            // UMA callback, all funneling here) survives a kernel pause — preserving the INV-9
+            // walk-away guarantee. This mediator is an approved + timelocked kernel resolver, and
+            // the txn is always DISPUTED here, so the entrypoint's narrow scope guards pass. The
+            // SAME audited CANCELLED distribution runs; only the pause check is relaxed.
+            kernel.resolveDisputeWhilePaused(txId, IACTPKernel.State.CANCELLED, proof);
         } else {
             // Clean win: all remaining escrow goes to the prevailing party.
             // ruling 1 (requester wins) ⇒ providerAtFault = true; ruling 0 (provider wins) ⇒ false.
@@ -166,7 +172,11 @@ contract CompositeMediator is ICompositeMediator {
             // 96-byte SETTLED proof with explicit fault flag.
             bytes memory proof = abi.encode(requesterAmount, providerAmount, providerAtFault);
 
-            kernel.transitionState(txId, IACTPKernel.State.SETTLED, proof);
+            // F-2 AUDIT FIX: route the DISPUTED→SETTLED exit through the kernel's pause-exempt
+            // resolver entrypoint (same rationale as the CANCELLED branch above) so honest dispute
+            // recovery survives a kernel pause (INV-9). Approved-resolver + DISPUTED-state scope
+            // guards pass; the SAME audited SETTLED distribution runs, only the pause check relaxed.
+            kernel.resolveDisputeWhilePaused(txId, IACTPKernel.State.SETTLED, proof);
         }
     }
 }

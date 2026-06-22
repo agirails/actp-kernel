@@ -176,7 +176,7 @@ contract UMAIntegrationTest is DisputeTestBase {
         vm.stopPrank();
 
         bytes32 assertionId = bondEscalation.disputeToAssertion(disputeId);
-        (bytes memory claim,,,,,,,) = oov3.assertions(assertionId);
+        (bytes memory claim,,,,,,,,) = oov3.assertions(assertionId);
 
         assertTrue(_contains(claim, bytes("ipfs://")), "claim missing ipfs:// scheme");
         assertTrue(_contains(claim, bytes(cid)), "claim missing evidence CID");

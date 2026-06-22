@@ -225,11 +225,57 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         emit TransactionCreated(transactionId, requester, provider, amount, serviceHash, deadline, block.timestamp, agentId);
     }
 
+    /// @notice The single general-purpose state-machine entrypoint. Frozen by pause.
+    /// @dev `whenNotPaused` freezes ALL forward/normal transitions during an emergency pause.
+    ///      The ONE exception — honest DISPUTED→{SETTLED,CANCELLED} recovery by an approved resolver —
+    ///      is served by the pause-exempt `resolveDisputeWhilePaused` below (F-2 / INV-9), NOT here.
     function transitionState(
         bytes32 transactionId,
         State newState,
         bytes calldata proof
     ) external override whenNotPaused nonReentrant {
+        _transitionState(transactionId, newState, proof);
+    }
+
+    /// @notice [F-2 AUDIT FIX] Pause-exempt entrypoint for honest dispute recovery only.
+    /// @dev INV-9 / walk-away rationale: the dispute system's headline guarantee is automated,
+    ///      permissionless, walk-away resolution. `transitionState` carries `whenNotPaused`, so before
+    ///      this fix a single `pause()` transitively bricked EVERY dispute-recovery path
+    ///      (CompositeMediator.resolve → kernel, BondEscalation.finalize / forceResolveStale /
+    ///      assertionResolvedCallback), defeating INV-9: while paused NO actor — not even admin — could
+    ///      move a DISPUTED txn out of DISPUTED, freezing escrow + bonds for the pause duration (worst
+    ///      case: permanent loss if the system is abandoned-AND-paused). `releaseEscrow` already omits
+    ///      `whenNotPaused` (pause blocks state changes, not fund recovery); this restores the same
+    ///      asymmetry for the dispute-resolution kernel boundary.
+    ///
+    ///      NARROW SCOPE — this grants NO new power:
+    ///        - Restricted to `_isApprovedResolver(msg.sender)` — the EXACT same resolver set
+    ///          ({admin (INV-6)} ∪ {approved + timelocked mediators, e.g. CompositeMediator}) that may
+    ///          already drive DISPUTED→exit via `transitionState`. No new caller is admitted.
+    ///        - Restricted to the DISPUTED→{SETTLED,CANCELLED} transition only (enforced below). ALL
+    ///          normal/forward transitions stay frozen under pause exactly as before.
+    ///        - Runs the SAME audited `_transitionState` body — same `_enforceAuthorization`
+    ///          (which re-applies `_isApprovedResolver` on the DISPUTED branch), same
+    ///          `_handleDisputeSettlement` / `_handleCancellation` distribution, same solvency
+    ///          `totalDistributed == remaining` checks. ONLY the `whenNotPaused` gate is relaxed.
+    ///      Net effect: honest dispute recovery survives a pause; everything else stays frozen.
+    function resolveDisputeWhilePaused(
+        bytes32 transactionId,
+        State newState,
+        bytes calldata proof
+    ) external nonReentrant {
+        // Pause-exempt scope guard: ONLY the dispute exit, ONLY an approved resolver.
+        require(newState == State.SETTLED || newState == State.CANCELLED, "Resolve only");
+        require(_getTransaction(transactionId).state == State.DISPUTED, "Not disputed");
+        require(_isApprovedResolver(msg.sender), "Resolver only");
+        _transitionState(transactionId, newState, proof);
+    }
+
+    function _transitionState(
+        bytes32 transactionId,
+        State newState,
+        bytes calldata proof
+    ) internal {
         Transaction storage txn = _getTransaction(transactionId);
         State oldState = txn.state;
         require(newState != oldState, "No-op");
@@ -949,6 +995,9 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         require(available >= grossAmount, "Insufficient escrow balance");
 
         uint256 fee = _calculateFee(grossAmount, txn.platformFeeBpsLocked);
+        // [F-1 AUDIT FIX] Solvency invariant: _calculateFee now clamps the MIN_FEE floor to gross,
+        // so this never reverts on a tiny payout (it used to brick dispute finalization). Kept as a
+        // defense-in-depth assertion guaranteeing providerNet + fee == grossAmount.
         require(fee <= grossAmount, "Fee exceeds amount");
         uint256 providerNet = grossAmount - fee;
 
@@ -1106,13 +1155,27 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
 
     /**
      * @notice Calculate platform fee using locked fee percentage from transaction creation
-     * @dev AIP-5: Uses locked fee % to guarantee 1% fee commitment
+     * @dev AIP-5: Uses locked fee % to guarantee 1% fee commitment.
+     *      [F-1 AUDIT FIX] The MIN_FEE floor ($0.05) can exceed `grossAmount` on a tiny payout
+     *      (e.g. a dust split share `remaining * splitBps / 10000` landing in (0, MIN_FEE), or a
+     *      milestone-drained escrow whose remaining tail is sub-$0.05). Before this clamp, the
+     *      downstream `require(fee <= grossAmount)` in `_payoutProviderAmount` reverted, rolling
+     *      back the whole DISPUTED→SETTLED/CANCELLED transition and BRICKING dispute finalization
+     *      (incl. the permissionless `forceResolveStale` walk-away) for up to 30 days. We clamp the
+     *      floored fee to `grossAmount`: on a sub-MIN_FEE gross the provider nets 0 and the fee
+     *      simply absorbs the dust. Solvency is preserved — `fee <= grossAmount` always, so
+     *      `providerNet + fee == grossAmount` exactly and `totalDistributed == remaining` still holds.
+     *      This is the single fee-charging chokepoint (only caller: `_payoutProviderAmount`), so the
+     *      clamp covers BOTH the split provider-amount path and the normal `_releaseEscrow` tiny-tail path.
      * @param grossAmount Amount before fee deduction
      * @param lockedFeeBps Locked platform fee basis points from transaction creation
      */
     function _calculateFee(uint256 grossAmount, uint16 lockedFeeBps) internal pure returns (uint256) {
         uint256 bpsFee = (grossAmount * lockedFeeBps) / MAX_BPS;
-        return bpsFee > MIN_FEE ? bpsFee : MIN_FEE;
+        uint256 fee = bpsFee > MIN_FEE ? bpsFee : MIN_FEE;
+        // [F-1 AUDIT FIX] Clamp the floored fee to gross so a sub-MIN_FEE payout cannot revert.
+        if (fee > grossAmount) fee = grossAmount;
+        return fee;
     }
 
     function _validatePlatformFee(uint16 newFee) internal pure {

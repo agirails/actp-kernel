@@ -40,6 +40,7 @@ contract MockOOV3 is IOptimisticOracleV3 {
         bool exists;
         bool settled;
         bool result;
+        bool armed; // F-6: when true, settleAssertion() fires the resolved-callback with `result`.
     }
 
     /// @dev assertionId => assertion record.
@@ -87,7 +88,8 @@ contract MockOOV3 is IOptimisticOracleV3 {
             bond: bond,
             exists: true,
             settled: false,
-            result: false
+            result: false,
+            armed: false
         });
 
         emit AssertionMade(assertionId, asserter, bond);
@@ -104,11 +106,21 @@ contract MockOOV3 is IOptimisticOracleV3 {
     }
 
     /// @inheritdoc IOptimisticOracleV3
-    /// @dev No-op in the mock; resolution is driven explicitly via `mockResolve`.
+    /// @dev Faithful to the real OOV3: if the assertion has been ARMED with an outcome
+    ///      (`mockArmResult`), settling it fires `assertionResolvedCallback` SYNCHRONOUSLY back into
+    ///      the `callbackRecipient` AS this contract — exactly how UMA notifies on settlement. This is
+    ///      the path `BondEscalation.settleUMAAssertion` drives, so the F-6 settle-bounty branch (which
+    ///      pays the recorded `pendingSettler`) is exercised end-to-end. An UN-armed assertion settles
+    ///      as a pure no-op (backward compatible with the previous mock and with the direct
+    ///      `mockResolve` driver used by other tests).
     function settleAssertion(bytes32 assertionId) external override {
         Assertion storage a = assertions[assertionId];
         require(a.exists, "MockOOV3: unknown assertion");
         a.settled = true;
+        if (a.armed && a.callbackRecipient != address(0)) {
+            IUMACallbackRecipient(a.callbackRecipient).assertionResolvedCallback(assertionId, a.result);
+            emit MockResolved(assertionId, a.result);
+        }
     }
 
     /// @inheritdoc IOptimisticOracleV3
@@ -150,6 +162,19 @@ contract MockOOV3 is IOptimisticOracleV3 {
     /// @notice Sets the currency returned by `defaultCurrency()` (test convenience).
     function setDefaultCurrency(IERC20 currency) external {
         _defaultCurrency = currency;
+    }
+
+    /// @notice F-6: arm an assertion so that a subsequent `settleAssertion(assertionId)` fires the
+    ///         resolved-callback with `assertedTruthfully`. This models the real OOV3, where the keeper
+    ///         that calls `settleAssertion` triggers the callback synchronously — the precise path
+    ///         `BondEscalation.settleUMAAssertion` relies on to pay the settle-bounty to `pendingSettler`.
+    /// @param assertionId The assertion to arm.
+    /// @param assertedTruthfully The outcome the callback will deliver on settle.
+    function mockArmResult(bytes32 assertionId, bool assertedTruthfully) external {
+        Assertion storage a = assertions[assertionId];
+        require(a.exists, "MockOOV3: unknown assertion");
+        a.armed = true;
+        a.result = assertedTruthfully;
     }
 
     /// @notice Drives an assertion to a resolved state, firing the recipient callback AS this mock.

@@ -136,16 +136,27 @@ contract BondEscalationThreatModelTest is DisputeTestBase {
     uint256 internal constant MAX_BOND = 500_000_000;
 
     // -------- forwarded-callback gas budget (App-B item 2) --------
-    // UMA forwards a bounded amount of gas to `callbackRecipient`. App-B documents ~100k as the real
-    // forwarded-gas envelope. The FIRST-resolution path fans out through the mediator + kernel
-    // transition + escrow/reputation and measures ~158k — i.e. it does NOT fit the ~100k UMA forwards,
-    // which is exactly why the forceResolveStale / syncExternalResolution recovery paths are
-    // load-bearing (not optional). We assert BOTH bounds:
+    // [F-4 AUDIT FIX] The real UMA OptimisticOracleV3 forwards 63/64 of the gas REMAINING at the
+    // settleAssertion call site to `callbackRecipient` (EIP-150 "all but one 64th"), NOT a fixed
+    // ~100k stipend (the earlier App-B "~100k" note was inaccurate and is corrected here and in the
+    // spec/App-B/PRD R13). Consequence: an honest settle caller who provides a normal keeper gas
+    // limit forwards FAR more than the heavy first-resolution callback needs (~158k no-registry,
+    // up to ~277k with reputation + paid-mediator legs). So the heavy path does NOT structurally
+    // OOG under honest provisioning — F-4 is a deliberate-griefing / caller-under-provisioning
+    // concern, recoverable via permissionless forceResolveStale at 30 days, hence MEDIUM not HIGH.
+    // We assert:
     //   - measured < CALLBACK_GAS_BUDGET (regression ceiling — a future change that balloons it trips here)
-    //   - measured > UMA_FORWARD_ENVELOPE (PINS the known fact that the heavy path overshoots the real
-    //     forward limit, so the recovery path is documented-and-tested as the actual settlement route)
+    //   - measured < UMA_FORWARD_ENVELOPE_63_64 (the callback FITS the 63/64-of-remaining envelope a
+    //     realistically-provisioned keeper forwards — pins that honest settlement does NOT OOG)
     uint256 internal constant CALLBACK_GAS_BUDGET = 600_000;
-    uint256 internal constant UMA_FORWARD_ENVELOPE = 100_000; // App-B documented real UMA forward limit
+    // 63/64 of a conservative keeper settle-gas limit (1,000,000) = 984,375 — the floor an honest
+    // caller forwards. The heavy callback must fit comfortably under this (it measures ~158k).
+    uint256 internal constant UMA_FORWARD_ENVELOPE_63_64 = (1_000_000 * 63) / 64;
+    // TIGHT informational regression ceiling (review hardening): the base-stack heavy callback measures
+    // ~158k; the worst case with the reputation + paid-mediator legs is ~277k. 300k catches a ~2x
+    // regression in the callback while leaving headroom for compiler/gas drift — far tighter than the
+    // (directional-fact) 63/64 envelope above, which is intentionally loose.
+    uint256 internal constant CALLBACK_GAS_TIGHT_CEILING = 300_000;
 
     function setUp() external {
         _setUpStack();
@@ -459,15 +470,25 @@ contract BondEscalationThreatModelTest is DisputeTestBase {
 
         assertLt(gasUsed, CALLBACK_GAS_BUDGET, "first-resolution callback exceeds forwarded-callback budget");
 
-        // PIN the load-bearing fact (App-B item 2): the heavy first-resolution callback does NOT fit the
-        // ~100k UMA actually forwards. This is WHY forceResolveStale/syncExternalResolution recovery is
-        // load-bearing — on a real OOV3 this path is expected to OOG and settle via recovery instead. If a
-        // future optimization ever brings the callback UNDER 100k, this assertion fails loudly and the
-        // recovery paths can be reconsidered as the primary route (a deliberate trip-wire, both directions).
-        assertGt(
+        // [F-4 AUDIT FIX] PIN the corrected fact (App-B item 2): the real OOV3 forwards 63/64 of the
+        // gas REMAINING at the settle site, so an honestly-provisioned keeper forwards FAR more than
+        // this heavy callback needs. We assert the callback FITS comfortably under that 63/64 envelope
+        // — i.e. honest settlement does NOT structurally OOG (the earlier "~100k fixed forward, so the
+        // heavy path always OOGs" premise was wrong). forceResolveStale stays the backstop for the
+        // griefing / under-provisioning case, but is NOT the expected primary route under honest gas.
+        assertLt(
             gasUsed,
-            UMA_FORWARD_ENVELOPE,
-            "heavy callback unexpectedly fits the ~100k UMA forward envelope (revisit recovery-path assumption)"
+            UMA_FORWARD_ENVELOPE_63_64,
+            "heavy callback must fit the 63/64-of-remaining UMA forward envelope under honest provisioning"
+        );
+
+        // Review hardening: a TIGHT informational ceiling near the measured value so a ~2x gas
+        // regression in the callback is caught early (the 63/64 envelope above only catches a ~6x
+        // blowup). Kept above the ~158k base-stack measurement + the ~277k worst case headroom.
+        assertLt(
+            gasUsed,
+            CALLBACK_GAS_TIGHT_CEILING,
+            "heavy callback exceeded the tight 300k regression ceiling (investigate a gas regression)"
         );
     }
 

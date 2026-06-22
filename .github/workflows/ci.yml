@@ -36,11 +36,37 @@ jobs:
       - name: Show Forge version
         run: forge --version
 
+      # ── F-3 source guard (audit HIGH regression) ────────────────────
+      # The F-3 fix DELETED `lastProposerForRuling[disputeId][0] = msg.sender`
+      # from escalateToUMA. A mutation-testing scaffold (`// MUTATION ...`) or a
+      # re-added F-3 assignment would SILENTLY re-introduce the free-rider
+      # bond-theft HIGH. Fail closed if either ever lands in src/.
+      - name: F-3 source guard (no mutation scaffold / no re-added overwrite)
+        run: |
+          if grep -RnE '//[[:space:]]*MUTATION' src/; then
+            echo "::error::Mutation-testing scaffold found in src/ — refusing to build."
+            exit 1
+          fi
+          if grep -RnE 'lastProposerForRuling\[disputeId\]\[0\][[:space:]]*=[[:space:]]*msg\.sender' src/BondEscalation.sol; then
+            echo "::error::Deleted F-3 overwrite re-added in escalateToUMA — re-introduces the bond-theft HIGH."
+            exit 1
+          fi
+          echo "F-3 source guard passed (no mutation scaffold, no re-added overwrite)."
+
       - name: Build (with size report)
         run: forge build --sizes
 
       - name: Run tests
         run: forge test -vvv
+
+      # ── Audit-PoC gate against a CLEAN artifact ─────────────────────
+      # The audit PoCs assert FIXED behaviour. Run them against a freshly
+      # compiled tree (no cached build) so a PoC can never go green/red
+      # against a stale artifact (the leaked-mutation review observation).
+      - name: Audit PoCs (clean rebuild, no stale artifact)
+        run: |
+          forge clean
+          forge test --match-path "test/audit/*" -vvv
 
       - name: Coverage summary
         run: forge coverage --report summary || true
