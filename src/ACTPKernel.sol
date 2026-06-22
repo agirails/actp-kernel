@@ -647,6 +647,21 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         return false;
     }
 
+    /// @notice True if `sender` may resolve a DISPUTED transaction (DISPUTED → SETTLED/CANCELLED).
+    /// @dev Resolver set = {admin} ∪ {approved mediators past their MEDIATOR_APPROVAL_DELAY timelock}.
+    ///      Per decision G1 (DISPUTE SYSTEM/AIP14B-DECISIONS.md) the pauser is intentionally NOT a resolver.
+    ///      Scope of the timelock (precise): `mediatorApprovedAt` only gates a *newly-added* mediator —
+    ///      it is a 2-day window to detect/cancel a mistaken or rushed approval before that mediator can
+    ///      resolve. It does NOT protect against a compromised admin/Safe: INV-6 deliberately keeps admin
+    ///      able to resolve immediately, so admin-key risk is mitigated by key custody (Safe 2-of-3),
+    ///      not by this timelock. The `approvedAt != 0` guard rejects any inconsistent
+    ///      (approvedMediators == true, mediatorApprovedAt == 0) state from a storage/migration path.
+    function _isApprovedResolver(address sender) internal view returns (bool) {
+        uint256 approvedAt = mediatorApprovedAt[sender];
+        return sender == admin
+            || (approvedMediators[sender] && approvedAt != 0 && block.timestamp >= approvedAt);
+    }
+
     function _enforceAuthorization(Transaction storage txn, State fromState, State toState) internal view {
         if (fromState == State.INITIATED && toState == State.QUOTED) {
             require(msg.sender == txn.provider, "Only provider");
@@ -666,7 +681,8 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         } else if (
             fromState == State.DISPUTED && (toState == State.SETTLED || toState == State.CANCELLED)
         ) {
-            require(msg.sender == admin, "Resolver only");
+            // AIP-14b P0-3: admin OR approved+timelocked mediator (e.g. CompositeMediator). G1: no pauser.
+            require(_isApprovedResolver(msg.sender), "Resolver only");
         } else if (toState == State.CANCELLED) {
             // State-specific cancellation authorization
             if (fromState == State.INITIATED || fromState == State.QUOTED) {
@@ -865,8 +881,13 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         (uint256 requesterAmount, uint256 providerAmount, address mediator, uint256 mediatorAmount, bool hasResolution,) =
             _decodeResolutionProof(proof);
         if (oldState == State.DISPUTED && hasResolution) {
-            require(triggeredBy == admin, "Resolver only");
+            // AIP-14b P0-3: admin OR approved+timelocked mediator. NOTE on symmetry: _enforceAuthorization
+            // (site 1) already gates BOTH SETTLED and CANCELLED; this site 2 is the additional CANCELLED-path
+            // check inside _handleCancellation. Both must allow the mediator or the CANCELLED/split path breaks. G1: no pauser.
+            require(_isApprovedResolver(triggeredBy), "Resolver only");
 
+            // NOTE: the `mediator` below is a DIFFERENT concept — a PAID mediator decoded from the
+            // resolution proof (receives `mediatorAmount`), not the caller-authorization above.
             if (mediator != address(0)) {
                 require(approvedMediators[mediator], "Mediator not approved");
                 require(block.timestamp >= mediatorApprovedAt[mediator], "Mediator approval pending");

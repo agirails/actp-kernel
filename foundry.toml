@@ -8,6 +8,17 @@ optimizer_runs = 200
 via_ir = true
 ffi = false
 
+# PRD P1-8: stateful invariant suite must run >= 256 randomized sequences.
+# Default depth (500) is reduced to 100 — each handler step opens kernel txs / warps time,
+# so 100 steps already drives every dispute in the pool through its full lifecycle many times.
+# fail_on_revert = false: the handler intentionally short-circuits invalid actions with `return`,
+# but a few fuzzer inputs still bounce off contract `require`s (e.g. liveness races) — those are
+# expected and must NOT abort the sequence; the invariants are what enforce correctness.
+[invariant]
+runs = 256
+depth = 100
+fail_on_revert = false
+
 [fmt]
 line_length = 100
 tab_width = 4
