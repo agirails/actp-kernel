@@ -20,7 +20,7 @@ contract ACTPKernelFuzzTest is Test {
 
     function setUp() external {
         usdc = new MockUSDC();
-        kernel = new ACTPKernel(address(this), address(this), feeCollector, address(0), address(usdc));
+        kernel = new ACTPKernel(address(this), address(this), feeCollector, address(0), address(usdc), 1 hours);
         escrow = new EscrowVault(address(usdc), address(kernel));
         
         // Approve escrow vault (admin is the test contract)

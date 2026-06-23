@@ -56,6 +56,9 @@ interface IACTPKernel {
         uint256 timestamp
     );
 
+    /// @notice F-6: stalled IN_PROGRESS escrow recovered (full refund to requester) after deadline+recoveryGrace.
+    event StalledInProgressRecovered(bytes32 indexed transactionId, address indexed requester, uint256 amount);
+
     event EscrowLinked(
         bytes32 indexed transactionId,
         address escrowContract,
@@ -172,6 +175,10 @@ interface IACTPKernel {
     function releaseMilestone(bytes32 transactionId, uint256 amount) external;
 
     function releaseEscrow(bytes32 transactionId) external;
+
+    /// @notice F-6: Permissionless liveness backstop. After deadline+recoveryGrace, anyone may move a stalled
+    ///         IN_PROGRESS txn to CANCELLED with a full refund of remaining escrow to the requester.
+    function recoverStalledInProgress(bytes32 transactionId) external;
 
     function anchorAttestation(bytes32 transactionId, bytes32 attestationUID) external;
 

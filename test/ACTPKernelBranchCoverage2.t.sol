@@ -29,7 +29,7 @@ contract ACTPKernelBranchCoverage2Test is Test {
 
     function setUp() external {
         usdc = new MockUSDC();
-        kernel = new ACTPKernel(admin, pauser, feeCollector, address(0), address(usdc));
+        kernel = new ACTPKernel(admin, pauser, feeCollector, address(0), address(usdc), 1 hours);
         escrow = new EscrowVault(address(usdc), address(kernel));
         registry = new AgentRegistry(address(kernel));
         kernel.approveEscrowVault(address(escrow), true);
@@ -45,27 +45,33 @@ contract ACTPKernelBranchCoverage2Test is Test {
 
     function testConstructorRejectsZeroAdmin() external {
         vm.expectRevert("Admin required");
-        new ACTPKernel(address(0), pauser, feeCollector, address(0), address(usdc));
+        new ACTPKernel(address(0), pauser, feeCollector, address(0), address(usdc), 1 hours);
     }
 
     function testConstructorRejectsZeroFeeRecipient() external {
         vm.expectRevert("Fee recipient required");
-        new ACTPKernel(admin, pauser, address(0), address(0), address(usdc));
+        new ACTPKernel(admin, pauser, address(0), address(0), address(usdc), 1 hours);
+    }
+
+    function testConstructorRejectsTooShortRecoveryGrace() external {
+        // F-6: recoveryGrace below MIN_RECOVERY_GRACE (1 hours) must revert; all other args valid.
+        vm.expectRevert("Recovery grace too short");
+        new ACTPKernel(admin, pauser, feeCollector, address(0), address(usdc), 0);
     }
 
     function testConstructorSetsAdminAsPauserWhenZero() external {
-        ACTPKernel k = new ACTPKernel(admin, address(0), feeCollector, address(0), address(usdc));
+        ACTPKernel k = new ACTPKernel(admin, address(0), feeCollector, address(0), address(usdc), 1 hours);
         assertEq(k.pauser(), admin);
     }
 
     function testConstructorWithAgentRegistry() external {
         AgentRegistry reg = new AgentRegistry(address(kernel));
-        ACTPKernel k = new ACTPKernel(admin, pauser, feeCollector, address(reg), address(usdc));
+        ACTPKernel k = new ACTPKernel(admin, pauser, feeCollector, address(reg), address(usdc), 1 hours);
         assertEq(address(k.agentRegistry()), address(reg));
     }
 
     function testConstructorWithoutAgentRegistry() external {
-        ACTPKernel k = new ACTPKernel(admin, pauser, feeCollector, address(0), address(usdc));
+        ACTPKernel k = new ACTPKernel(admin, pauser, feeCollector, address(0), address(usdc), 1 hours);
         assertEq(address(k.agentRegistry()), address(0));
     }
 

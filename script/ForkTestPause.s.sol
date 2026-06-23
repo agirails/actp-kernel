@@ -66,7 +66,8 @@ contract ForkTestPause is Script {
             deployer,     // pauser
             deployer,     // feeRecipient
             address(0),   // agentRegistry
-            USDC
+            USDC,
+            1 hours       // recoveryGrace (F-6)
         );
         console.log("ACTPKernel:", address(kernel));
 

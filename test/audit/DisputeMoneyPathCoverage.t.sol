@@ -77,7 +77,7 @@ contract DisputeMoneyPathCoverage is Test {
     // ─────────────────────────────────────────────────────────────────────────
     function _deploy(address registryAddr) internal {
         usdc = new MockUSDC();
-        kernel = new ACTPKernel(admin, pauser, feeCollector, registryAddr, address(usdc));
+        kernel = new ACTPKernel(admin, pauser, feeCollector, registryAddr, address(usdc), 1 hours);
         escrow = new EscrowVault(address(usdc), address(kernel));
         kernel.approveEscrowVault(address(escrow), true);
         usdc.mint(requester, 1_000_000 * ONE_USDC);

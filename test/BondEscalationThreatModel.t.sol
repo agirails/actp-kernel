@@ -611,7 +611,7 @@ contract BondEscalationThreatModelTest is DisputeTestBase {
         returns (BondEscalation be, ACTPKernel k, EscrowVault esc, ReentrantUSDC rusdc)
     {
         rusdc = new ReentrantUSDC();
-        k = new ACTPKernel(admin, pauser, feeCollector, address(0), address(rusdc));
+        k = new ACTPKernel(admin, pauser, feeCollector, address(0), address(rusdc), 1 hours);
         esc = new EscrowVault(address(rusdc), address(k));
         k.approveEscrowVault(address(esc), true);
 

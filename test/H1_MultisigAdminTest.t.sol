@@ -62,7 +62,7 @@ contract H1_MultisigAdminTest is Test {
 
     function setUp() external {
         usdc = new MockUSDC();
-        kernel = new ACTPKernel(initialAdmin, pauser, feeCollector, address(0), address(usdc));
+        kernel = new ACTPKernel(initialAdmin, pauser, feeCollector, address(0), address(usdc), 1 hours);
         escrow = new EscrowVault(address(usdc), address(kernel));
         kernel.approveEscrowVault(address(escrow), true);
         usdc.mint(requester, 10_000_000);

@@ -60,6 +60,8 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
     uint256 public constant MIN_TRANSACTION_AMOUNT = 50_000; // $0.05 USDC — anti-spam minimum (original value restored)
     uint256 public constant MAX_TRANSACTION_AMOUNT = 1_000_000_000e6; // 1B USDC (with 6 decimals)
     uint256 public constant MAX_DEADLINE = 365 days; // Maximum 1 year deadline
+    uint256 public constant MIN_DEADLINE = 1 hours; // F-6: floor delivery window so a requester cannot manufacture an instant strand
+    uint256 public constant MIN_RECOVERY_GRACE = 1 hours; // F-6: non-zero grace floor — no deadline-boundary front-run
     uint256 public constant ECONOMIC_PARAM_DELAY = 2 days;
     uint256 public constant MEDIATOR_APPROVAL_DELAY = 2 days; // Time-lock for mediator approvals
     // AIP-14: Dispute bond parameters
@@ -85,6 +87,9 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
 
     /// @notice USDC token address for fee transfers
     IERC20 public USDC;
+
+    /// @notice F-6: global immutable stalled-IN_PROGRESS recovery grace, added to deadline. Mainnet 7 days; testnet/local short.
+    uint256 public immutable recoveryGrace;
 
     mapping(address => bool) public approvedEscrowVaults;
     mapping(address => bool) public approvedMediators;
@@ -137,15 +142,18 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         address _pauser,
         address _feeRecipient,
         address _agentRegistry,
-        address _usdc
+        address _usdc,
+        uint256 _recoveryGrace
     ) {
         require(_admin != address(0), "Admin required");
         require(_feeRecipient != address(0), "Fee recipient required");
         require(_usdc != address(0), "USDC required");
+        require(_recoveryGrace >= MIN_RECOVERY_GRACE, "Recovery grace too short");
         admin = _admin;
         pauser = _pauser == address(0) ? _admin : _pauser;
         feeRecipient = _feeRecipient;
         USDC = IERC20(_usdc);
+        recoveryGrace = _recoveryGrace;
         _validatePlatformFee(100);
         _validateRequesterPenalty(500);
         platformFeeBps = 100;
@@ -191,6 +199,7 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         require(amount >= MIN_TRANSACTION_AMOUNT, "Amount below minimum");
         require(amount <= MAX_TRANSACTION_AMOUNT, "Amount exceeds maximum");
         require(deadline > block.timestamp, "Deadline in past");
+        require(deadline >= block.timestamp + MIN_DEADLINE, "Deadline too soon");
         require(deadline <= block.timestamp + MAX_DEADLINE, "Deadline too far");
         require(disputeWindow >= MIN_DISPUTE_WINDOW, "Dispute window too short");
         require(disputeWindow <= MAX_DISPUTE_WINDOW, "Dispute window too long");
@@ -452,6 +461,46 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         _releaseEscrow(txn);
     }
 
+    /// @notice [F-6] Permissionless liveness backstop for a stalled IN_PROGRESS escrow.
+    /// @dev Intentionally omits whenNotPaused — pause blocks state changes, not fund recovery
+    ///      (same precedent as releaseEscrow / resolveDisputeWhilePaused). After deadline+recoveryGrace,
+    ///      anyone may cancel the txn and full-refund the remaining escrow to the requester.
+    ///      This is a SEPARATE entrypoint, not the cancellation path: the H-4 guard in _enforceTiming
+    ///      is untouched and still blocks the requester from cancelling IN_PROGRESS via transitionState.
+    function recoverStalledInProgress(bytes32 transactionId) external override nonReentrant {
+        Transaction storage txn = _getTransaction(transactionId);
+        require(txn.state == State.IN_PROGRESS, "Not in progress");
+        require(block.timestamp >= txn.deadline + recoveryGrace, "Recovery not yet available");
+        require(txn.escrowContract != address(0), "Escrow missing");
+
+        IEscrowValidator vault = IEscrowValidator(txn.escrowContract);
+        uint256 remaining = vault.remaining(txn.escrowId);
+
+        // Effects before interactions (CEI). CANCELLED is terminal — re-entry reverts on the state check.
+        txn.state = State.CANCELLED;
+        txn.updatedAt = block.timestamp;
+        txn.wasDisputed = true; // F-6: provider at fault (non-delivery) for reputation accounting
+
+        emit StateTransitioned(transactionId, State.IN_PROGRESS, State.CANCELLED, msg.sender, block.timestamp);
+        emit StalledInProgressRecovered(transactionId, txn.requester, remaining);
+
+        // [C-2 FIX] Reputation mark — same guarded pattern as settlement. provider at fault (true): non-delivery.
+        if (address(agentRegistry) != address(0) && reputationProcessedBy[txn.transactionId] == address(0)) {
+            reputationProcessedBy[txn.transactionId] = address(agentRegistry);
+            try agentRegistry.updateReputationOnSettlement{gas: 150000}(
+                txn.provider,
+                txn.transactionId,
+                txn.amount,
+                true
+            ) {} catch {}
+        }
+
+        if (remaining > 0) {
+            _refundRequester(txn, vault, remaining);
+        }
+        _clearUsedEscrowId(txn);
+    }
+
     function anchorAttestation(bytes32 transactionId, bytes32 attestationUID) external override whenNotPaused {
         require(attestationUID != bytes32(0), "Attestation missing");
         Transaction storage txn = _getTransaction(transactionId);
@@ -480,6 +529,7 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
 
     /// @notice Emitted when admin recovers stranded USDC from kernel during emergency
     event EmergencyUSDCRecovered(address indexed recipient, uint256 amount, uint256 timestamp);
+    // F-6: StalledInProgressRecovered is declared in IACTPKernel (inherited) — not re-declared here to avoid a duplicate-event error.
 
     /// @notice Recover USDC stranded in kernel due to archive treasury double-failure
     /// @dev [M-1 AUDIT FIX] Only callable by admin while paused. The kernel should never
@@ -746,7 +796,14 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         // I-1 fix: DELIVERED → SETTLED is exempt from deadline — delivery is confirmed,
         // blocking settlement after deadline serves no purpose and forces unnecessary disputes.
         if (toState != State.CANCELLED && toState != State.DISPUTED && toState != State.SETTLED) {
-            require(block.timestamp <= txn.deadline, "Transaction expired");
+            // F-6 Option A: the IN_PROGRESS→DELIVERED edge may land during the recovery grace window,
+            // so an honest one-block-late provider is not robbed by recovery. All other forward
+            // progressions stay strictly deadline-gated.
+            if (fromState == State.IN_PROGRESS && toState == State.DELIVERED) {
+                require(block.timestamp < txn.deadline + recoveryGrace, "Delivery grace expired"); // strict < : mutually exclusive with recovery's >=
+            } else {
+                require(block.timestamp <= txn.deadline, "Transaction expired");
+            }
         }
 
         // [H-4 FIX] Prevent requester from canceling after work started (IN_PROGRESS state)

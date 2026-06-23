@@ -62,7 +62,7 @@ abstract contract DisputeTestBase is Test {
     function _setUpStack() internal {
         // 1) Token + kernel + escrow (mirrors ResolverAuth.t.sol setUp).
         usdc = new MockUSDC();
-        kernel = new ACTPKernel(admin, pauser, feeCollector, address(0), address(usdc));
+        kernel = new ACTPKernel(admin, pauser, feeCollector, address(0), address(usdc), 1 hours);
         escrow = new EscrowVault(address(usdc), address(kernel));
         kernel.approveEscrowVault(address(escrow), true);
 

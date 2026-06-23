@@ -36,7 +36,7 @@ contract ACTPKernelLockedPenaltyTest is Test {
         admin = address(this);
         usdc = new MockUSDC();
         // ACTPKernel(admin, pauser, feeRecipient, agentRegistry, usdc)
-        kernel = new ACTPKernel(admin, pauser, feeCollector, address(0), address(usdc));
+        kernel = new ACTPKernel(admin, pauser, feeCollector, address(0), address(usdc), 1 hours);
         escrow = new EscrowVault(address(usdc), address(kernel));
         kernel.approveEscrowVault(address(escrow), true);
         usdc.mint(requester, 1_000_000_000);

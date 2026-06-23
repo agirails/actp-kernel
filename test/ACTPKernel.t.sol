@@ -17,10 +17,11 @@ contract ACTPKernelTest is Test {
 
     uint256 constant ONE_USDC = 1_000_000; // 1 USDC with 6 decimals
     uint256 constant INITIAL_BALANCE = 1_000_000_000;
+    uint256 constant RECOVERY_GRACE = 1 days; // short grace so warps are practical (mainnet uses 7 days)
 
     function setUp() external {
         usdc = new MockUSDC();
-        kernel = new ACTPKernel(address(this), address(this), feeCollector, address(0), address(usdc));
+        kernel = new ACTPKernel(address(this), address(this), feeCollector, address(0), address(usdc), RECOVERY_GRACE);
         escrow = new EscrowVault(address(usdc), address(kernel));
         
         // Approve escrow vault (admin is the test contract)
@@ -719,4 +720,289 @@ contract ACTPKernelTest is Test {
         assertTrue(txView.platformFeeBpsLocked != originalFee, "Should differ from original 1%");
     }
 
+    // ========================================================================
+    // F-6: Stalled IN_PROGRESS recovery (recoverStalledInProgress)
+    // ========================================================================
+
+    // Helper: create -> quote -> commit -> IN_PROGRESS with an explicit deadline.
+    // Returns to IN_PROGRESS with escrow holding `amount`.
+    function _toInProgress(bytes32 svc, uint256 deadline, uint256 amount) internal returns (bytes32 txId) {
+        vm.prank(requester);
+        txId = kernel.createTransaction(provider, requester, amount, deadline, 2 days, svc, 0, 0);
+        _quote(txId);
+        _commit(txId, svc, amount);
+        vm.prank(provider);
+        kernel.transitionState(txId, IACTPKernel.State.IN_PROGRESS, "");
+    }
+
+    // --- Happy path: full refund of vault.remaining, permissionless, escrow inactive ---
+    function testF6_RecoverHappyPath_FullRefund_Permissionless() external {
+        uint256 deadline = block.timestamp + 1 days;
+        bytes32 txId = _toInProgress(keccak256("f6happy"), deadline, ONE_USDC);
+
+        // Move past deadline + recoveryGrace
+        vm.warp(deadline + RECOVERY_GRACE + 1);
+
+        // Permissionless: a random third party triggers recovery
+        address anyone = address(0xCAFE);
+        vm.prank(anyone);
+        kernel.recoverStalledInProgress(txId);
+
+        IACTPKernel.TransactionView memory v = kernel.getTransaction(txId);
+        assertEq(uint8(v.state), uint8(IACTPKernel.State.CANCELLED), "state CANCELLED");
+
+        // Full refund: requester whole again, provider got nothing
+        assertEq(usdc.balanceOf(requester), INITIAL_BALANCE, "requester fully refunded");
+        assertEq(usdc.balanceOf(provider), 0, "provider gets 0");
+        assertEq(usdc.balanceOf(feeCollector), 0, "no fee on recovery");
+
+        // Escrow drained / inactive
+        assertEq(escrow.remaining(keccak256("f6happy")), 0, "escrow remaining 0");
+    }
+
+    // --- H-4 non-reopening: requester STILL cannot cancel from IN_PROGRESS via transitionState ---
+    function testF6_H4Unchanged_RequesterCannotCancelFromInProgress() external {
+        uint256 deadline = block.timestamp + 1 days;
+        bytes32 txId = _toInProgress(keccak256("f6h4"), deadline, ONE_USDC);
+
+        // Even AFTER deadline+grace, the cancellation path (transitionState) stays blocked.
+        vm.warp(deadline + RECOVERY_GRACE + 1);
+        vm.prank(requester);
+        vm.expectRevert(bytes("Cannot cancel after work started"));
+        kernel.transitionState(txId, IACTPKernel.State.CANCELLED, "");
+    }
+
+    // --- Too-early revert: before deadline + recoveryGrace ---
+    function testF6_RecoverRevertsBeforeGrace() external {
+        uint256 deadline = block.timestamp + 1 days;
+        bytes32 txId = _toInProgress(keccak256("f6early"), deadline, ONE_USDC);
+
+        // 1 second before the window opens
+        vm.warp(deadline + RECOVERY_GRACE - 1);
+        vm.expectRevert(bytes("Recovery not yet available"));
+        kernel.recoverStalledInProgress(txId);
+    }
+
+    // --- Too-early revert: fuzz variant over the entire pre-grace interval ---
+    function testFuzzF6_RecoverRevertsBeforeGrace(uint256 elapsed) external {
+        uint256 deadline = block.timestamp + 1 days;
+        bytes32 txId = _toInProgress(keccak256("f6earlyfuzz"), deadline, ONE_USDC);
+
+        // Any instant strictly before deadline + recoveryGrace must revert.
+        // Bound to [0, deadline + RECOVERY_GRACE - 1].
+        uint256 target = bound(elapsed, block.timestamp, deadline + RECOVERY_GRACE - 1);
+        vm.warp(target);
+        vm.expectRevert(bytes("Recovery not yet available"));
+        kernel.recoverStalledInProgress(txId);
+    }
+
+    // --- Wrong-state revert: not IN_PROGRESS (still COMMITTED) ---
+    function testF6_RecoverRevertsWrongState() external {
+        bytes32 txId = _createBaseTx();
+        _quote(txId);
+        bytes32 escrowId = keccak256("f6wrongstate");
+        _commit(txId, escrowId, ONE_USDC); // COMMITTED, not IN_PROGRESS
+
+        vm.warp(block.timestamp + 30 days); // well past any window
+        vm.expectRevert(bytes("Not in progress"));
+        kernel.recoverStalledInProgress(txId);
+    }
+
+    // F-6 no-dispute-escape: recovery must reject a DISPUTED tx, locking the invariant that a
+    // transaction in dispute can never be drained via the liveness backstop. (Adversarial LOW.)
+    function testF6_RecoverRevertsFromDisputed() external {
+        bytes32 txId = _createBaseTx();
+        _quote(txId);
+        _commit(txId, keccak256("f6disp"), ONE_USDC);
+        _deliver(txId, 1 days);
+
+        vm.startPrank(requester);
+        usdc.approve(address(escrow), type(uint256).max);
+        kernel.transitionState(txId, IACTPKernel.State.DISPUTED, "");
+        vm.stopPrank();
+
+        // DISPUTED is not IN_PROGRESS — recovery reverts on the state guard regardless of time.
+        vm.warp(block.timestamp + 365 days);
+        vm.expectRevert(bytes("Not in progress"));
+        kernel.recoverStalledInProgress(txId);
+    }
+
+    // --- MIN_DEADLINE createTransaction revert ---
+    function testF6_CreateRevertsDeadlineTooSoon() external {
+        // deadline strictly less than block.timestamp + MIN_DEADLINE (1 hours)
+        vm.prank(requester);
+        vm.expectRevert(bytes("Deadline too soon"));
+        kernel.createTransaction(
+            provider, requester, ONE_USDC,
+            block.timestamp + 1 hours - 1, // just under MIN_DEADLINE floor
+            2 days, keccak256("f6mindeadline"), 0, 0
+        );
+    }
+
+    // --- Full-refund routing: provider gets 0, no penalty branch is taken ---
+    function testF6_FullRefundRouting_NoPenaltyNoFee() external {
+        uint256 deadline = block.timestamp + 1 days;
+        bytes32 txId = _toInProgress(keccak256("f6routing"), deadline, ONE_USDC);
+        vm.warp(deadline + RECOVERY_GRACE + 1);
+
+        kernel.recoverStalledInProgress(txId);
+
+        // Recovery refunds 100% of remaining to the requester (no penalty skim to provider).
+        assertEq(usdc.balanceOf(requester), INITIAL_BALANCE, "requester gets full remaining, no penalty");
+        assertEq(usdc.balanceOf(provider), 0, "provider penalty branch NOT taken (0)");
+        assertEq(usdc.balanceOf(feeCollector), 0, "no platform fee on recovery");
+    }
+
+    // --- releaseMilestone then recover: only the remainder is refunded ---
+    function testF6_RecoverAfterMilestone_RefundsRemainderOnly() external {
+        uint256 deadline = block.timestamp + 1 days;
+        bytes32 txId = _toInProgress(keccak256("f6milestone"), deadline, ONE_USDC);
+
+        // Requester releases a half-milestone while IN_PROGRESS
+        uint256 milestoneAmount = ONE_USDC / 2;
+        vm.prank(requester);
+        kernel.releaseMilestone(txId, milestoneAmount);
+
+        (uint256 providerNet, uint256 fee) = _splitAmount(milestoneAmount);
+        assertEq(usdc.balanceOf(provider), providerNet, "provider keeps milestone net");
+        assertEq(usdc.balanceOf(feeCollector), fee, "fee from milestone");
+
+        // Now recover: only the un-released remainder goes back to the requester
+        vm.warp(deadline + RECOVERY_GRACE + 1);
+        uint256 requesterBefore = usdc.balanceOf(requester);
+        kernel.recoverStalledInProgress(txId);
+
+        uint256 expectedRemainder = ONE_USDC - milestoneAmount;
+        assertEq(usdc.balanceOf(requester) - requesterBefore, expectedRemainder, "refund == leftover only");
+        assertEq(escrow.remaining(keccak256("f6milestone")), 0, "escrow drained");
+
+        IACTPKernel.TransactionView memory v = kernel.getTransaction(txId);
+        assertEq(uint8(v.state), uint8(IACTPKernel.State.CANCELLED), "CANCELLED after recover");
+    }
+
+    // --- Recovery works WHILE PAUSED (no whenNotPaused on the recovery path) ---
+    function testF6_RecoverWorksWhilePaused() external {
+        uint256 deadline = block.timestamp + 1 days;
+        bytes32 txId = _toInProgress(keccak256("f6paused"), deadline, ONE_USDC);
+
+        vm.warp(deadline + RECOVERY_GRACE + 1);
+        kernel.pause();
+
+        // Sanity: normal transitions are frozen...
+        vm.prank(provider);
+        vm.expectRevert(bytes("Kernel paused"));
+        kernel.transitionState(txId, IACTPKernel.State.DELIVERED, abi.encode(uint256(1 days)));
+
+        // ...but fund recovery still works under pause.
+        kernel.recoverStalledInProgress(txId);
+
+        IACTPKernel.TransactionView memory v = kernel.getTransaction(txId);
+        assertEq(uint8(v.state), uint8(IACTPKernel.State.CANCELLED), "recovered while paused");
+        assertEq(usdc.balanceOf(requester), INITIAL_BALANCE, "refunded while paused");
+    }
+
+    // --- StalledInProgressRecovered event emitted (requester + remaining amount) ---
+    function testF6_EmitsStalledInProgressRecovered() external {
+        uint256 deadline = block.timestamp + 1 days;
+        bytes32 txId = _toInProgress(keccak256("f6event"), deadline, ONE_USDC);
+        vm.warp(deadline + RECOVERY_GRACE + 1);
+
+        vm.expectEmit(true, true, false, true);
+        emit IACTPKernel.StalledInProgressRecovered(txId, requester, ONE_USDC);
+        kernel.recoverStalledInProgress(txId);
+    }
+
+    // --- Option A: provider CAN deliver DURING the grace window and be paid ---
+    function testF6_OptionA_ProviderDeliversDuringGrace_GetsPaid() external {
+        uint256 deadline = block.timestamp + 1 days;
+        bytes32 txId = _toInProgress(keccak256("f6grace"), deadline, ONE_USDC);
+
+        // After the deadline but before deadline+recoveryGrace: delivery still allowed.
+        vm.warp(deadline + RECOVERY_GRACE - 1);
+        vm.prank(provider);
+        kernel.transitionState(txId, IACTPKernel.State.DELIVERED, abi.encode(uint256(1 hours)));
+
+        IACTPKernel.TransactionView memory v = kernel.getTransaction(txId);
+        assertEq(uint8(v.state), uint8(IACTPKernel.State.DELIVERED), "delivered during grace");
+
+        // Settle after dispute window -> provider paid
+        vm.warp(block.timestamp + 1 hours + 1);
+        vm.prank(provider);
+        kernel.transitionState(txId, IACTPKernel.State.SETTLED, "");
+
+        (uint256 providerNet, ) = _splitAmount(ONE_USDC);
+        assertEq(usdc.balanceOf(provider), providerNet, "provider paid after grace-window delivery");
+    }
+
+    // --- Option A boundary: delivery blocked at the exact deadline+recoveryGrace instant (strict <) ---
+    function testF6_OptionA_DeliveryBlockedAtGraceBoundary() external {
+        uint256 deadline = block.timestamp + 1 days;
+        bytes32 txId = _toInProgress(keccak256("f6boundary"), deadline, ONE_USDC);
+
+        // At exactly deadline + recoveryGrace: delivery is rejected (strict < gate),
+        // and recovery is simultaneously available (>=) — mutually exclusive boundary.
+        vm.warp(deadline + RECOVERY_GRACE);
+
+        vm.prank(provider);
+        vm.expectRevert(bytes("Delivery grace expired"));
+        kernel.transitionState(txId, IACTPKernel.State.DELIVERED, abi.encode(uint256(1 hours)));
+
+        // Recovery succeeds at the same instant.
+        kernel.recoverStalledInProgress(txId);
+        IACTPKernel.TransactionView memory v = kernel.getTransaction(txId);
+        assertEq(uint8(v.state), uint8(IACTPKernel.State.CANCELLED), "recovery available at boundary");
+    }
+
+    // --- Reputation: recovery marks the provider AT FAULT (providerAtFault == true) ---
+    function testF6_Reputation_MarksProviderAtFault() external {
+        // Wire a recording registry via the timelocked update flow.
+        RecordingAgentRegistry reg = new RecordingAgentRegistry();
+        kernel.scheduleAgentRegistryUpdate(address(reg));
+        vm.warp(block.timestamp + kernel.ECONOMIC_PARAM_DELAY());
+        kernel.executeAgentRegistryUpdate();
+        assertEq(address(kernel.agentRegistry()), address(reg), "registry wired");
+
+        uint256 deadline = block.timestamp + 1 days;
+        bytes32 txId = _toInProgress(keccak256("f6rep"), deadline, ONE_USDC);
+
+        vm.warp(deadline + RECOVERY_GRACE + 1);
+        kernel.recoverStalledInProgress(txId);
+
+        // Reputation mark fired with provider at fault (non-delivery).
+        assertTrue(reg.called(), "reputation updateReputationOnSettlement called");
+        assertEq(reg.lastAgent(), provider, "marked the provider");
+        assertEq(reg.lastTxId(), txId, "txId passed through");
+        assertEq(reg.lastAmount(), ONE_USDC, "amount passed through");
+        assertTrue(reg.lastProviderAtFault(), "providerAtFault == true");
+
+        // reputationProcessedBy guard set to the current registry (idempotency).
+        assertEq(kernel.reputationProcessedBy(txId), address(reg), "reputationProcessedBy set");
+    }
+
+}
+
+// ============================================================================
+// F-6: Recording mock registry — captures the providerAtFault bool the kernel
+// passes to updateReputationOnSettlement so the recovery reputation-mark can be
+// asserted (TransactionView does not expose wasDisputed).
+// ============================================================================
+contract RecordingAgentRegistry {
+    bool public called;
+    address public lastAgent;
+    bytes32 public lastTxId;
+    uint256 public lastAmount;
+    bool public lastProviderAtFault;
+
+    function updateReputationOnSettlement(
+        address agentAddress,
+        bytes32 txId,
+        uint256 txAmount,
+        bool wasDisputed
+    ) external {
+        called = true;
+        lastAgent = agentAddress;
+        lastTxId = txId;
+        lastAmount = txAmount;
+        lastProviderAtFault = wasDisputed; // AIP-14 semantics: true == provider at fault
+    }
 }
