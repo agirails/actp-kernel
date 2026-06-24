@@ -149,7 +149,9 @@ settler actually fires. The degradation ladder if no one settles a Tier-2 win:
   **keeper-recovery** function group ALLOWED by `paymaster-allowlist-decision.md` (§7.5.5) — but only
   *after a verified+consumed receipt*, with the per-dispute / per-day / circuit-breaker caps there.
 - Alert if any Tier-2 assertion is **> 24h past liveness and unsettled** (well inside the 30-day
-  window) so an operator can manually settle long before the R17 backstop.
+  window) so an operator can manually settle long before the R17 backstop. This alert — with the full
+  event→alert→owner mapping — is operationalized in `ops/aip14b/monitoring-alerts.md`, a **P5-4
+  deliverable not yet in the repo**; until it lands, the settler keeper above is the primary guard.
 
 ### 4.2 SDK warnings (surface R17 to the affected party)
 
