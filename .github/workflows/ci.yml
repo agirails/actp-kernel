@@ -1,8 +1,17 @@
 name: CI
 
-# Apex audit 2026-05-17 FIND-002 — adds automated test enforcement for
-# the kernel. Forge unit + invariant tests run on every PR and push to
-# main; Slither static analysis runs non-blocking as a regression screen.
+# Apex audit 2026-05-17 FIND-002 — automated test enforcement for the kernel.
+# P5-2 (audit MED-2): the dispute CI is now a RELEASE GATE. The following are
+# REQUIRED-to-pass on every PR and push to main; none is advisory any more:
+#   - Forge unit + invariant + dispute suites
+#   - the 23 audit PoCs (clean rebuild)
+#   - per-contract coverage floors for BondEscalation + CompositeMediator
+#   - EIP-170 contract-size ceiling (24576 B)
+#   - the canonical ruling-encoding lint (INV-1)
+#   - Slither, gating on HIGH-severity findings
+#   - (when present) the invariant-coverage map has no UNMAPPED rows
+# The previously-advisory steps (coverage `|| true`, Slither continue-on-error /
+# fail-on none) are now GATING. No existing passing check was weakened.
 on:
   push:
     branches: [main]
@@ -13,8 +22,20 @@ on:
 permissions:
   contents: read
 
+# Single source of truth for the gate thresholds — the release contract in one place.
+env:
+  # EIP-170 deployed-bytecode ceiling. forge build --sizes is gated on it.
+  MAX_CONTRACT_BYTES: "24576"
+  # Per-contract line-coverage floors for the two load-bearing dispute contracts.
+  # Measured baseline (forge coverage --ir-minimum, treasury test excluded — see the
+  # coverage step): BondEscalation 98.34% (356/362), CompositeMediator 97.50% (39/40).
+  # Floors sit well below baseline so a one-line dip does not flake, but a real
+  # regression fails the gate. Raise (never silently lower) as the suites grow.
+  COV_FLOOR_BOND_ESCALATION: "90"
+  COV_FLOOR_COMPOSITE_MEDIATOR: "90"
+
 jobs:
-  # ── Forge build + test ──────────────────────────────────────────
+  # ── Forge build + test (REQUIRED) ───────────────────────────────
   test:
     name: Forge build + test
     runs-on: ubuntu-latest
@@ -53,41 +74,204 @@ jobs:
           fi
           echo "F-3 source guard passed (no mutation scaffold, no re-added overwrite)."
 
-      - name: Build (with size report)
-        run: forge build --sizes
+      # ── Canonical ruling-encoding lint (INV-1, REQUIRED) ────────────
+      # P5-2 wires scripts/check_encoding_canonical.sh (it lives at the MONOREPO
+      # ROOT, two levels up). The kernel ships as its OWN git repo, so under a
+      # standalone kernel checkout that script is NOT on disk; we run it when
+      # present (monorepo checkout) and otherwise run an IN-REPO equivalent that
+      # scans this repo's CODE (src/ + test/) for the INVERTED mapping
+      # `0=requester` / `1=provider wins`. Canonical is 0=provider, 1=requester,
+      # 2=split. Either path fails the job on a hit. The in-repo EncodingCanonical
+      # forge test (run by the suites below) proves the mapping is load-bearing.
+      - name: Canonical ruling-encoding lint (INV-1)
+        run: |
+          set -euo pipefail
+          SCRIPT="../../scripts/check_encoding_canonical.sh"
+          if [ -f "$SCRIPT" ]; then
+            echo "Running monorepo encoding lint: $SCRIPT"
+            bash "$SCRIPT"
+          else
+            echo "Monorepo script absent (standalone kernel checkout) — running in-repo equivalent."
+            PATTERN='0[[:space:]]*=[[:space:]]*requester|1[[:space:]]*=[[:space:]]*provider[[:space:]]*win'
+            if hits=$(grep -rniE --include='*.sol' "$PATTERN" src/ test/ 2>/dev/null); then
+              echo "::error::inverted ruling encoding in code — must be 0=provider,1=requester (INV-1)"
+              echo "$hits"
+              exit 1
+            fi
+            echo "OK — no inverted encoding in src/ or test/."
+          fi
+
+      # ── Build + EIP-170 size gate (REQUIRED) ────────────────────────
+      # Replaces the prior advisory `forge build --sizes` (which never gated on
+      # size). --force guarantees a fresh compile so --json always emits the size
+      # map (forge prints nothing for a fully-cached build). The build itself
+      # still gates on compile errors (set -e); the parser additionally fails the
+      # job if ANY contract's runtime bytecode exceeds MAX_CONTRACT_BYTES.
+      - name: Build + EIP-170 contract-size gate
+        run: |
+          set -euo pipefail
+          forge build --sizes --force --json > sizes.json
+          python3 - "$MAX_CONTRACT_BYTES" sizes.json <<'PY'
+          import json, sys
+          limit = int(sys.argv[1])
+          raw = open(sys.argv[2]).read()
+          # forge may emit compiler-diagnostics JSON alongside the sizes object, so a plain
+          # json.load() throws "Extra data". Scan every top-level JSON value and pick the
+          # contract-size object (the dict whose values carry runtime_size).
+          dec = json.JSONDecoder()
+          i, end, data = 0, len(raw), None
+          while i < end:
+              while i < end and raw[i].isspace():
+                  i += 1
+              if i >= end:
+                  break
+              try:
+                  obj, i = dec.raw_decode(raw, i)
+              except json.JSONDecodeError:
+                  i += 1
+                  continue
+              if isinstance(obj, dict) and any(isinstance(v, dict) and "runtime_size" in v for v in obj.values()):
+                  data = obj
+                  break
+          if data is None:
+              print("::error::could not locate the contract-size JSON in forge output")
+              sys.exit(1)
+          rows = [(k, v["runtime_size"]) for k, v in data.items()
+                  if isinstance(v, dict) and v.get("runtime_size") is not None]
+          over = [(k, s) for k, s in rows if s > limit]
+          if over:
+              print("::error::contract(s) exceed EIP-170 limit %d B:" % limit)
+              for k, s in sorted(over, key=lambda x: -x[1]):
+                  print("  %s: %d B (over by %d)" % (k, s, s - limit))
+              sys.exit(1)
+          print("Size gate OK — all runtime sizes within %d B. Largest:" % limit)
+          for k, s in sorted(rows, key=lambda x: -x[1])[:5]:
+              print("  %s: %d B (margin %d)" % (k, s, limit - s))
+          PY
 
       - name: Run tests
         run: forge test -vvv
 
-      # ── Audit-PoC gate against a CLEAN artifact ─────────────────────
-      # The audit PoCs assert FIXED behaviour. Run them against a freshly
-      # compiled tree (no cached build) so a PoC can never go green/red
-      # against a stale artifact (the leaked-mutation review observation).
+      # ── Dispute Foundry suites (REQUIRED, explicit) ─────────────────
+      # The full `forge test` above already runs these; this step re-asserts the
+      # dispute suites EXPLICITLY so a future refactor that silently stops
+      # compiling/discovering them fails the gate loudly rather than passing on
+      # an empty match. The trailing count guard fails closed if the match set
+      # collapses to zero (e.g. a renamed contract no longer matched).
+      - name: Dispute Foundry suites (required)
+        run: |
+          set -euo pipefail
+          PATTERN='BondEscalation|CompositeMediator|EncodingCanonical|UMAIntegration|DisputeBond|EmptyDisputeResolution|MediatorTimelockBypass|ResolverAuth|PromptCIDGovernance'
+          N=$(forge test --list --match-contract "$PATTERN" --json | python3 -c 'import json,sys; d=json.load(sys.stdin); print(sum(len(v) for f in d.values() for v in f.values()))')
+          echo "Dispute suite test count: $N"
+          if [ "$N" -lt 1 ]; then
+            echo "::error::dispute-suite match set is empty — suites renamed or dropped."
+            exit 1
+          fi
+          forge test -vvv --match-contract "$PATTERN"
+
+      # ── Audit-PoC gate against a CLEAN artifact (REQUIRED) ──────────
+      # The 23 audit PoCs assert FIXED behaviour. Run them against a freshly
+      # compiled tree (no cached build) so a PoC can never go green/red against
+      # a stale artifact (the leaked-mutation review observation). The count
+      # assertion fails closed if a PoC is dropped from the suite.
       - name: Audit PoCs (clean rebuild, no stale artifact)
         run: |
+          set -euo pipefail
           forge clean
           forge test --match-path "test/audit/*" -vvv
+          POC_COUNT=$(grep -rhoE 'function test[A-Za-z0-9_]*' test/audit/ | sort -u | wc -l | tr -d ' ')
+          echo "Audit PoC test count: $POC_COUNT"
+          if [ "$POC_COUNT" -lt 23 ]; then
+            echo "::error::expected >= 23 audit PoCs, found $POC_COUNT — a PoC was dropped."
+            exit 1
+          fi
 
-      - name: Coverage summary
-        run: forge coverage --report summary || true
-        # `|| true` — coverage occasionally needs special-cased contracts
-        # that don't compile under `forge coverage`'s instrumented profile.
-        # We surface the report in the log but don't gate the pipeline on
-        # it until the suite is split (unit + invariant) for coverage.
-        continue-on-error: true
+      # ── Invariant-coverage map gate (REQUIRED if doc present) ───────
+      # docs/INVARIANT-COVERAGE.md is a REQUIRED release-gate artifact: it must be
+      # present (force-added past the docs/ gitignore) and every invariant row must
+      # map to a proving test. A MISSING doc OR any row still marked UNMAPPED fails
+      # the gate (fail-closed — a dropped/ignored doc can never silently pass).
+      - name: Invariant-coverage map gate (no UNMAPPED rows)
+        run: |
+          set -euo pipefail
+          DOC="docs/INVARIANT-COVERAGE.md"
+          if [ ! -f "$DOC" ]; then
+            echo "::error::$DOC is missing — it is a REQUIRED release-gate artifact (force-add it past the docs/ gitignore)."
+            exit 1
+          fi
+          if grep -nE 'UNMAPPED' "$DOC"; then
+            echo "::error::$DOC has invariant row(s) marked UNMAPPED — map each to a proving test."
+            exit 1
+          fi
+          echo "Invariant-coverage map OK — no UNMAPPED rows in $DOC."
 
-  # ── Slither static analysis (non-blocking baseline) ─────────────
-  # Per the in-flight Apex audit guidance: first-pass Slither output is
-  # expected to be 20-40 findings, most of which are documented design
-  # patterns (e.g. _releaseEscrow's emergency-recovery on `paused`). The
-  # job runs and surfaces output, but `continue-on-error: true` keeps it
-  # from blocking merges until a baseline `.slither.config.json` is tuned
-  # in a follow-up commit. Once tuned, flip to blocking by removing the
-  # continue-on-error line and adding the config to required status checks.
+      # ── Coverage GATE (REQUIRED) ────────────────────────────────────
+      # Was advisory (`forge coverage --report summary || true`). Now GATING:
+      # per-contract line coverage for the two load-bearing dispute contracts
+      # must stay at/above the env floors or the job fails.
+      #
+      # Why --ir-minimum + an isolated coverage tree:
+      #   `forge coverage` disables the optimizer/viaIR, so the production via_ir
+      #   build hits "stack too deep". --ir-minimum re-enables viaIR at minimum
+      #   opt. ONE unrelated test mock (test/treasury/ArchiveTreasury.t.sol's
+      #   MockACTPKernel) STILL overflows the stack even under --ir-minimum, and
+      #   `forge coverage` compiles EVERY test file regardless of --match/--no-match
+      #   filters. So we run coverage in an isolated copy of the repo with that one
+      #   treasury test path removed. MockACTPKernel is defined ONLY there and is
+      #   imported nowhere else, so excluding it cannot affect the dispute contracts
+      #   we gate on, and the full `forge test` step above still exercises the
+      #   treasury suite normally in the production profile.
+      - name: Coverage gate (BondEscalation + CompositeMediator floors)
+        run: |
+          set -euo pipefail
+          COVTREE="$RUNNER_TEMP/covtree"
+          rm -rf "$COVTREE"; mkdir -p "$COVTREE"
+          # Mirror the repo without the stack-breaking treasury test and without
+          # stale build artifacts; keep src/, the rest of test/, lib/, foundry.toml.
+          rsync -a --exclude 'out/' --exclude 'cache/' --exclude '.git/' \
+                --exclude 'test/treasury/' ./ "$COVTREE"/
+          ( cd "$COVTREE" && forge coverage --ir-minimum \
+              --report lcov --report-file lcov.info \
+              --report summary )
+          python3 - "$COVTREE/lcov.info" "$COV_FLOOR_BOND_ESCALATION" "$COV_FLOOR_COMPOSITE_MEDIATOR" <<'PY'
+          import sys
+          lcov, fbe, fcm = sys.argv[1], float(sys.argv[2]), float(sys.argv[3])
+          floors = {"BondEscalation.sol": fbe, "CompositeMediator.sol": fcm}
+          stats, cur = {}, None
+          for line in open(lcov):
+              line = line.rstrip()
+              if line.startswith("SF:"):
+                  cur = line[3:]; stats.setdefault(cur, {"LF": 0, "LH": 0})
+              elif line.startswith("LF:") and cur:
+                  stats[cur]["LF"] = int(line[3:])
+              elif line.startswith("LH:") and cur:
+                  stats[cur]["LH"] = int(line[3:])
+          failed = False
+          for name, floor in floors.items():
+              match = [f for f in stats if f.endswith("/" + name) or f.endswith(name)]
+              if not match:
+                  print("::error::no coverage data for %s — coverage build dropped it." % name)
+                  failed = True; continue
+              d = stats[match[0]]
+              pct = (100.0 * d["LH"] / d["LF"]) if d["LF"] else 0.0
+              ok = pct >= floor
+              print("%s %s: %.2f%% (%d/%d) floor=%.1f%%" %
+                    ("OK" if ok else "FAIL", name, pct, d["LH"], d["LF"], floor))
+              if not ok:
+                  print("::error::%s line coverage %.2f%% below floor %.1f%%" % (name, pct, floor))
+                  failed = True
+          sys.exit(1 if failed else 0)
+          PY
+
+  # ── Slither static analysis (GATING on HIGH severity) ───────────
+  # Was non-blocking (`continue-on-error: true`, `fail-on: none`). Now a release
+  # gate: Slither FAILS the job on any HIGH-severity finding. Medium/low remain
+  # advisory in the log (triage / tune via .slither.config.json in a follow-up).
+  # lib/, test/, script/ stay filtered out — third-party + non-production code.
   slither:
-    name: Slither (non-blocking)
+    name: Slither (gating on high severity)
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -99,9 +283,19 @@ jobs:
         with:
           version: stable
 
-      - name: Run Slither
+      - name: Run Slither (fail on high)
         uses: crytic/slither-action@f197989dea5b53e986d0f88c60a034ddd77ec9a8 # v0.4.0
         with:
           target: "src/"
-          fail-on: none
+          fail-on: high
           slither-args: "--filter-paths 'lib/|test/|script/'"
+
+# ── SDK-CI dispute-suite gate (DOCUMENTED REQUIREMENT — out of scope here) ──
+# The TypeScript and Python SDK CIs (sdk-ts-ci.yml / sdk-python-ci.yml) live in
+# the SDK repos (github.com/agirails/sdk-js and /sdk-python), NOT in this kernel
+# repo, so they are intentionally NOT edited here. To fully close audit MED-2 at
+# the SDK layer, those workflows MUST add an equivalent REQUIRED dispute-suite
+# gate (no `|| true`, not continue-on-error), e.g.:
+#   - TS:  npm test -- --testPathPattern 'dispute|mediator|bond|escalation'
+#   - PY:  pytest -q tests -k 'dispute or mediator or bond or escalation'
+# Track as a follow-up in the SDK repos; this comment is the cross-repo pointer.

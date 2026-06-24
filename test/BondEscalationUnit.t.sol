@@ -900,6 +900,14 @@ contract BondEscalationUnitTest is DisputeTestBase {
         assertEq(usdc.balanceOf(admin), adminUsdcBefore, "admin extracted USDC");
     }
 
+    /// @notice INV-18: the rotating pool cannot shrink below 1 — removing the last member reverts.
+    ///         Closes the P5-1 coverage FLAG (the default DisputeTestBase pool has exactly one member).
+    function test_Governance_RemoveLast_RevertsMinSizeOne() external {
+        assertEq(bondEscalation.rotatingPoolLength(), 1, "default pool has one rotating member");
+        vm.expectRevert("Pool minimum is 1");
+        bondEscalation.removeFromRotatingPool(0);
+    }
+
     // =====================================================================
     // §7.14 / INV-9 — full pausable matrix (BOTH directions).
     //   (a) All FIVE pausable fns revert "Paused".
