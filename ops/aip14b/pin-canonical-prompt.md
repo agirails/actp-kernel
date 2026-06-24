@@ -52,11 +52,13 @@ test "$BOND_ESCALATION" != "null" || { echo "BondEscalation not yet deployed for
 > not assume a name. Set it once:
 >
 > ```bash
-> # Selectors are read from the deployed ABI, NOT guessed. Example shape (adjust to the frozen ABI):
+> # Implemented in src/BondEscalation.sol (§4.2 prompt-CID governance); read from the frozen ABI.
 > export PROMPT_PROPOSE_SIG="proposePromptCID(string)"     # propose: records pending CID, starts 2-day clock
 > export PROMPT_EXECUTE_SIG="executePromptCID()"           # execute: activates pending CID after the delay
+> export PROMPT_CANCEL_SIG="cancelPromptCID()"             # cancel a pending proposal (admin)
 > export PROMPT_ACTIVE_SIG="activePromptCID()(string)"     # read: the currently-active prompt CID
-> export PROMPT_PENDING_SIG="pendingPromptCID()(string,uint256)"  # read: pending CID + unlock timestamp
+> export PROMPT_PENDING_SIG="pendingPromptCID()(string)"   # read: pending CID (awaiting timelock)
+> export PROMPT_UNLOCK_SIG="promptCIDUnlockTime()(uint64)" # read: execute-allowed-at ts (0 = none pending)
 > ```
 >
 > If the frozen dispute ABI exposes the prompt CID through a different surface (e.g. carried in the

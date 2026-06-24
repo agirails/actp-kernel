@@ -125,6 +125,12 @@ contract BondEscalation is IBondEscalation, IBondEscalationAdmin, ReentrancyGuar
     address[] public pendingRotatingAdditions;
     uint64[] public rotatingAdditionUnlockTime;
 
+    /// @notice §4.2 canonical evaluator-prompt CID, committed on-chain so anyone can verify WHICH prompt
+    ///         the evaluators used. Governed by the same 2-day EVALUATOR_UPDATE_DELAY as evaluator changes.
+    string public activePromptCID;
+    string public pendingPromptCID;
+    uint64 public promptCIDUnlockTime;
+
     // ---------------------------------------------------------------------
     // F-4 / F-6 storage (appended at the END of the layout so the slots of all pre-existing state —
     // notably `rotatingPool` (slot 8) which some adversarial tests address via `vm.store` — are
@@ -873,6 +879,36 @@ contract BondEscalation is IBondEscalation, IBondEscalationAdmin, ReentrancyGuar
         delete pendingFixedEvaluators[slot];
         delete fixedEvaluatorUnlockTime[slot];
         emit FixedEvaluatorUpdateCancelled(slot);
+    }
+
+    // --- Canonical Prompt-CID Governance (Timelocked, §4.2) ---
+    // The evaluator prompt is pinned to IPFS; its CID is committed on-chain so anyone can verify WHICH
+    // prompt the evaluators used. Updates follow the same 2-day EVALUATOR_UPDATE_DELAY as evaluator
+    // changes; execute is permissionless after the delay (mirrors executeFixedEvaluatorUpdate). The AI
+    // ruling is advisory/Tier-1-challengeable, so this is a transparency commitment, not a fund path.
+    // Genesis: the deployer proposes the initial CID at deploy and executes after the delay (parallel
+    // with the mediator-approval timelock), so no separate non-timelocked init surface is introduced.
+
+    function proposePromptCID(string calldata newCID) external override onlyAdmin {
+        require(bytes(newCID).length != 0, "Empty CID");
+        pendingPromptCID = newCID;
+        promptCIDUnlockTime = uint64(block.timestamp) + EVALUATOR_UPDATE_DELAY;
+        emit PromptCIDProposed(newCID, promptCIDUnlockTime);
+    }
+
+    function executePromptCID() external override {
+        require(promptCIDUnlockTime != 0, "No pending update");
+        require(block.timestamp >= promptCIDUnlockTime, "Timelock active");
+        activePromptCID = pendingPromptCID;
+        emit PromptCIDUpdated(activePromptCID);
+        delete pendingPromptCID;
+        delete promptCIDUnlockTime;
+    }
+
+    function cancelPromptCID() external override onlyAdmin {
+        delete pendingPromptCID;
+        delete promptCIDUnlockTime;
+        emit PromptCIDProposalCancelled();
     }
 
     // --- Rotating Pool Additions (Timelocked) ---

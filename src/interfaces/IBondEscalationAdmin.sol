@@ -13,6 +13,11 @@ interface IBondEscalationAdmin {
     event RotatingPoolAdditionProposed(address evaluator, uint64 unlockTime);
     event RotatingPoolUpdated(address evaluator, bool added);
 
+    /// @notice §4.2 canonical evaluator-prompt CID governance (timelocked, EVALUATOR_UPDATE_DELAY).
+    event PromptCIDProposed(string newCID, uint64 unlockTime);
+    event PromptCIDUpdated(string cid);
+    event PromptCIDProposalCancelled();
+
     // --- Pause Control (does NOT gate recovery paths, INV-9) ---
     function pause() external; // onlyAdmin
     function unpause() external; // onlyAdmin
@@ -24,4 +29,9 @@ interface IBondEscalationAdmin {
     function proposeRotatingPoolAddition(address evaluator) external; // onlyAdmin, timelocked
     function executeRotatingPoolAddition(uint256 index) external; // after timelock
     function removeFromRotatingPool(uint256 index) external; // onlyAdmin, immediate
+
+    // --- Canonical Prompt-CID Governance (§4.2: CID referenced on-chain, 2-day timelocked) ---
+    function proposePromptCID(string calldata newCID) external; // onlyAdmin, timelocked
+    function executePromptCID() external; // after timelock (permissionless, mirrors evaluator execute)
+    function cancelPromptCID() external; // onlyAdmin
 }
