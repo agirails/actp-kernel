@@ -134,7 +134,7 @@ Every reference to the **OLD kernel** (`0x132B…2d29` mainnet / `0x469C…3411`
 | B1 | **Gnosis Safe admin** (`0x61fE…b7f2`, 2-of-3) | Safe is the v2 kernel admin/pauser/feeRecipient; it must hold/queue all v2 `onlyAdmin` wiring txns (A2/A4/A6/A9). The OLD-kernel Safe txns are historical. | Build the v2 wiring batch (calldata from DeployKernelV2 + DeployDisputeSystem). |
 | B2 | **CDP paymaster allowlist** | Old allowlist sponsors gas for the OLD kernel/vault/relay only. v2 kernel, v2 vault, and BondEscalation are NOT sponsored until added → publish/dispute txns fail to get gas. | **Re-add** v2 kernel, v2 vault, CompositeMediator, BondEscalation (and confirm X402Relay still present) to the CDP allowlist on both chains. |
 | B3 | **Pimlico paymaster allowlist** | Same as B2 for the failover bundler/paymaster. | **Re-add** the same v2 set to the Pimlico allowlist on both chains. |
-| B4 | **Evaluator signer registry** | BondEscalation is fresh (A8); its fixed/rotating evaluator set is constructor-seeded from `EVALUATOR_FIXED_0/1`, `EVALUATOR_ROTATING_0`. | Confirm evaluator addresses unchanged; keys remain in KMS/keystore (never in repo). |
+| B4 | **Evaluator signer registry** | BondEscalation is fresh (A8); its fixed/rotating evaluator set is constructor-seeded from `EVALUATOR_FIXED_0/1`, `EVALUATOR_ROTATING` (>=3; legacy fallback `EVALUATOR_ROTATING_0.._7`). | Confirm evaluator addresses unchanged; keys remain in KMS/keystore (never in repo). |
 
 ### C. Published SDK / integration network-config touchpoints (the 6 surfaces)
 

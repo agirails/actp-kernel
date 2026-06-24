@@ -26,7 +26,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
  *   - Contains NO private keys. On mainnet, admin == Gnosis Safe; the `initialize` + `approveMediator`
  *     wiring is emitted as Safe-submittable calldata hints (see console output + deployments/aip14b.json
  *     `safeCalldata`), never executed by a raw key here.
- *   - The full broadcast path is guarded behind `--broadcast`. A mainnet DRY-RUN (no `--broadcast`)
+ *   - The full broadcast path is detected via Foundry's ScriptBroadcast context. A mainnet DRY-RUN
  *     SIMULATES every step (including the Safe-only steps, via `vm.prank(admin)`) without reverting,
  *     so `forge script ... --rpc-url <mainnet>` validates the wiring before the Safe ever signs.
  *
@@ -77,7 +77,8 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
  *   PRIVATE_KEY                 deployer key (testnet EOA; mainnet hot deployer, NOT the Safe)
  *   DISPUTE_ADMIN              BondEscalation.admin (Sepolia: EOA; mainnet: Gnosis Safe)
  *   EVALUATOR_FIXED_0/1       2 distinct fixed evaluator addresses (§4.6)
- *   EVALUATOR_ROTATING_0      >=1 rotating evaluator (distinct from both fixed slots)
+ *   EVALUATOR_ROTATING        >=3 comma-delimited rotating evaluators (preferred)
+ *                              (legacy fallback: EVALUATOR_ROTATING_0.._7)
  * Optional env (override the deployments/aip14b.json values; for G3 v2 re-point):
  *   DEPLOY_NETWORK            "base-sepolia" (default) | "base-mainnet"
  *   DISPUTE_KERNEL            kernel to wire against (default: aip14b.json existing.ACTPKernel)
@@ -106,6 +107,7 @@ contract DeployDisputeSystem is Script {
     address internal constant MAINNET_SAFE_ADMIN = 0x61fE58E9EdB380EA65EC74bD364D9D2cba30B7f2;
 
     uint256 internal constant MEDIATOR_APPROVAL_DELAY = 2 days; // mirrors ACTPKernel constant (G1)
+    uint256 internal constant MIN_ROTATING_POOL = 3; // P4-4 operational floor
 
     struct Cfg {
         string network;
@@ -170,10 +172,11 @@ contract DeployDisputeSystem is Script {
         //   - Mainnet: admin == Gnosis Safe → DO NOT broadcast a raw tx. Emit Safe calldata; on a
         //     dry-run, SIMULATE via vm.prank(admin) so the wiring is validated end-to-end.
         // =====================================================================
-        _step4ApproveMediator(c, deployer, deployerKey, address(mediator), broadcasting);
+        bool approveExecutedInScript =
+            _step4ApproveMediator(c, deployer, deployerKey, address(mediator), broadcasting);
 
         // Post-deploy require/assert verification of the full wiring (steps 1-3, + step 4 when applied).
-        _verifyWiring(c, mediator, bond, broadcasting);
+        _verifyWiring(c, mediator, bond, approveExecutedInScript);
 
         // Address write-back (deployments/aip14b.json) + verify notes.
         _writeBackAndNotes(c, address(mediator), address(bond), broadcasting);
@@ -190,7 +193,9 @@ contract DeployDisputeSystem is Script {
             // G3: prefer the v2 kernel; fall back to the recorded pre-v2 existing kernel.
             address v2 = vm.envOr("MAINNET_KERNEL_V2", address(0));
             address envKernel = vm.envOr("DISPUTE_KERNEL", address(0));
-            c.kernel = v2 != address(0) ? v2 : (envKernel != address(0) ? envKernel : MAINNET_KERNEL_PREV2);
+            c.kernel = v2 != address(0)
+                ? v2
+                : (envKernel != address(0) ? envKernel : MAINNET_KERNEL_PREV2);
             c.usdc = vm.envOr("DISPUTE_USDC", MAINNET_USDC);
             c.admin = vm.envOr("DISPUTE_ADMIN", MAINNET_SAFE_ADMIN);
         } else {
@@ -200,11 +205,32 @@ contract DeployDisputeSystem is Script {
             c.admin = vm.envOr("DISPUTE_ADMIN", address(0));
         }
 
-        // §4.6 evaluator registry — two FIXED + >=1 ROTATING, all distinct (constructor enforces).
+        // §4.6 evaluator registry — two FIXED + >=3 ROTATING, all distinct (P4-4 operational floor).
         c.fixedEvaluators[0] = vm.envAddress("EVALUATOR_FIXED_0");
         c.fixedEvaluators[1] = vm.envAddress("EVALUATOR_FIXED_1");
-        c.rotatingPool = new address[](1);
-        c.rotatingPool[0] = vm.envAddress("EVALUATOR_ROTATING_0");
+        c.rotatingPool = _loadRotatingPool();
+    }
+
+    /// @dev Rotating pool source priority mirrors InitEvaluatorRegistry:
+    ///      1. EVALUATOR_ROTATING — comma-delimited list (preferred; supports any pool size).
+    ///      2. EVALUATOR_ROTATING_0.._7 — legacy individual vars, read in order.
+    function _loadRotatingPool() internal view returns (address[] memory pool) {
+        address[] memory empty = new address[](0);
+        address[] memory listed = vm.envOr("EVALUATOR_ROTATING", ",", empty);
+        if (listed.length > 0) return listed;
+
+        address[] memory tmp = new address[](8);
+        uint256 n = 0;
+        for (uint256 i = 0; i < 8; i++) {
+            address a = vm.envOr(string.concat("EVALUATOR_ROTATING_", vm.toString(i)), address(0));
+            if (a == address(0)) break;
+            tmp[n++] = a;
+        }
+        require(n > 0, "No rotating evaluators (set EVALUATOR_ROTATING or _0/_1/_2)");
+        pool = new address[](n);
+        for (uint256 i = 0; i < n; i++) {
+            pool[i] = tmp[i];
+        }
     }
 
     // =========================================================================
@@ -217,19 +243,27 @@ contract DeployDisputeSystem is Script {
         require(c.fixedEvaluators[0] != address(0), "EVALUATOR_FIXED_0 unset");
         require(c.fixedEvaluators[1] != address(0), "EVALUATOR_FIXED_1 unset");
         require(c.fixedEvaluators[0] != c.fixedEvaluators[1], "Fixed slots must differ");
-        require(c.rotatingPool.length >= 1, "Rotating pool empty");
-        require(c.rotatingPool[0] != address(0), "EVALUATOR_ROTATING_0 unset");
-        require(
-            c.rotatingPool[0] != c.fixedEvaluators[0] && c.rotatingPool[0] != c.fixedEvaluators[1],
-            "Rotating overlaps fixed"
-        );
+        require(c.rotatingPool.length >= MIN_ROTATING_POOL, "P4-4: rotating pool must be >= 3");
+        for (uint256 i = 0; i < c.rotatingPool.length; i++) {
+            require(c.rotatingPool[i] != address(0), "rotating[i]=0");
+            require(
+                c.rotatingPool[i] != c.fixedEvaluators[0]
+                    && c.rotatingPool[i] != c.fixedEvaluators[1],
+                "Rotating overlaps fixed"
+            );
+            for (uint256 j = i + 1; j < c.rotatingPool.length; j++) {
+                require(c.rotatingPool[i] != c.rotatingPool[j], "Duplicate rotating evaluator");
+            }
+        }
         // Sanity: the kernel we wire against must actually be a contract (skip in pure-simulation w/o RPC).
         require(c.kernel.code.length > 0, "kernel has no code (wrong address/RPC?)");
 
         if (c.isMainnet) {
             // Mainnet admin must be the Safe (or an explicitly-supplied multisig) — a contract.
             require(c.admin != address(0), "DISPUTE_ADMIN (Safe) required on mainnet");
-            require(c.admin.code.length > 0, "mainnet DISPUTE_ADMIN must be a contract (Gnosis Safe)");
+            require(
+                c.admin.code.length > 0, "mainnet DISPUTE_ADMIN must be a contract (Gnosis Safe)"
+            );
         }
     }
 
@@ -242,8 +276,10 @@ contract DeployDisputeSystem is Script {
         uint256 deployerKey,
         address mediator,
         bool broadcasting
-    ) internal {
-        bytes memory calldata_ = abi.encodeWithSelector(ACTPKernel.approveMediator.selector, mediator, true);
+    ) internal returns (bool executedInScript) {
+        bytes memory calldata_ = abi.encodeWithSelector(
+            ACTPKernel.approveMediator.selector, mediator, true
+        );
 
         if (c.isMainnet) {
             // Mainnet: NEVER broadcast a raw approveMediator — admin is the Safe (2-of-3).
@@ -255,30 +291,35 @@ contract DeployDisputeSystem is Script {
             console.log("    arg0    :", mediator);
             console.log("    arg1    : true");
             console.log("    calldata:", vm.toString(calldata_));
-            console.log("    effect  : starts 2-day MEDIATOR_APPROVAL_DELAY; resolver active after.");
+            console.log(
+                "    effect  : starts 2-day MEDIATOR_APPROVAL_DELAY; resolver active after."
+            );
 
             if (!broadcasting) {
                 // DRY-RUN: simulate the Safe's call so the whole wiring is validated without reverting.
                 vm.prank(c.admin);
                 ACTPKernel(c.kernel).approveMediator(mediator, true);
                 console.log("    [dry-run] simulated approveMediator via vm.prank(Safe) - OK");
+                return true;
             }
-            return;
+            return false;
         }
 
         // Testnet path: admin defaults to deployer. If admin is the deployer EOA, broadcast it.
         // If a different (non-deployer, non-contract-we-control) admin was supplied, fall back to a hint.
         address admin = c.admin;
         if (admin == deployer) {
-            if (broadcasting) {
-                vm.broadcast(deployerKey);
-                ACTPKernel(c.kernel).approveMediator(mediator, true);
-                console.log("[4] approveMediator broadcast by deployer-admin: started 2-day timelock");
-            } else {
-                vm.prank(admin);
-                ACTPKernel(c.kernel).approveMediator(mediator, true);
-                console.log("[4] [dry-run] simulated approveMediator via deployer-admin - OK");
-            }
+            // `vm.broadcast` works in both dry-run simulation and `forge script --broadcast`.
+            // Do not gate this behind an env var: omitting BROADCAST=true must never silently skip the
+            // admin step on the documented Sepolia command.
+            vm.broadcast(deployerKey);
+            ACTPKernel(c.kernel).approveMediator(mediator, true);
+            console.log(
+                broadcasting
+                    ? "[4] approveMediator broadcast by deployer-admin: started 2-day timelock"
+                    : "[4] [dry-run] simulated approveMediator via deployer-admin - OK"
+            );
+            return true;
         } else {
             console.log("");
             console.log("[4] approveMediator => external admin tx (NOT this deployer):");
@@ -289,17 +330,21 @@ contract DeployDisputeSystem is Script {
                 vm.prank(admin);
                 ACTPKernel(c.kernel).approveMediator(mediator, true);
                 console.log("    [dry-run] simulated approveMediator via vm.prank(admin) - OK");
+                return true;
             }
+            return false;
         }
     }
 
     // =========================================================================
     // Post-deploy verification — ALL require/assert checks (steps 1-4).
     // =========================================================================
-    function _verifyWiring(Cfg memory c, CompositeMediator mediator, BondEscalation bond, bool broadcasting)
-        internal
-        view
-    {
+    function _verifyWiring(
+        Cfg memory c,
+        CompositeMediator mediator,
+        BondEscalation bond,
+        bool approveExecutedInScript
+    ) internal view {
         // --- CompositeMediator (§6 / G4) ---
         require(address(mediator.kernel()) == c.kernel, "mediator.kernel mismatch");
         require(mediator.bondEscalation() == address(bond), "G4: mediator.bondEscalation not wired");
@@ -312,7 +357,10 @@ contract DeployDisputeSystem is Script {
         require(address(bond.compositeMediator()) == address(mediator), "bond.mediator mismatch");
         require(bond.admin() == c.admin, "bond.admin mismatch");
         // §8.4 testability override: umaOOV3=0 in ctor MUST resolve to the canonical DEFAULT_UMA_OOV3.
-        require(bond.UMA_OOV3() == DEFAULT_UMA_OOV3, "UMA_OOV3 not canonical (expected DEFAULT_UMA_OOV3)");
+        require(
+            bond.UMA_OOV3() == DEFAULT_UMA_OOV3,
+            "UMA_OOV3 not canonical (expected DEFAULT_UMA_OOV3)"
+        );
         require(!bond.paused(), "bond should start unpaused");
 
         // OQ-5 genesis seeding: registry live immediately (NON-timelocked), distinct entries.
@@ -320,21 +368,27 @@ contract DeployDisputeSystem is Script {
         require(bond.fixedEvaluators(1) == c.fixedEvaluators[1], "fixed[1] not seeded");
         require(bond.fixedEvaluators(0) != bond.fixedEvaluators(1), "fixed slots collide");
         require(bond.rotatingPoolLength() == c.rotatingPool.length, "rotating pool length mismatch");
-        require(bond.rotatingPool(0) == c.rotatingPool[0], "rotating[0] not seeded");
+        for (uint256 i = 0; i < c.rotatingPool.length; i++) {
+            require(bond.rotatingPool(i) == c.rotatingPool[i], "rotating[i] not seeded");
+        }
 
         // --- Kernel-side resolver registration (step 4) ---
         bool approved = ACTPKernel(c.kernel).approvedMediators(address(mediator));
         uint256 approvedAt = ACTPKernel(c.kernel).mediatorApprovedAt(address(mediator));
-        // On any path where step 4 ran (testnet broadcast/dry-run, or mainnet dry-run), the mediator is
-        // approved with a future activation timestamp (timelock). On a mainnet BROADCAST run, step 4 is a
-        // Safe tx not executed here, so we don't assert approval — only that it is correctly UNapproved.
-        if (c.isMainnet && broadcasting) {
-            require(!approved, "mainnet broadcast: approveMediator must be a Safe tx, not done here");
-            console.log("[verify] mediator NOT yet approved (awaiting Safe approveMediator) - OK");
-        } else {
+        // On any path where step 4 ran (testnet deployer-admin, or dry-run prank for an external admin),
+        // the mediator is approved with a future activation timestamp. On mainnet/external-admin broadcast
+        // runs, step 4 is not executed here, so the fresh mediator should remain unapproved.
+        if (approveExecutedInScript) {
             require(approved, "mediator not approved after step 4");
-            require(approvedAt == block.timestamp + MEDIATOR_APPROVAL_DELAY, "timelock window mismatch");
+            require(
+                approvedAt == block.timestamp + MEDIATOR_APPROVAL_DELAY, "timelock window mismatch"
+            );
             console.log("[verify] mediator approved; resolver active after 2-day timelock - OK");
+        } else {
+            require(!approved, "broadcast: approveMediator must be external/Safe tx, not done here");
+            console.log(
+                "[verify] mediator NOT yet approved (awaiting external admin/Safe approveMediator) - OK"
+            );
         }
 
         console.log("[verify] ALL post-deploy wiring checks PASSED");
@@ -343,7 +397,9 @@ contract DeployDisputeSystem is Script {
     // =========================================================================
     // Write-back to deployments/aip14b.json + verify notes.
     // =========================================================================
-    function _writeBackAndNotes(Cfg memory c, address mediator, address bond, bool broadcasting) internal {
+    function _writeBackAndNotes(Cfg memory c, address mediator, address bond, bool broadcasting)
+        internal
+    {
         console.log("");
         console.log("=== ADDRESSES (write back into deployments/aip14b.json) ===");
         console.log("network          :", c.network);
@@ -360,9 +416,17 @@ contract DeployDisputeSystem is Script {
             // wrapped in quotes so each is a valid standalone JSON value for vm.writeJson's key writer.
             string memory path = "deployments/aip14b.json";
             string memory base = string.concat(".networks.", c.network, ".disputeContracts.");
-            vm.writeJson(_jsonStr(vm.toString(mediator)), path, string.concat(base, "CompositeMediator.address"));
-            vm.writeJson(_jsonStr("DEPLOYED"), path, string.concat(base, "CompositeMediator.status"));
-            vm.writeJson(_jsonStr(vm.toString(bond)), path, string.concat(base, "BondEscalation.address"));
+            vm.writeJson(
+                _jsonStr(vm.toString(mediator)),
+                path,
+                string.concat(base, "CompositeMediator.address")
+            );
+            vm.writeJson(
+                _jsonStr("DEPLOYED"), path, string.concat(base, "CompositeMediator.status")
+            );
+            vm.writeJson(
+                _jsonStr(vm.toString(bond)), path, string.concat(base, "BondEscalation.address")
+            );
             vm.writeJson(_jsonStr("DEPLOYED"), path, string.concat(base, "BondEscalation.status"));
             console.log("[write-back] deployments/aip14b.json updated for", c.network);
         } else {
@@ -372,33 +436,44 @@ contract DeployDisputeSystem is Script {
         console.log("");
         console.log("=== VERIFICATION NOTES (Basescan / Sourcify) ===");
         console.log("Sourcify (chain-agnostic, no API key):");
-        console.log("  forge verify-contract <ADDR> CompositeMediator --verifier sourcify --chain", _chainId(c.isMainnet));
-        console.log("  forge verify-contract <ADDR> BondEscalation     --verifier sourcify --chain", _chainId(c.isMainnet));
+        console.log(
+            "  forge verify-contract <ADDR> CompositeMediator --verifier sourcify --chain",
+            _chainId(c.isMainnet)
+        );
+        console.log(
+            "  forge verify-contract <ADDR> BondEscalation     --verifier sourcify --chain",
+            _chainId(c.isMainnet)
+        );
         console.log("Basescan (needs BASESCAN_API_KEY):");
         console.log("  forge verify-contract <ADDR> CompositeMediator --watch \\");
         console.log("    --constructor-args $(cast abi-encode 'constructor(address)' <KERNEL>) \\");
         console.log("    --etherscan-api-key $BASESCAN_API_KEY --chain", _chainId(c.isMainnet));
         console.log("  forge verify-contract <ADDR> BondEscalation --watch \\");
         console.log("    --constructor-args $(cast abi-encode \\");
-        console.log("      'constructor(address,address,address,address,address[2],address[],address)' \\");
-        console.log("      <KERNEL> <USDC> <MEDIATOR> <ADMIN> '[<F0>,<F1>]' '[<R0>]' 0x0) \\");
+        console.log(
+            "      'constructor(address,address,address,address,address[2],address[],address)' \\"
+        );
+        console.log(
+            "      <KERNEL> <USDC> <MEDIATOR> <ADMIN> '[<F0>,<F1>]' '[<R0>,<R1>,<R2>]' 0x0) \\"
+        );
         console.log("    --etherscan-api-key $BASESCAN_API_KEY --chain", _chainId(c.isMainnet));
 
         if (c.isMainnet && broadcasting) {
             console.log("");
             console.log("=== REMAINING MAINNET WIRING (via Gnosis Safe 2-of-3) ===");
-            console.log("Safe must submit step 4 approveMediator (calldata printed above). Mediator's");
-            console.log("resolve()/resolveDisputeWhilePaused stays inert until block.timestamp >= approvedAt.");
+            console.log(
+                "Safe must submit step 4 approveMediator (calldata printed above). Mediator's"
+            );
+            console.log(
+                "resolve()/resolveDisputeWhilePaused stays inert until block.timestamp >= approvedAt."
+            );
         }
     }
 
     // ----------------------------- helpers -----------------------------------
     function _isBroadcasting() internal view returns (bool) {
-        // forge sets DRY_RUN/SIMULATION semantics via the absence of --broadcast; we expose an explicit
-        // env hook so simulation behavior is deterministic regardless of forge version. Default: if the
-        // run is a dry-run, the caller leaves BROADCAST unset → false. `--broadcast` callers set it true,
-        // or we infer from the standard forge `DRY_RUN` not being honored cross-version. Explicit wins.
-        return vm.envOr("BROADCAST", false);
+        return vm.isContext(VmSafe.ForgeContext.ScriptBroadcast)
+            || vm.isContext(VmSafe.ForgeContext.ScriptResume);
     }
 
     function _printHeader(Cfg memory c, address deployer, bool broadcasting) internal pure {
@@ -413,7 +488,10 @@ contract DeployDisputeSystem is Script {
         console.log("admin     :", c.admin);
         console.log("fixed[0]  :", c.fixedEvaluators[0]);
         console.log("fixed[1]  :", c.fixedEvaluators[1]);
-        console.log("rotating0 :", c.rotatingPool[0]);
+        console.log("rotating count:", c.rotatingPool.length);
+        for (uint256 i = 0; i < c.rotatingPool.length; i++) {
+            console.log("  rotating[i]:", c.rotatingPool[i]);
+        }
         console.log("");
     }
 

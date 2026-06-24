@@ -55,7 +55,7 @@
             "compositeMediator": "AWAIT_BROADCAST (set to the CompositeMediator address from step 1)",
             "admin": "${DISPUTE_ADMIN} (defaults to deployer / Sepolia admin EOA)",
             "fixedEvaluators": ["${EVALUATOR_FIXED_0}", "${EVALUATOR_FIXED_1}"],
-            "rotatingPool": ["${EVALUATOR_ROTATING_0}"],
+            "rotatingPool": ["${EVALUATOR_ROTATING} (>=3 comma-delimited addresses; legacy fallback EVALUATOR_ROTATING_0.._7)"],
             "umaOOV3": "0x0000000000000000000000000000000000000000",
             "umaOOV3Note": "address(0) → BondEscalation resolves DEFAULT_UMA_OOV3 (0x2aBf...500c) on-chain. Tests inject a MockOOV3 (§8.4)."
           },
@@ -122,7 +122,7 @@
             "admin": "0x61fE58E9EdB380EA65EC74bD364D9D2cba30B7f2",
             "adminNote": "Gnosis Safe (2-of-3). approveMediator + initialize wiring submitted as Safe transactions.",
             "fixedEvaluators": ["${EVALUATOR_FIXED_0}", "${EVALUATOR_FIXED_1}"],
-            "rotatingPool": ["${EVALUATOR_ROTATING_0}"],
+            "rotatingPool": ["${EVALUATOR_ROTATING} (>=3 comma-delimited addresses; legacy fallback EVALUATOR_ROTATING_0.._7)"],
             "umaOOV3": "0x0000000000000000000000000000000000000000",
             "umaOOV3Note": "address(0) → resolves DEFAULT_UMA_OOV3 (0x2aBf...500c), the LIVE Base-mainnet OOV3."
           },
