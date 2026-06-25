@@ -283,10 +283,18 @@ jobs:
         with:
           version: stable
 
+      # Compile on the RUNNER (where foundry-toolchain put forge). The slither-action
+      # runs in its own container WITHOUT forge, so it must NOT invoke the compiler:
+      # build out/ here, then run Slither with ignore-compile + target "." (the repo
+      # root, where foundry.toml + out/ live). Fixes "FileNotFoundError: 'forge'".
+      - name: Build artifacts for Slither (forge, on the runner)
+        run: forge build
+
       - name: Run Slither (fail on high)
         uses: crytic/slither-action@f197989dea5b53e986d0f88c60a034ddd77ec9a8 # v0.4.0
         with:
-          target: "src/"
+          target: "."
+          ignore-compile: true
           fail-on: high
           slither-args: "--filter-paths 'lib/|test/|script/'"
 
