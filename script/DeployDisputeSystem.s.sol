@@ -8,6 +8,9 @@ import {CompositeMediator} from "../src/CompositeMediator.sol";
 import {IACTPKernel} from "../src/interfaces/IACTPKernel.sol";
 import {ICompositeMediator} from "../src/interfaces/ICompositeMediator.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+// TESTNET-ONLY (DEPLOY_MOCK_OOV3): faithful OOV3 double so Tier-2 is live-drivable on Sepolia,
+// where the canonical OOV3 has no code (G2 probe). Preflight hard-reverts if enabled on mainnet.
+import {MockOOV3} from "../test/mocks/MockOOV3.sol";
 
 /**
  * @title DeployDisputeSystem
@@ -58,11 +61,16 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
  *   forge script script/DeployDisputeSystem.s.sol \
  *     --rpc-url $BASE_SEPOLIA_RPC --sig "run()"
  *
- *   # Sepolia BROADCAST (Tier-0/1 live; Tier-2 non-functional by design — no OOV3 on Sepolia):
+ *   # Sepolia BROADCAST (Tier-0/1 live; Tier-2 non-functional by default — no OOV3 on Sepolia):
  *   forge script script/DeployDisputeSystem.s.sol \
  *     --rpc-url $BASE_SEPOLIA_RPC --broadcast \
  *     --verify --verifier sourcify
  *   # (Basescan alt: --verify --etherscan-api-key $BASESCAN_API_KEY)
+ *
+ *   # Sepolia BROADCAST with LIVE Tier-2 (deploys a MockOOV3 and wires BondEscalation to it, so
+ *   # escalateToUMA → mockResolve/settleAssertion → resolved-callbacks run on the live testnet):
+ *   DEPLOY_MOCK_OOV3=true forge script script/DeployDisputeSystem.s.sol \
+ *     --rpc-url $BASE_SEPOLIA_RPC --broadcast --verify --verifier sourcify
  *
  *   # Mainnet DRY-RUN (recommended before any Safe action — simulates Safe steps, never reverts):
  *   DEPLOY_NETWORK=base-mainnet forge script script/DeployDisputeSystem.s.sol \
@@ -85,6 +93,10 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
  *   DISPUTE_USDC              USDC to wire against (default: aip14b.json existing USDC/MockUSDC)
  *   MAINNET_KERNEL_V2         G3 v2 kernel (mainnet); takes precedence when on base-mainnet
  *   UMA_OOV3_<NET>            informational only (constructor still passes 0 → DEFAULT_UMA_OOV3)
+ *   DEPLOY_MOCK_OOV3          TESTNET-ONLY: "true" deploys a MockOOV3 and constructs BondEscalation
+ *                             against it (umaOOV3 = mock), making Tier-2 live-drivable on Sepolia.
+ *                             mockResolve is PERMISSIONLESS — MockUSDC-denominated testnet value
+ *                             only. Preflight hard-reverts if set on base-mainnet.
  *   WRITE_DEPLOYMENTS_JSON    "true" to write addresses back into deployments/aip14b.json
  *                             (requires fs_permissions for that path — added to foundry.toml).
  */
@@ -99,9 +111,13 @@ contract DeployDisputeSystem is Script {
     // Base mainnet USDC (Circle) — used as the default `existing` USDC when targeting mainnet.
     address internal constant MAINNET_USDC = 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913;
 
-    // Pre-existing ground-truth addresses (mirror deployments/aip14b.json `existing`). These are the
-    // CURRENT pre-v2 wiring targets; on mainnet a G3 v2 kernel (MAINNET_KERNEL_V2) overrides at runtime.
-    address internal constant SEPOLIA_KERNEL = 0x469CBADbACFFE096270594F0a31f0EEC53753411;
+    // Pre-existing ground-truth addresses (mirror deployments/base-sepolia.json — the CANONICAL
+    // deployment record). On mainnet a G3 v2 kernel (MAINNET_KERNEL_V2) overrides at runtime.
+    // NOTE 2026-07-02: SEPOLIA_KERNEL was updated from the pre-F-6 0x469CBADb…3411 (which LACKS the
+    // AIP-14 dispute-era code — `disputeBondBps()` reverts on it) to the current F-6 kernel below
+    // (deployments/base-sepolia.json, deployBlock 43262304, disputeBondBps=500). The dispute system
+    // MUST wire to the dispute-capable kernel. `DISPUTE_KERNEL` env still overrides for a future v2.
+    address internal constant SEPOLIA_KERNEL = 0xD8f7829c4555Fc95fc92e54729DaE7d28ace349B;
     address internal constant SEPOLIA_USDC = 0x444b4e1A65949AB2ac75979D5d0166Eb7A248Ccb;
     address internal constant MAINNET_KERNEL_PREV2 = 0x132B9eB321dBB57c828B083844287171BDC92d29;
     address internal constant MAINNET_SAFE_ADMIN = 0x61fE58E9EdB380EA65EC74bD364D9D2cba30B7f2;
@@ -117,6 +133,7 @@ contract DeployDisputeSystem is Script {
         address admin;
         address[2] fixedEvaluators;
         address[] rotatingPool;
+        bool deployMockOOV3; // TESTNET-ONLY: deploy MockOOV3 + wire BondEscalation to it (live Tier-2)
     }
 
     function run() external {
@@ -147,7 +164,21 @@ contract DeployDisputeSystem is Script {
         CompositeMediator mediator = new CompositeMediator(IACTPKernel(c.kernel));
         console.log("[1] CompositeMediator deployed:", address(mediator));
 
-        // --- STEP 2: BondEscalation(...) — OQ-5 genesis evaluator seeding, umaOOV3=0 (§8.4) ---
+        // --- STEP 1.5 (TESTNET-ONLY, opt-in): MockOOV3 so Tier-2 is LIVE-drivable on Sepolia ---
+        // The canonical OOV3 has no code on Sepolia (G2 FAIL). Constructing BondEscalation against
+        // a deployed MockOOV3 makes escalateToUMA → mockResolve/mockArmResult+settleAssertion →
+        // resolved-callbacks fully exercisable on the live testnet (incl. the F-6 settle-bounty leg
+        // and the R6 getMinimumBond read — the mock surfaces the same $500 floor). mockResolve is
+        // PERMISSIONLESS by design: acceptable ONLY for MockUSDC-denominated testnet value.
+        address umaOOV3ForCtor = address(0);
+        if (c.deployMockOOV3) {
+            MockOOV3 mockOOV3 = new MockOOV3();
+            umaOOV3ForCtor = address(mockOOV3);
+            console.log("[1.5] MockOOV3 (testnet Tier-2 double) deployed:", umaOOV3ForCtor);
+        }
+
+        // --- STEP 2: BondEscalation(...) — OQ-5 genesis evaluator seeding; umaOOV3 = 0 (§8.4
+        //     canonical default) or the STEP-1.5 MockOOV3 (testnet live-Tier-2 option) ---
         BondEscalation bond = new BondEscalation(
             IACTPKernel(c.kernel),
             IERC20(c.usdc),
@@ -155,7 +186,7 @@ contract DeployDisputeSystem is Script {
             c.admin,
             c.fixedEvaluators,
             c.rotatingPool,
-            address(0) // umaOOV3 = 0 → BondEscalation resolves DEFAULT_UMA_OOV3 on-chain (§8.4)
+            umaOOV3ForCtor // 0 → DEFAULT_UMA_OOV3 on-chain (§8.4); nonzero → testnet MockOOV3
         );
         console.log("[2] BondEscalation deployed:    ", address(bond));
 
@@ -176,10 +207,16 @@ contract DeployDisputeSystem is Script {
             _step4ApproveMediator(c, deployer, deployerKey, address(mediator), broadcasting);
 
         // Post-deploy require/assert verification of the full wiring (steps 1-3, + step 4 when applied).
-        _verifyWiring(c, mediator, bond, approveExecutedInScript);
+        _verifyWiring(
+            c,
+            mediator,
+            bond,
+            approveExecutedInScript,
+            umaOOV3ForCtor == address(0) ? DEFAULT_UMA_OOV3 : umaOOV3ForCtor
+        );
 
         // Address write-back (deployments/aip14b.json) + verify notes.
-        _writeBackAndNotes(c, address(mediator), address(bond), broadcasting);
+        _writeBackAndNotes(c, address(mediator), address(bond), umaOOV3ForCtor, broadcasting);
     }
 
     // =========================================================================
@@ -209,6 +246,9 @@ contract DeployDisputeSystem is Script {
         c.fixedEvaluators[0] = vm.envAddress("EVALUATOR_FIXED_0");
         c.fixedEvaluators[1] = vm.envAddress("EVALUATOR_FIXED_1");
         c.rotatingPool = _loadRotatingPool();
+
+        // TESTNET-ONLY live-Tier-2 option (guarded against mainnet in _preflight).
+        c.deployMockOOV3 = vm.envOr("DEPLOY_MOCK_OOV3", false);
     }
 
     /// @dev Rotating pool source priority mirrors InitEvaluatorRegistry:
@@ -257,6 +297,14 @@ contract DeployDisputeSystem is Script {
         }
         // Sanity: the kernel we wire against must actually be a contract (skip in pure-simulation w/o RPC).
         require(c.kernel.code.length > 0, "kernel has no code (wrong address/RPC?)");
+
+        // MockOOV3 is a TESTNET-ONLY convenience (live Tier-2 E2E on Sepolia, where the canonical
+        // OOV3 has no code — G2 probe). NEVER on mainnet: the canonical UMA deployment is the only
+        // legitimate Tier-2 authority, and the mock's resolve surface is permissionless.
+        require(
+            !(c.isMainnet && c.deployMockOOV3),
+            "DEPLOY_MOCK_OOV3 is testnet-only (mainnet must use the canonical UMA OOV3)"
+        );
 
         if (c.isMainnet) {
             // Mainnet admin must be the Safe (or an explicitly-supplied multisig) — a contract.
@@ -343,7 +391,8 @@ contract DeployDisputeSystem is Script {
         Cfg memory c,
         CompositeMediator mediator,
         BondEscalation bond,
-        bool approveExecutedInScript
+        bool approveExecutedInScript,
+        address expectedUMAOOV3
     ) internal view {
         // --- CompositeMediator (§6 / G4) ---
         require(address(mediator.kernel()) == c.kernel, "mediator.kernel mismatch");
@@ -356,10 +405,11 @@ contract DeployDisputeSystem is Script {
         require(address(bond.USDC()) == c.usdc, "bond.USDC mismatch");
         require(address(bond.compositeMediator()) == address(mediator), "bond.mediator mismatch");
         require(bond.admin() == c.admin, "bond.admin mismatch");
-        // §8.4 testability override: umaOOV3=0 in ctor MUST resolve to the canonical DEFAULT_UMA_OOV3.
+        // §8.4 testability override: ctor umaOOV3=0 MUST resolve to the canonical DEFAULT_UMA_OOV3;
+        // a nonzero ctor arg (testnet DEPLOY_MOCK_OOV3) MUST resolve to that exact MockOOV3.
         require(
-            bond.UMA_OOV3() == DEFAULT_UMA_OOV3,
-            "UMA_OOV3 not canonical (expected DEFAULT_UMA_OOV3)"
+            bond.UMA_OOV3() == expectedUMAOOV3,
+            "UMA_OOV3 mismatch (expected canonical DEFAULT_UMA_OOV3 or the STEP-1.5 MockOOV3)"
         );
         require(!bond.paused(), "bond should start unpaused");
 
@@ -397,14 +447,21 @@ contract DeployDisputeSystem is Script {
     // =========================================================================
     // Write-back to deployments/aip14b.json + verify notes.
     // =========================================================================
-    function _writeBackAndNotes(Cfg memory c, address mediator, address bond, bool broadcasting)
-        internal
-    {
+    function _writeBackAndNotes(
+        Cfg memory c,
+        address mediator,
+        address bond,
+        address mockOOV3,
+        bool broadcasting
+    ) internal {
         console.log("");
         console.log("=== ADDRESSES (write back into deployments/aip14b.json) ===");
         console.log("network          :", c.network);
         console.log("CompositeMediator:", mediator);
         console.log("BondEscalation   :", bond);
+        if (mockOOV3 != address(0)) {
+            console.log("MockOOV3 (Tier-2):", mockOOV3);
+        }
         console.log("kernel (wired)   :", c.kernel);
         console.log("usdc   (wired)   :", c.usdc);
         console.log("admin            :", c.admin);
@@ -428,6 +485,13 @@ contract DeployDisputeSystem is Script {
                 _jsonStr(vm.toString(bond)), path, string.concat(base, "BondEscalation.address")
             );
             vm.writeJson(_jsonStr("DEPLOYED"), path, string.concat(base, "BondEscalation.status"));
+            if (mockOOV3 != address(0)) {
+                // Testnet-only slot (pre-seeded in aip14b.json as OPTIONAL_NOT_DEPLOYED).
+                vm.writeJson(
+                    _jsonStr(vm.toString(mockOOV3)), path, string.concat(base, "MockOOV3.address")
+                );
+                vm.writeJson(_jsonStr("DEPLOYED"), path, string.concat(base, "MockOOV3.status"));
+            }
             console.log("[write-back] deployments/aip14b.json updated for", c.network);
         } else {
             console.log("[write-back] skipped (set WRITE_DEPLOYMENTS_JSON=true to persist).");
