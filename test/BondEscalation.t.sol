@@ -421,6 +421,50 @@ contract BondEscalationTest is DisputeTestBase {
         assertEq(_splitBpsOf(disputeId), 5000, "split fallback should be 50/50");
     }
 
+    /// @notice assertionResolvedCallback (FALSE → ruling 1 / requester wins) WITH a genuine ruling-1
+    ///         proposer — the mirror of test_UMA_ResolvedTrue_ProviderWins_Settled for the FALSE leg.
+    ///         The default ceiling helper (counterRuling == 1) leaves `rando` as
+    ///         lastProposerForRuling[1], so a FALSE DVM resolution pays the entire tier-1 pool to
+    ///         `rando` (winner-takes-all) AND routes ruling 1 → providerAtFault=true → all remaining
+    ///         escrow to the REQUESTER (never the provider), kernel → SETTLED. Closes the coverage
+    ///         gap: every other FALSE test used counterRuling == 2 (no ruling-1 proposer) and only
+    ///         exercised the split fallback, leaving the primary requester-wins-via-DVM payout — the
+    ///         single most safety-critical UMA ruling translation — unguarded by any test. A
+    ///         regression flipping the FALSE→ruling map, the ruling-1 winner lookup, or the
+    ///         providerAtFault flag would now fail here instead of shipping green.
+    function test_UMA_ResolvedFalse_RequesterWins_Settled() external {
+        bytes32 disputeId = _opened();
+        bytes32 txId = _txIdOf(disputeId);
+        _escalateBondToCeiling(disputeId, 1); // rando = lastProposerForRuling[1]
+
+        // Snapshot the accumulated tier-1 pool — rando becomes winner for ruling 1.
+        uint256 pool = _accumulatedOf(disputeId);
+
+        vm.startPrank(keeper);
+        usdc.approve(address(bondEscalation), 500_000_000);
+        bondEscalation.escalateToUMA(disputeId, "QmEvidenceCID");
+        vm.stopPrank();
+
+        bytes32 assertionId = bondEscalation.disputeToAssertion(disputeId);
+
+        uint256 winnerBefore = usdc.balanceOf(rando); // tier-1 winner for ruling 1
+        uint256 requesterBefore = usdc.balanceOf(requester); // escrow beneficiary (providerAtFault)
+        uint256 providerBefore = usdc.balanceOf(provider); // must NOT receive escrow on ruling 1
+        // Drive the mock to resolve FALSE → ruling 1 → fires assertionResolvedCallback AS the OOV3.
+        oov3.mockResolve(assertionId, false);
+
+        // rando (last proposer for ruling 1) takes the whole tier-1 pool.
+        assertEq(usdc.balanceOf(rando) - winnerBefore, pool, "ruling-1 winner didn't receive tier-1 pool");
+        // providerAtFault = true ⇒ remaining escrow refunds to the requester, nothing to the provider.
+        assertGt(usdc.balanceOf(requester), requesterBefore, "requester should receive the escrow refund");
+        assertEq(usdc.balanceOf(provider), providerBefore, "provider must not receive escrow on ruling 1");
+        assertEq(uint8(kernel.getTransaction(txId).state), uint8(IACTPKernel.State.SETTLED), "kernel not SETTLED");
+
+        assertTrue(_resolvedOf(disputeId));
+        assertTrue(_winnerPaidOf(disputeId), "ruling-1 winner should be paid");
+        assertEq(_splitBpsOf(disputeId), 0, "winner-takes-all, not a split");
+    }
+
     /// @notice onlyUMA guard: a non-OOV3 caller cannot fire the resolved callback.
     function test_UMA_ResolvedCallback_OnlyUMA() external {
         bytes32 disputeId = _opened();

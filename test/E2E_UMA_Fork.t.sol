@@ -224,11 +224,15 @@ contract E2E_UMA_Fork is Test {
         // Identifier is read at runtime (INV-20) and equals ASSERT_TRUTH on Base mainnet.
         assertEq(oov3.defaultIdentifier(), ASSERT_TRUTH, "OOV3.defaultIdentifier() must be ASSERT_TRUTH on Base");
 
-        // UMA_BOND ($500) must be >= the live USDC minimum bond (it is exactly AT the floor per G2).
+        // UMA_BOND ($500) is the hard FLOOR for the posted bond; the live USDC minimum sits exactly
+        // at it today (G2). Since the R6 fix, escalateToUMA posts max(UMA_BOND, getMinimumBond(USDC)),
+        // so a UMA governance raise of this floor no longer bricks escalation — it adapts by posting
+        // the higher live minimum. This assertion remains a DRIFT MONITOR: if it flips, escalation
+        // still works but the escalator's posted bond (and the SDK's escalate-cost quote) will exceed
+        // $500, which the team should surface via the R6 min-bond drift alert (OPS P5-4).
         uint256 minBond = oov3.getMinimumBond(USDC);
-        assertGe(UMA_BOND, minBond, "UMA_BOND must cover the live OOV3 minimum bond");
-        // Document the at-floor reality (RISK R6): zero margin. If this ever flips, escalateToUMA reverts.
-        assertEq(minBond, UMA_BOND, "G2: USDC min bond is exactly $500 (UMA_BOND) - at the floor, zero margin");
+        assertGe(UMA_BOND, minBond, "UMA_BOND floor no longer covers the live OOV3 minimum (R6 drift)");
+        assertEq(minBond, UMA_BOND, "G2 drift monitor: live USDC min bond diverged from UMA_BOND ($500)");
     }
 
     // =====================================================================

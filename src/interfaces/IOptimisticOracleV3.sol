@@ -11,8 +11,10 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 ///         `defaultIdentifier()` — it is `"ASSERT_TRUTH"` on Base mainnet (verified on-chain
 ///         2026-06-21) but MUST NEVER be hardcoded. Reading it keeps the integration correct if
 ///         UMA governance ever rotates the default identifier or if we deploy on another chain.
-///         Likewise, bond/currency should be derived from `getMinimumBond` / `defaultCurrency`
-///         rather than assumed.
+///         Likewise the bond is derived at runtime from `getMinimumBond` (R6): `escalateToUMA`
+///         posts `max(UMA_BOND, getMinimumBond(USDC))`, so a UMA min-bond raise adapts instead of
+///         reverting. The `currency` is fixed to the protocol's USDC by design (single settlement
+///         asset), not read from `defaultCurrency()`.
 /// @dev    Signature for `assertTruth` matches AIP-14b §8.4 exactly (9 args).
 interface IOptimisticOracleV3 {
     /// @notice Asserts a truth claim about the world, opening a challenge window.

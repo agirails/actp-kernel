@@ -531,9 +531,18 @@ contract BondEscalation is IBondEscalation, IBondEscalationAdmin, ReentrancyGuar
             ". Resolution policy: per AGIRAILS AIP-14b dispute resolution rules."
         );
 
+        // R6 FIX: size the UMA bond to the oracle's LIVE minimum for USDC rather than trusting the
+        // hardcoded UMA_BOND alone. assertTruth reverts if bond < getMinimumBond(currency); the live
+        // Base-mainnet USDC floor sits EXACTLY at UMA_BOND ($500, zero margin), so a UMA governance
+        // raise of that floor would otherwise brick escalateToUMA for every dispute. Posting
+        // max(UMA_BOND, liveMin) adapts automatically (identical to UMA_BOND today) and keeps
+        // UMA_BOND as a hard floor so we never under-bond. Read at runtime, NEVER assumed.
+        uint256 umaBond = IOptimisticOracleV3(UMA_OOV3).getMinimumBond(address(USDC));
+        if (umaBond < UMA_BOND) umaBond = UMA_BOND;
+
         // Transfer UMA bond from caller to this contract, then approve OOV3 to pull it.
-        USDC.safeTransferFrom(msg.sender, address(this), UMA_BOND);
-        USDC.forceApprove(UMA_OOV3, UMA_BOND);
+        USDC.safeTransferFrom(msg.sender, address(this), umaBond);
+        USDC.forceApprove(UMA_OOV3, umaBond);
 
         // Identifier: use the oracle's approved default (read at runtime, NEVER hardcode).
         bytes32 identifier = IOptimisticOracleV3(UMA_OOV3).defaultIdentifier();
@@ -545,7 +554,7 @@ contract BondEscalation is IBondEscalation, IBondEscalationAdmin, ReentrancyGuar
             address(0), // escalationManager
             UMA_LIVENESS, // liveness
             USDC, // currency
-            UMA_BOND, // bond
+            umaBond, // bond = max(UMA_BOND, live getMinimumBond(USDC))
             identifier, // = oracle default ("ASSERT_TRUTH" on Base mainnet)
             bytes32(0) // domainId
         );
@@ -566,7 +575,7 @@ contract BondEscalation is IBondEscalation, IBondEscalationAdmin, ReentrancyGuar
         // proposer ever existed and UMA resolves ruling 0, the callback's winner==address(0) branch
         // degrades to a 50/50 split so depositors recover proportionally (no stranded funds).
 
-        emit EscalatedToUMA(disputeId, assertionId, msg.sender, UMA_BOND, evidenceCID);
+        emit EscalatedToUMA(disputeId, assertionId, msg.sender, umaBond, evidenceCID);
     }
 
     // =====================================================================
