@@ -302,7 +302,7 @@ contract BondEscalationThreatModelTest is DisputeTestBase {
         }
         vm.startPrank(keeper);
         rusdc.approve(address(be), MAX_BOND);
-        be.escalateToUMA(disputeId, "QmEvidenceCID");
+        be.escalateToUMA(disputeId, "QmEvidenceCID", "QmReasoningCID");
         vm.stopPrank();
         bytes32 assertionId = be.disputeToAssertion(disputeId);
 
@@ -348,7 +348,7 @@ contract BondEscalationThreatModelTest is DisputeTestBase {
         vm.startPrank(keeper);
         usdc.approve(address(bondEscalation), INITIAL_BOND);
         vm.expectRevert("Mismatched disputeId");
-        bondEscalation.submitAIRuling(disputeB, rA, sigs);
+        bondEscalation.submitAIRuling(disputeB, rA, EVIDENCE_CID, REASONING_CID, sigs);
         vm.stopPrank();
 
         // (b) Rebrand the struct to B's id (so the require passes) but keep A's signatures →
@@ -358,7 +358,7 @@ contract BondEscalationThreatModelTest is DisputeTestBase {
         vm.startPrank(keeper);
         usdc.approve(address(bondEscalation), INITIAL_BOND);
         vm.expectRevert("Insufficient valid signatures");
-        bondEscalation.submitAIRuling(disputeB, rForged, sigs);
+        bondEscalation.submitAIRuling(disputeB, rForged, EVIDENCE_CID, REASONING_CID, sigs);
         vm.stopPrank();
     }
 
@@ -402,7 +402,7 @@ contract BondEscalationThreatModelTest is DisputeTestBase {
         vm.startPrank(keeper);
         usdc.approve(address(be2), INITIAL_BOND);
         vm.expectRevert("Insufficient valid signatures");
-        be2.submitAIRuling(disputeId, r, sigs);
+        be2.submitAIRuling(disputeId, r, EVIDENCE_CID, REASONING_CID, sigs);
         vm.stopPrank();
 
         // Sanity: the SAME ruling signed under be2's own domain DOES verify (the helper signs under #1,
@@ -412,7 +412,7 @@ contract BondEscalationThreatModelTest is DisputeTestBase {
         sigs2[1] = _signRulingForDomain(r, fixed1Pk, be2.DOMAIN_SEPARATOR());
         vm.startPrank(keeper);
         usdc.approve(address(be2), INITIAL_BOND);
-        be2.submitAIRuling(disputeId, r, sigs2); // must NOT revert
+        be2.submitAIRuling(disputeId, r, EVIDENCE_CID, REASONING_CID, sigs2); // must NOT revert
         vm.stopPrank();
         assertEq(be2.lastProposerForRuling(disputeId, 0), keeper, "correctly-domained sig must land");
     }
@@ -433,7 +433,7 @@ contract BondEscalationThreatModelTest is DisputeTestBase {
         vm.startPrank(keeper);
         usdc.approve(address(bondEscalation), INITIAL_BOND);
         vm.expectRevert("Ruling stale");
-        bondEscalation.submitAIRuling(disputeId, r, sigs);
+        bondEscalation.submitAIRuling(disputeId, r, EVIDENCE_CID, REASONING_CID, sigs);
         vm.stopPrank();
     }
 
@@ -528,10 +528,16 @@ contract BondEscalationThreatModelTest is DisputeTestBase {
     function test_Recovery_ForceStale_WhenCallbackNeverRuns() external {
         (bytes32 disputeId, , ) = _escalatedToUMA();
 
-        // Never settle the UMA assertion. Warp past the 30-day staleness window.
+        // Never settle the UMA assertion. [Apex H2] Tier-2 recovery uses the EXTENDED stale
+        // window (30d base + 30d TIER2_STALE_GRACE): the plain 30-day mark reverts so a losing
+        // party cannot pre-empt a rightful UMA verdict; a genuinely hung assertion is still
+        // recoverable after the grace.
         ( , , , , , , uint64 disputedAt, , , , , , ) = bondEscalation.disputes(disputeId);
         vm.warp(uint256(disputedAt) + 30 days + 1);
+        vm.expectRevert("UMA pending: settle assertion first");
+        bondEscalation.forceResolveStale(disputeId);
 
+        vm.warp(uint256(disputedAt) + 60 days + 1);
         bondEscalation.forceResolveStale(disputeId);
 
         ( , uint8 ruling, uint16 splitBps, , , , , , , bool resolved, , , ) = bondEscalation.disputes(disputeId);
@@ -570,7 +576,9 @@ contract BondEscalationThreatModelTest is DisputeTestBase {
                 ruling.splitBps,
                 ruling.timestamp,
                 ruling.reasoningHash,
-                ruling.bundleHash
+                ruling.bundleHash,
+                ruling.evidenceRefHash,
+                ruling.reasoningRefHash
             )
         );
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", domainSeparator, structHash));
@@ -598,7 +606,7 @@ contract BondEscalationThreatModelTest is DisputeTestBase {
         }
         vm.startPrank(keeper);
         usdc.approve(address(bondEscalation), MAX_BOND);
-        bondEscalation.escalateToUMA(disputeId, "QmEvidenceCID");
+        bondEscalation.escalateToUMA(disputeId, "QmEvidenceCID", "QmReasoningCID");
         vm.stopPrank();
         assertionId = bondEscalation.disputeToAssertion(disputeId);
     }
@@ -652,7 +660,7 @@ contract BondEscalationThreatModelTest is DisputeTestBase {
     function _createDisputedOn(ACTPKernel k, EscrowVault esc, IERC20 token) internal returns (bytes32 txId) {
         vm.prank(requester);
         txId = k.createTransaction(
-            provider, requester, TRANSACTION_AMOUNT, block.timestamp + 60 days, 2 days, keccak256("service"), 0, 0
+            provider, requester, TRANSACTION_AMOUNT, block.timestamp + 60 days, 2 days, keccak256("service"), bytes32(0), 0, 0
         );
 
         vm.startPrank(requester);
@@ -663,7 +671,7 @@ contract BondEscalationThreatModelTest is DisputeTestBase {
         vm.prank(provider);
         k.transitionState(txId, IACTPKernel.State.IN_PROGRESS, "");
         vm.prank(provider);
-        k.transitionState(txId, IACTPKernel.State.DELIVERED, abi.encode(10 days));
+        k.transitionState(txId, IACTPKernel.State.DELIVERED, abi.encode(10 days, keccak256("result")));
 
         uint256 bond = (TRANSACTION_AMOUNT * k.disputeBondBps()) / k.MAX_BPS();
         vm.startPrank(requester);

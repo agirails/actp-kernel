@@ -95,7 +95,7 @@ contract PoC_KernelPauseBricksRecovery is Test {
     function _disputed() internal returns (bytes32 txId) {
         vm.prank(requester);
         txId = kernel.createTransaction(
-            provider, requester, AMT, block.timestamp + 30 days, 2 days, keccak256("svc"), 0, 0
+            provider, requester, AMT, block.timestamp + 30 days, 2 days, keccak256("svc"), bytes32(0), 0, 0
         );
         vm.startPrank(requester);
         usdc.approve(address(escrow), type(uint256).max);
@@ -104,7 +104,7 @@ contract PoC_KernelPauseBricksRecovery is Test {
         vm.prank(provider);
         kernel.transitionState(txId, IACTPKernel.State.IN_PROGRESS, "");
         vm.prank(provider);
-        kernel.transitionState(txId, IACTPKernel.State.DELIVERED, abi.encode(uint256(10 days)));
+        kernel.transitionState(txId, IACTPKernel.State.DELIVERED, abi.encode(uint256(10 days), keccak256("result")));
         vm.prank(requester);
         kernel.transitionState(txId, IACTPKernel.State.DISPUTED, "");
     }

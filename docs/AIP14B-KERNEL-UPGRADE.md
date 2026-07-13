@@ -24,8 +24,23 @@
 - **X402Relay does NOT reference the kernel or vault** (verified: zero `kernel`/`vault`
   symbols in `src/relay/X402Relay.sol`). It is NOT re-pointed at the contract level; it is
   only touched in the **paymaster allowlists** and the **SDK network config**.
-- Mainnet wiring is **Safe-submitted** (admin = Gnosis Safe `0x61fE…b7f2`, 2-of-3). No
+- Mainnet wiring is **Safe-submitted** (admin = Gnosis Safe `0x61fE…b7f2`, 2-of-4). No
   private keys in any file; the deploy script emits Safe calldata, the Safe operator signs.
+- **⚠️ CURRENT-STATE CORRECTION (on-chain verified 2026-07-03).** The mainnet kernel this v2
+  redeploy replaces is **`0x048c811352e8a3fECd5b0Ec4AA2c2b94083CC842`** (V3, deployBlock 46212266,
+  2026-05-19), vault **`0x262D5912A9612F0c66dA5d13B4E678D50ebC44b5`**, registry
+  **`0x64Cb18bfb3CC1aCb1370a3B01613391D3561a009`**, archive **`0x6159A80Ce8362aBB2307FbaB4Ed4D3F4A4231Acc`**
+  — **NOT** the pre-V3 `0x132B…2d29`/`0x6aAF…Fb99` pair this runbook was originally drafted against
+  (those are superseded; still on-chain but off the active path). **All §3 "OLD kernel/vault"
+  references must be read against `0x048c81…`/`0x262D59…` for mainnet.**
+- **Sharper v2 justification (empirical).** The live V3 kernel `0x048c81` *already* exposes
+  `approveMediator`/`approvedMediators`/`mediatorApprovedAt`/`MEDIATOR_APPROVAL_DELAY`/`disputeBondBps()=500`,
+  but its runtime bytecode **lacks the `resolveDisputeWhilePaused(bytes32,uint8,bytes)` selector**
+  (`0x65f44ba0`, absent) and the F-6 `recoveryGrace()`/`recoverStalledInProgress(bytes32)`. Since the
+  CompositeMediator resolves disputes via `kernel.resolveDisputeWhilePaused` (`CompositeMediator.sol`
+  L155/L179), that method has **no selector on the current kernel** → dispute resolution would revert.
+  This is the concrete, verifiable reason v2 is required — independent of (and stronger than) the
+  immutable-coupling argument in §1.
 
 ---
 
@@ -106,8 +121,8 @@ broadcast literals — the only hardcoded address is the immutable Circle USDC o
 
 ## 3. THE RE-POINT FAN-OUT CHECKLIST (the enumerated deliverable)
 
-Every reference to the **OLD kernel** (`0x132B…2d29` mainnet / `0x469C…3411` sepolia) and **OLD vault**
-(`0x6aAF…Fb99` mainnet / `0x57f8…49E5` sepolia) that must be re-pointed or re-issued for v2.
+Every reference to the **OLD kernel** (mainnet **`0x048c81…CC842`** [V3, current live — see §0 correction; NOT the pre-V3 `0x132B…2d29`] / sepolia `0x469C…3411`) and **OLD vault**
+(mainnet **`0x262D59…C44b5`** [NOT pre-V3 `0x6aAF…Fb99`] / sepolia `0x57f8…49E5`) that must be re-pointed or re-issued for v2.
 "Type" is **re-point** (mutable update), **redeploy** (immutable → fresh contract), **re-add**
 (allowlist entry keyed on address), or **config** (off-chain string).
 
@@ -131,7 +146,7 @@ Every reference to the **OLD kernel** (`0x132B…2d29` mainnet / `0x469C…3411`
 
 | # | Target | Why it breaks on v2 | Action |
 |---|--------|---------------------|--------|
-| B1 | **Gnosis Safe admin** (`0x61fE…b7f2`, 2-of-3) | Safe is the v2 kernel admin/pauser/feeRecipient; it must hold/queue all v2 `onlyAdmin` wiring txns (A2/A4/A6/A9). The OLD-kernel Safe txns are historical. | Build the v2 wiring batch (calldata from DeployKernelV2 + DeployDisputeSystem). |
+| B1 | **Gnosis Safe admin** (`0x61fE…b7f2`, 2-of-4) | Safe is the v2 kernel admin/pauser/feeRecipient; it must hold/queue all v2 `onlyAdmin` wiring txns (A2/A4/A6/A9). The OLD-kernel Safe txns are historical. | Build the v2 wiring batch (calldata from DeployKernelV2 + DeployDisputeSystem). |
 | B2 | **CDP paymaster allowlist** | Old allowlist sponsors gas for the OLD kernel/vault/relay only. v2 kernel, v2 vault, and BondEscalation are NOT sponsored until added → publish/dispute txns fail to get gas. | **Re-add** v2 kernel, v2 vault, CompositeMediator, BondEscalation (and confirm X402Relay still present) to the CDP allowlist on both chains. |
 | B3 | **Pimlico paymaster allowlist** | Same as B2 for the failover bundler/paymaster. | **Re-add** the same v2 set to the Pimlico allowlist on both chains. |
 | B4 | **Evaluator signer registry** | BondEscalation is fresh (A8); its fixed/rotating evaluator set is constructor-seeded from `EVALUATOR_FIXED_0/1`, `EVALUATOR_ROTATING` (>=3; legacy fallback `EVALUATOR_ROTATING_0.._7`). | Confirm evaluator addresses unchanged; keys remain in KMS/keystore (never in repo). |

@@ -187,7 +187,7 @@ contract AIP14_DisputeBondLockedTest is Test {
         txId = kernel.createTransaction(
             provider, requester, TRANSACTION_AMOUNT,
             block.timestamp + 30 days, 2 days,
-            keccak256("service"), 0, 0
+            keccak256("service"), bytes32(0), 0, 0
         );
 
         // Provider posts a quote (proof.length == 32 to store hash)
@@ -205,7 +205,7 @@ contract AIP14_DisputeBondLockedTest is Test {
         vm.prank(provider);
         kernel.transitionState(txId, IACTPKernel.State.IN_PROGRESS, "");
         vm.prank(provider);
-        kernel.transitionState(txId, IACTPKernel.State.DELIVERED, abi.encode(10 days));
+        kernel.transitionState(txId, IACTPKernel.State.DELIVERED, abi.encode(10 days, keccak256("result")));
     }
 
     function _createDeliveredTransaction() internal returns (bytes32 txId) {
@@ -217,7 +217,7 @@ contract AIP14_DisputeBondLockedTest is Test {
         txId = kernel.createTransaction(
             provider, requester, amount,
             block.timestamp + 30 days, 2 days,
-            keccak256("service"), 0, 0
+            keccak256("service"), bytes32(0), 0, 0
         );
 
         vm.startPrank(requester);
@@ -228,6 +228,6 @@ contract AIP14_DisputeBondLockedTest is Test {
         vm.prank(provider);
         kernel.transitionState(txId, IACTPKernel.State.IN_PROGRESS, "");
         vm.prank(provider);
-        kernel.transitionState(txId, IACTPKernel.State.DELIVERED, abi.encode(10 days));
+        kernel.transitionState(txId, IACTPKernel.State.DELIVERED, abi.encode(10 days, keccak256("result")));
     }
 }

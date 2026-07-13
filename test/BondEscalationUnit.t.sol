@@ -689,7 +689,7 @@ contract BondEscalationUnitTest is DisputeTestBase {
 
         vm.startPrank(keeper);
         usdc.approve(address(bondEscalation), UMA_BOND);
-        bondEscalation.escalateToUMA(disputeId, "QmEvidenceCID");
+        bondEscalation.escalateToUMA(disputeId, "QmEvidenceCID", "QmReasoningCID");
         vm.stopPrank();
 
         bytes32 assertionId = bondEscalation.disputeToAssertion(disputeId);
@@ -783,7 +783,7 @@ contract BondEscalationUnitTest is DisputeTestBase {
         sigs[1] = _signRuling(r, fixed1Pk);
         vm.startPrank(keeper);
         usdc.approve(address(bondEscalation), INITIAL_BOND);
-        bondEscalation.submitAIRuling(dB, r, sigs);
+        bondEscalation.submitAIRuling(dB, r, EVIDENCE_CID, REASONING_CID, sigs);
         vm.stopPrank();
         assertEq(_tierOf(dB), 1, "AI ruling enters the SAME tier-1 path (no privileged finality)");
 
@@ -951,7 +951,7 @@ contract BondEscalationUnitTest is DisputeTestBase {
         vm.startPrank(keeper);
         usdc.approve(address(bondEscalation), INITIAL_BOND);
         vm.expectRevert("Paused");
-        bondEscalation.submitAIRuling(d2, r, sigs);
+        bondEscalation.submitAIRuling(d2, r, EVIDENCE_CID, REASONING_CID, sigs);
         vm.stopPrank();
 
         // 4) challenge (on the Tier-1 d1)
@@ -966,7 +966,7 @@ contract BondEscalationUnitTest is DisputeTestBase {
         vm.startPrank(keeper);
         usdc.approve(address(bondEscalation), UMA_BOND);
         vm.expectRevert("Paused");
-        bondEscalation.escalateToUMA(d1, "QmEvidence");
+        bondEscalation.escalateToUMA(d1, "QmEvidence", "QmReasoningCID");
         vm.stopPrank();
     }
 
@@ -1071,7 +1071,7 @@ contract BondEscalationUnitTest is DisputeTestBase {
         vm.startPrank(keeper);
         usdc.approve(address(bondEscalation), INITIAL_BOND);
         vm.expectRevert("Already escalated");
-        bondEscalation.submitAIRuling(disputeId, r, sigs);
+        bondEscalation.submitAIRuling(disputeId, r, EVIDENCE_CID, REASONING_CID, sigs);
         vm.stopPrank();
     }
 
@@ -1158,7 +1158,7 @@ contract BondEscalationUnitTest is DisputeTestBase {
         vm.startPrank(keeper);
         usdc.approve(address(bondEscalation), UMA_BOND);
         vm.expectRevert("Liveness expired - use finalize()");
-        bondEscalation.escalateToUMA(disputeId, "QmEvidence");
+        bondEscalation.escalateToUMA(disputeId, "QmEvidence", "QmReasoningCID");
         vm.stopPrank();
     }
 
@@ -1169,11 +1169,11 @@ contract BondEscalationUnitTest is DisputeTestBase {
         _escalateBondToCeilingLocal(disputeId);
         vm.startPrank(keeper);
         usdc.approve(address(bondEscalation), UMA_BOND);
-        bondEscalation.escalateToUMA(disputeId, "QmEvidence");
+        bondEscalation.escalateToUMA(disputeId, "QmEvidence", "QmReasoningCID");
         // Second escalate: tier is now 2 → "Not in Tier 1" guard fires.
         usdc.approve(address(bondEscalation), UMA_BOND);
         vm.expectRevert("Not in Tier 1");
-        bondEscalation.escalateToUMA(disputeId, "QmEvidence");
+        bondEscalation.escalateToUMA(disputeId, "QmEvidence", "QmReasoningCID");
         vm.stopPrank();
     }
 
@@ -1342,7 +1342,7 @@ contract BondEscalationUnitTest is DisputeTestBase {
         bytes32 svc = keccak256(abi.encodePacked("service-", salt));
         vm.prank(requester);
         txId = kernel.createTransaction(
-            provider, requester, amount, block.timestamp + 30 days, 2 days, svc, 0, 0
+            provider, requester, amount, block.timestamp + 30 days, 2 days, svc, bytes32(0), 0, 0
         );
 
         vm.startPrank(requester);
@@ -1353,7 +1353,7 @@ contract BondEscalationUnitTest is DisputeTestBase {
         vm.prank(provider);
         kernel.transitionState(txId, IACTPKernel.State.IN_PROGRESS, "");
         vm.prank(provider);
-        kernel.transitionState(txId, IACTPKernel.State.DELIVERED, abi.encode(10 days));
+        kernel.transitionState(txId, IACTPKernel.State.DELIVERED, abi.encode(10 days, keccak256("result")));
 
         uint256 bond = (amount * kernel.disputeBondBps()) / kernel.MAX_BPS();
         if (bond < 1_000_000) bond = 1_000_000; // kernel MIN_DISPUTE_BOND

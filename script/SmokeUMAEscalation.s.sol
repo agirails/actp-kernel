@@ -44,7 +44,7 @@ contract SmokeUMAEscalation is Script, StdCheats {
     uint256 internal constant ESCROW_AMOUNT = 1_000_000_000; // $1,000 escrow
 
     // Deterministic smoke actors (cheatcode-funded; NOT keys).
-    address internal admin; // set to address(this) in run() (CompositeMediator deployer == admin)
+    address internal admin; // deterministic EOA set in run(); pranked so CompositeMediator deployer == admin
     address internal requester = address(0xA001);
     address internal provider = address(0xB002);
     address internal keeper = address(0x3);
@@ -64,13 +64,17 @@ contract SmokeUMAEscalation is Script, StdCheats {
             return;
         }
 
-        admin = address(this);
+        // Deployer == admin so CompositeMediator's one-shot initialize guard is satisfiable. Use a
+        // deterministic EOA (NOT address(this) — forge forbids scripts relying on their own address)
+        // and prank as it for every deploy + admin-only call below (cheatcode-driven smoke, no broadcast).
+        admin = makeAddrLite("admin");
 
         console2.log("============================================");
         console2.log("   SMOKE: AIP-14b Tier-2 UMA (real OOV3, fork)");
         console2.log("============================================");
 
         // ---- deploy ephemeral dispute stack on the fork (umaOOV3=0 → real OOV3) ----
+        vm.startPrank(admin);
         ACTPKernel kernel = new ACTPKernel(admin, admin, address(0xFEE), address(0), USDC, 7 days);
         EscrowVault escrow = new EscrowVault(USDC, address(kernel));
         kernel.approveEscrowVault(address(escrow), true);
@@ -90,6 +94,7 @@ contract SmokeUMAEscalation is Script, StdCheats {
         );
         mediator.initialize(address(bondEscalation));
         kernel.approveMediator(address(mediator), true);
+        vm.stopPrank();
         vm.warp(block.timestamp + 2 days + 1);
 
         require(bondEscalation.UMA_OOV3() == UMA_OOV3, "BondEscalation must target canonical OOV3");
@@ -124,7 +129,7 @@ contract SmokeUMAEscalation is Script, StdCheats {
         uint256 oov3Before = IERC20(USDC).balanceOf(UMA_OOV3);
         vm.startPrank(keeper);
         IERC20(USDC).approve(address(bondEscalation), UMA_BOND);
-        bondEscalation.escalateToUMA(disputeId, "QmEvidenceBundleCID12345");
+        bondEscalation.escalateToUMA(disputeId, "QmEvidenceBundleCID12345", "QmReasoningCID");
         vm.stopPrank();
 
         bytes32 assertionId = bondEscalation.disputeToAssertion(disputeId);
@@ -174,7 +179,7 @@ contract SmokeUMAEscalation is Script, StdCheats {
     function _createDisputed(ACTPKernel kernel, EscrowVault escrow) internal returns (bytes32 txId) {
         vm.prank(requester);
         txId = kernel.createTransaction(
-            provider, requester, ESCROW_AMOUNT, block.timestamp + 30 days, 2 days, keccak256("uma-smoke-svc"), 0, 0
+            provider, requester, ESCROW_AMOUNT, block.timestamp + 30 days, 2 days, keccak256("uma-smoke-svc"), bytes32(0), 0, 0
         );
         vm.startPrank(requester);
         IERC20(USDC).approve(address(escrow), ESCROW_AMOUNT);
@@ -184,7 +189,7 @@ contract SmokeUMAEscalation is Script, StdCheats {
         vm.prank(provider);
         kernel.transitionState(txId, IACTPKernel.State.IN_PROGRESS, "");
         vm.prank(provider);
-        kernel.transitionState(txId, IACTPKernel.State.DELIVERED, abi.encode(10 days));
+        kernel.transitionState(txId, IACTPKernel.State.DELIVERED, abi.encode(10 days, keccak256("result")));
 
         uint256 bond = (ESCROW_AMOUNT * kernel.disputeBondBps()) / kernel.MAX_BPS();
         if (bond < kernel.MIN_DISPUTE_BOND()) bond = kernel.MIN_DISPUTE_BOND();

@@ -113,7 +113,7 @@ contract DisputeMoneyPathCoverage is Test {
     /// Drive a fresh tx to DISPUTED.
     function _disputed() internal returns (bytes32 txId) {
         vm.prank(requester);
-        txId = kernel.createTransaction(provider, requester, AMT, block.timestamp + 30 days, 2 days, keccak256("svc"), 0, 0);
+        txId = kernel.createTransaction(provider, requester, AMT, block.timestamp + 30 days, 2 days, keccak256("svc"), bytes32(0), 0, 0);
         vm.startPrank(requester);
         usdc.approve(address(escrow), type(uint256).max);
         kernel.linkEscrow(txId, address(escrow), txId);
@@ -121,7 +121,7 @@ contract DisputeMoneyPathCoverage is Test {
         vm.prank(provider);
         kernel.transitionState(txId, IACTPKernel.State.IN_PROGRESS, "");
         vm.prank(provider);
-        kernel.transitionState(txId, IACTPKernel.State.DELIVERED, abi.encode(uint256(10 days)));
+        kernel.transitionState(txId, IACTPKernel.State.DELIVERED, abi.encode(uint256(10 days), keccak256("result")));
         vm.prank(requester);
         kernel.transitionState(txId, IACTPKernel.State.DISPUTED, "");
     }
@@ -246,10 +246,11 @@ contract DisputeMoneyPathCoverage is Test {
         assertEq(usdc.balanceOf(feeCollector), fee - expectedArchive, "feeRecipient received the rest of the fee");
     }
 
-    /// H-1 fallback: a REVERTING treasury must NOT brick settlement. The archive cut is redirected to
-    /// feeRecipient; the dispute still settles; and NO funds are lost — the treasuryFee remainder that
-    /// the vault can no longer pay (because the archive slice was already pulled to the kernel) stays
-    /// RECOVERABLE in the vault (ArchivePayoutMismatch), exactly the H-1 "keep funds, never revert" intent.
+    /// H-1 fallback + AIP-14c double-fee fix: a REVERTING treasury must NOT brick settlement. The archive
+    /// cut is redirected to feeRecipient, the dispute still settles, and the escrow is FULLY DRAINED — the
+    /// treasuryFee is now sized as (totalFee − amount ACTUALLY removed from escrow), so the remainder is
+    /// paid from the vault and the FULL fee reaches feeRecipient. NO residue is stranded (the pre-fix bug
+    /// double-counted the archive slice, leaving ~$9.99 recoverable via releaseEscrow — asserted gone below).
     function test_ArchiveSplit_H1_TreasuryFailure_RedirectsToFeeRecipient() external {
         _deploy(address(0));
         RevertingTreasury rt = new RevertingTreasury();
@@ -277,8 +278,12 @@ contract DisputeMoneyPathCoverage is Test {
             "dispute settled despite reverting treasury (H-1 fallback)"
         );
 
-        // The archive cut was redirected to feeRecipient from the kernel's own balance.
-        assertEq(usdc.balanceOf(feeCollector), expectedArchive, "H-1: archive cut redirected to feeRecipient");
+        // AIP-14c double-fee fix: the FULL platform fee reaches feeRecipient — the archive cut redirected
+        // from the kernel's balance PLUS the remaining treasury portion paid from the vault. Previously the
+        // archive slice was double-counted (subtracted as if it stayed in escrow while it had already been
+        // redirected out), so only the ~$0.01 cut arrived and ~$9.99 stranded in escrow (recoverable by the
+        // provider via releaseEscrow).
+        assertEq(usdc.balanceOf(feeCollector), fee, "AIP-14c: full fee reaches feeRecipient (archive redirect + treasury)");
         // The reverting treasury received nothing (its receiveFunds reverted; approval was cleared).
         assertEq(usdc.balanceOf(address(rt)), 0, "reverting treasury received nothing");
 
@@ -286,6 +291,9 @@ contract DisputeMoneyPathCoverage is Test {
         assertEq(usdc.totalSupply(), supplyBefore, "H-1: no USDC lost - full conservation");
         // The kernel's transient archive balance was flushed to feeRecipient (no dust left on the kernel).
         assertEq(usdc.balanceOf(address(kernel)), 0, "H-1: no archive dust stranded on the kernel");
+        // AIP-14c double-fee fix: the escrow vault is fully drained — NO fee residue stranded (the exact bug
+        // this closes: the archive slice was subtracted twice, leaving ~$9.99 recoverable via releaseEscrow).
+        assertEq(escrow.remaining(txId), 0, "AIP-14c: escrow fully drained, no fee stranded");
     }
 
     // =========================================================================

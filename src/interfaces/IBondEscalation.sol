@@ -15,6 +15,16 @@ interface IBondEscalation {
     event AIRulingSubmitted(
         bytes32 indexed disputeId, uint8 ruling, uint16 confidence, address indexed submitter, uint256 bond
     );
+    /// @notice AIP-14c D7: surfaces the evidence/reasoning CIDs (never stored on-chain) alongside the
+    ///         signed bytes32 refs persisted at `submitAIRuling`, so indexers/UMA can recover the exact
+    ///         artifacts the evaluator ensemble signed over.
+    event AIRulingEvidenceCommitted(
+        bytes32 indexed disputeId,
+        bytes32 evidenceRefHash,
+        bytes32 reasoningRefHash,
+        string evidenceCID,
+        string reasoningCID
+    );
     event ChallengeSubmitted(
         bytes32 indexed disputeId, uint8 counterRuling, uint16 counterSplitBps, address indexed challenger, uint256 bond
     );
@@ -27,7 +37,12 @@ interface IBondEscalation {
     event ExternalResolutionSynced(bytes32 indexed disputeId, bytes32 indexed txId, uint8 kernelState);
     event StaleDisputeResolved(bytes32 indexed disputeId, address indexed caller);
     event EscalatedToUMA(
-        bytes32 indexed disputeId, bytes32 indexed assertionId, address indexed escalator, uint256 bond, string evidenceCID
+        bytes32 indexed disputeId,
+        bytes32 indexed assertionId,
+        address indexed escalator,
+        uint256 bond,
+        string evidenceCID,
+        string reasoningCID
     );
     event UMAResolutionReceived(
         bytes32 indexed disputeId, bytes32 indexed assertionId, uint8 ruling, address winner, uint256 payout
@@ -37,11 +52,20 @@ interface IBondEscalation {
 
     // --- Dispute Lifecycle ---
     function openDispute(bytes32 txId) external returns (bytes32 disputeId);
-    function submitAIRuling(bytes32 disputeId, AIRuling calldata ruling, bytes[] calldata signatures) external;
+    /// @dev AIP-14c D7: the FINAL non-bypassable entrypoint. Both CIDs are required, length-bounded, and
+    ///      their recomputed ref-hashes MUST equal the signed `AIRuling.evidenceRefHash`/`reasoningRefHash`
+    ///      (see BondEscalation.submitAIRuling). There is NO CID-free overload.
+    function submitAIRuling(
+        bytes32 disputeId,
+        AIRuling calldata ruling,
+        string calldata evidenceCID,
+        string calldata reasoningCID,
+        bytes[] calldata signatures
+    ) external;
     function proposeDirectly(bytes32 disputeId, uint8 ruling, uint16 splitBps) external;
     function challenge(bytes32 disputeId, uint8 counterRuling, uint16 counterSplitBps) external;
     function finalize(bytes32 disputeId) external;
-    function escalateToUMA(bytes32 disputeId, string calldata evidenceCID) external;
+    function escalateToUMA(bytes32 disputeId, string calldata evidenceCID, string calldata reasoningCID) external;
 
     // --- Recovery & Sync (never pausable, INV-9) ---
     function syncExternalResolution(bytes32 disputeId) external;

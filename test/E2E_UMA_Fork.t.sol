@@ -8,7 +8,7 @@ import {CompositeMediator} from "../src/CompositeMediator.sol";
 import {BondEscalation} from "../src/BondEscalation.sol";
 import {IACTPKernel} from "../src/interfaces/IACTPKernel.sol";
 import {ICompositeMediator} from "../src/interfaces/ICompositeMediator.sol";
-import {IOptimisticOracleV3} from "../src/interfaces/IOptimisticOracleV3.sol";
+import {IOptimisticOracleV3, IUMAFinder, IUMAIdentifierWhitelist} from "../src/interfaces/IOptimisticOracleV3.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 /// @notice Minimal extension over the vendored `IOptimisticOracleV3` exposing the on-chain
@@ -72,7 +72,8 @@ contract E2E_UMA_Fork is Test {
     // ----- ground-truth Base-mainnet immutables (per task brief / aip14b.json) -----
     address internal constant USDC = 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913; // Circle USDC (Base)
     address internal constant UMA_OOV3 = 0x2aBf1Bd76655de80eDB3086114315Eec75AF500c; // canonical OOV3
-    bytes32 internal constant ASSERT_TRUTH = bytes32("ASSERT_TRUTH"); // OOV3.defaultIdentifier() on Base
+    bytes32 internal constant ASSERT_TRUTH = bytes32("ASSERT_TRUTH"); // OOV3.defaultIdentifier() on Base (RETIRED from whitelist)
+    bytes32 internal constant ASSERT_TRUTH2 = bytes32("ASSERT_TRUTH2"); // live-whitelisted successor on Base mainnet
 
     // ----- BondEscalation constants mirrored from src (for assertions, NOT redefined behaviour) -----
     uint256 internal constant UMA_BOND = 500_000_000; // $500 (6dp) — BondEscalation.UMA_BOND
@@ -166,6 +167,14 @@ contract E2E_UMA_Fork is Test {
         return true;
     }
 
+    /// @dev Resolves the live UMA IdentifierWhitelist via the OOV3's own finder and checks membership.
+    ///      This is the durable invariant escalateToUMA must satisfy (the exact gate assertTruth applies).
+    function _identifierWhitelisted(bytes32 identifier) internal view returns (bool) {
+        address whitelist =
+            IUMAFinder(IOptimisticOracleV3(UMA_OOV3).finder()).getImplementationAddress(bytes32("IdentifierWhitelist"));
+        return IUMAIdentifierWhitelist(whitelist).isIdentifierSupported(identifier);
+    }
+
     /// @dev Deploy the full dispute stack on the fork, wired to REAL USDC + REAL OOV3 (umaOOV3=0 →
     ///      BondEscalation resolves DEFAULT_UMA_OOV3 == 0x2aBf…500c, the production default). recoveryGrace
     ///      is the 7-day MAINNET value (matches deployments/aip14b.json) so the grace branch is the real one.
@@ -221,8 +230,12 @@ contract E2E_UMA_Fork is Test {
 
         IOptimisticOracleV3 oov3 = IOptimisticOracleV3(UMA_OOV3);
 
-        // Identifier is read at runtime (INV-20) and equals ASSERT_TRUTH on Base mainnet.
-        assertEq(oov3.defaultIdentifier(), ASSERT_TRUTH, "OOV3.defaultIdentifier() must be ASSERT_TRUTH on Base");
+        // The OOV3 still REPORTS ASSERT_TRUTH as its default, but that identifier has been RETIRED from
+        // the live IdentifierWhitelist (AIP-14b root cause); ASSERT_TRUTH2 is its whitelisted successor.
+        // escalateToUMA must therefore select ASSERT_TRUTH2, never the stale default.
+        assertEq(oov3.defaultIdentifier(), ASSERT_TRUTH, "OOV3.defaultIdentifier() still reports ASSERT_TRUTH on Base");
+        assertFalse(_identifierWhitelisted(ASSERT_TRUTH), "root cause: ASSERT_TRUTH must be de-whitelisted on Base");
+        assertTrue(_identifierWhitelisted(ASSERT_TRUTH2), "fix: ASSERT_TRUTH2 must be the live-whitelisted identifier");
 
         // UMA_BOND ($500) is the hard FLOOR for the posted bond; the live USDC minimum sits exactly
         // at it today (G2). Since the R6 fix, escalateToUMA posts max(UMA_BOND, getMinimumBond(USDC)),
@@ -259,17 +272,20 @@ contract E2E_UMA_Fork is Test {
 
         vm.startPrank(keeper);
         IERC20(USDC).approve(address(bondEscalation), UMA_BOND);
-        bondEscalation.escalateToUMA(disputeId, cid);
+        bondEscalation.escalateToUMA(disputeId, cid, "QmReasoningCID");
         vm.stopPrank();
 
         // (1) Non-zero assertionId recorded in BondEscalation's reverse map.
         bytes32 assertionId = bondEscalation.disputeToAssertion(disputeId);
         assertTrue(assertionId != bytes32(0), "real assertTruth must return a non-zero assertionId");
 
-        // (2) Identifier on the live assertion equals the oracle default (read, not hardcoded).
+        // (2) Identifier on the live assertion must be one the live IdentifierWhitelist ACCEPTS — the
+        //     durable invariant (else OOV3 would have reverted at assertTruth). On Base the retired
+        //     default forces the ASSERT_TRUTH2 fallback (AIP-14b identifier-rotation fix), asserted
+        //     explicitly as a drift monitor.
         IOOV3Extended.Assertion memory a = IOOV3Extended(UMA_OOV3).getAssertion(assertionId);
-        assertEq(a.identifier, ASSERT_TRUTH, "assertion identifier must be the OOV3 default");
-        assertEq(a.identifier, IOptimisticOracleV3(UMA_OOV3).defaultIdentifier(), "identifier must match defaultIdentifier()");
+        assertTrue(_identifierWhitelisted(a.identifier), "escalateToUMA must post a live-whitelisted identifier");
+        assertEq(a.identifier, ASSERT_TRUTH2, "Base drift monitor: expected the ASSERT_TRUTH2 fallback today");
         assertEq(a.bond, UMA_BOND, "assertion bond must be $500");
         assertEq(address(a.currency), USDC, "assertion currency must be USDC");
         assertEq(a.callbackRecipient, address(bondEscalation), "callbackRecipient must be BondEscalation");
@@ -331,7 +347,7 @@ contract E2E_UMA_Fork is Test {
 
         vm.startPrank(keeper);
         IERC20(USDC).approve(address(bondEscalation), UMA_BOND);
-        bondEscalation.escalateToUMA(disputeId, "QmEvidenceCID");
+        bondEscalation.escalateToUMA(disputeId, "QmEvidenceCID", "QmReasoningCID");
         vm.stopPrank();
 
         bytes32 assertionId = bondEscalation.disputeToAssertion(disputeId);
@@ -399,7 +415,7 @@ contract E2E_UMA_Fork is Test {
 
         vm.startPrank(keeper);
         IERC20(USDC).approve(address(bondEscalation), UMA_BOND);
-        bondEscalation.escalateToUMA(disputeId, "QmEvidenceCID");
+        bondEscalation.escalateToUMA(disputeId, "QmEvidenceCID", "QmReasoningCID");
         vm.stopPrank();
 
         bytes32 assertionId = bondEscalation.disputeToAssertion(disputeId);
@@ -458,7 +474,7 @@ contract E2E_UMA_Fork is Test {
     function _createDisputed() internal returns (bytes32 txId) {
         vm.prank(requester);
         txId = kernel.createTransaction(
-            provider, requester, ESCROW_AMOUNT, block.timestamp + 30 days, 2 days, keccak256(abi.encode("svc", _salt())), 0, 0
+            provider, requester, ESCROW_AMOUNT, block.timestamp + 30 days, 2 days, keccak256(abi.encode("svc", _salt())), bytes32(0), 0, 0
         );
 
         vm.startPrank(requester);
@@ -469,7 +485,7 @@ contract E2E_UMA_Fork is Test {
         vm.prank(provider);
         kernel.transitionState(txId, IACTPKernel.State.IN_PROGRESS, "");
         vm.prank(provider);
-        kernel.transitionState(txId, IACTPKernel.State.DELIVERED, abi.encode(10 days));
+        kernel.transitionState(txId, IACTPKernel.State.DELIVERED, abi.encode(10 days, keccak256("result")));
 
         uint256 bond = (ESCROW_AMOUNT * kernel.disputeBondBps()) / kernel.MAX_BPS();
         if (bond < kernel.MIN_DISPUTE_BOND()) bond = kernel.MIN_DISPUTE_BOND();

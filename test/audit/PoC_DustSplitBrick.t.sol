@@ -66,7 +66,7 @@ contract PoC_DustSplitBrick is DisputeTestBase {
     function _openDisputeWithAmount(uint256 amount, bytes32 svc) internal returns (bytes32 disputeId, bytes32 txId) {
         vm.prank(requester);
         txId = kernel.createTransaction(
-            provider, requester, amount, block.timestamp + 365 days, 30 days, svc, 0, 0
+            provider, requester, amount, block.timestamp + 365 days, 30 days, svc, bytes32(0), 0, 0
         );
 
         vm.startPrank(requester);
@@ -78,7 +78,7 @@ contract PoC_DustSplitBrick is DisputeTestBase {
         kernel.transitionState(txId, IACTPKernel.State.IN_PROGRESS, "");
         vm.prank(provider);
         // DELIVERED dispute-window proof = 30 days (== MAX_DISPUTE_WINDOW) so DISPUTED stays open.
-        kernel.transitionState(txId, IACTPKernel.State.DELIVERED, abi.encode(30 days));
+        kernel.transitionState(txId, IACTPKernel.State.DELIVERED, abi.encode(30 days, keccak256("result")));
 
         // dispute bond = max(amount*disputeBondBpsLocked/MAX_BPS, MIN_DISPUTE_BOND). Approve generously;
         // requester is funded with 1M USDC by the base.
@@ -186,7 +186,7 @@ contract PoC_DustSplitBrick is DisputeTestBase {
 
         vm.prank(requester);
         bytes32 txId = kernel.createTransaction(
-            provider, requester, amount, block.timestamp + 365 days, 30 days, keccak256("drain-1000"), 0, 0
+            provider, requester, amount, block.timestamp + 365 days, 30 days, keccak256("drain-1000"), bytes32(0), 0, 0
         );
         vm.startPrank(requester);
         usdc.approve(address(escrow), amount);
@@ -201,7 +201,7 @@ contract PoC_DustSplitBrick is DisputeTestBase {
         assertEq(_remaining(txId), 80_000, "escrow drained to dust");
 
         vm.prank(provider);
-        kernel.transitionState(txId, IACTPKernel.State.DELIVERED, abi.encode(30 days));
+        kernel.transitionState(txId, IACTPKernel.State.DELIVERED, abi.encode(30 days, keccak256("result")));
         vm.startPrank(requester);
         usdc.approve(address(escrow), type(uint256).max);
         kernel.transitionState(txId, IACTPKernel.State.DISPUTED, "");

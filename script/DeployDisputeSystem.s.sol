@@ -138,6 +138,15 @@ contract DeployDisputeSystem is Script {
 
     function run() external {
         Cfg memory c = _loadConfig();
+
+        // Chain/label integrity (fail-closed): the DEPLOY_NETWORK label MUST match the live chain, so a
+        // mislabelled env can never target the wrong network (e.g. broadcast to mainnet while the label
+        // says base-sepolia). Enforced at the deploy entry; _preflight covers the config-level guards.
+        require(
+            block.chainid == _chainId(c.isMainnet),
+            "chainId does not match DEPLOY_NETWORK (mislabelled network)"
+        );
+
         bool broadcasting = _isBroadcasting();
 
         uint256 deployerKey = vm.envUint("PRIVATE_KEY");
@@ -227,12 +236,13 @@ contract DeployDisputeSystem is Script {
         c.isMainnet = _eq(c.network, "base-mainnet");
 
         if (c.isMainnet) {
-            // G3: prefer the v2 kernel; fall back to the recorded pre-v2 existing kernel.
+            // G3, FAIL-CLOSED: require an EXPLICIT v2 kernel (or an explicit DISPUTE_KERNEL override).
+            // NEVER silently fall back to the superseded pre-v2 kernel (MAINNET_KERNEL_PREV2) — it lacks
+            // resolveDisputeWhilePaused, so the mediator's resolve path would be dead on arrival. A zero
+            // here is rejected by _preflight (kernel unresolved / missing-selector) with a clear message.
             address v2 = vm.envOr("MAINNET_KERNEL_V2", address(0));
             address envKernel = vm.envOr("DISPUTE_KERNEL", address(0));
-            c.kernel = v2 != address(0)
-                ? v2
-                : (envKernel != address(0) ? envKernel : MAINNET_KERNEL_PREV2);
+            c.kernel = v2 != address(0) ? v2 : envKernel;
             c.usdc = vm.envOr("DISPUTE_USDC", MAINNET_USDC);
             c.admin = vm.envOr("DISPUTE_ADMIN", MAINNET_SAFE_ADMIN);
         } else {
@@ -298,11 +308,24 @@ contract DeployDisputeSystem is Script {
         // Sanity: the kernel we wire against must actually be a contract (skip in pure-simulation w/o RPC).
         require(c.kernel.code.length > 0, "kernel has no code (wrong address/RPC?)");
 
+        // Kernel-version gate (fail-closed): the resolved kernel MUST expose resolveDisputeWhilePaused —
+        // the exact entrypoint CompositeMediator.resolve drives. The superseded pre-v2 mainnet kernel
+        // lacks it, so wiring the dispute system against it would deploy a dead resolve path.
+        require(
+            _hasSelector(c.kernel, IACTPKernel.resolveDisputeWhilePaused.selector),
+            "kernel missing resolveDisputeWhilePaused (needs the dispute-era v2 kernel)"
+        );
+
+        // Settlement-token agreement: the dispute contracts and the kernel MUST denominate in the SAME
+        // USDC, or bond/escrow accounting diverges.
+        require(_kernelUsdc(c.kernel) == c.usdc, "kernel USDC != DISPUTE_USDC (token mismatch)");
+
         // MockOOV3 is a TESTNET-ONLY convenience (live Tier-2 E2E on Sepolia, where the canonical
         // OOV3 has no code — G2 probe). NEVER on mainnet: the canonical UMA deployment is the only
-        // legitimate Tier-2 authority, and the mock's resolve surface is permissionless.
+        // legitimate Tier-2 authority, and the mock's resolve surface is permissionless. Key the guard
+        // off BOTH the label AND the live chainId, so a mislabelled env can't slip it onto chain 8453.
         require(
-            !(c.isMainnet && c.deployMockOOV3),
+            !((c.isMainnet || block.chainid == 8453) && c.deployMockOOV3),
             "DEPLOY_MOCK_OOV3 is testnet-only (mainnet must use the canonical UMA OOV3)"
         );
 
@@ -567,6 +590,31 @@ contract DeployDisputeSystem is Script {
 
     function _chainId(bool isMainnet) internal pure returns (uint256) {
         return isMainnet ? 8453 : 84532;
+    }
+
+    /// @dev True iff `target`'s runtime bytecode contains `selector` as a 4-byte sequence (Solidity
+    ///      embeds function selectors as PUSH4 in the dispatch table). A view-only preflight sanity gate
+    ///      — O(code.length), acceptable off the hot path. Distinguishes a dispute-era kernel (has
+    ///      resolveDisputeWhilePaused) from the superseded pre-v2 kernel (does not).
+    function _hasSelector(address target, bytes4 selector) internal view returns (bool) {
+        bytes memory code = target.code;
+        if (code.length < 4) return false;
+        for (uint256 i = 0; i + 4 <= code.length; i++) {
+            if (
+                code[i] == selector[0] && code[i + 1] == selector[1] && code[i + 2] == selector[2]
+                    && code[i + 3] == selector[3]
+            ) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /// @dev Reads `kernel.USDC()` defensively (address(0) if absent/reverting) for the token-match gate.
+    function _kernelUsdc(address kernel) internal view returns (address) {
+        (bool ok, bytes memory ret) = kernel.staticcall(abi.encodeWithSignature("USDC()"));
+        if (ok && ret.length == 32) return abi.decode(ret, (address));
+        return address(0);
     }
 
     function _eq(string memory a, string memory b) internal pure returns (bool) {

@@ -46,7 +46,7 @@ contract SmokeE2E is Script {
         usdc.mint(requester, amount);
         bytes32 txId = kernel.createTransaction(
             provider, requester, amount, deadline, disputeWindow,
-            keccak256("smoke"), 0, 0
+            keccak256("smoke"), bytes32(0), 0, 0
         );
         console2.log("txId:");
         console2.logBytes32(txId);
@@ -69,7 +69,7 @@ contract SmokeE2E is Script {
         // 4 & 5) Provider → IN_PROGRESS → DELIVERED
         vm.startBroadcast(provPk);
         kernel.transitionState(txId, IACTPKernel.State.IN_PROGRESS, "");
-        kernel.transitionState(txId, IACTPKernel.State.DELIVERED, abi.encode(disputeWindow));
+        kernel.transitionState(txId, IACTPKernel.State.DELIVERED, abi.encode(disputeWindow, keccak256("result")));
         vm.stopBroadcast();
         console2.log("DELIVERED ok");
 

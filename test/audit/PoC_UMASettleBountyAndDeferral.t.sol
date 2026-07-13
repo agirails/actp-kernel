@@ -312,7 +312,7 @@ contract PoC_UMASettleBountyAndDeferral is DisputeTestBase {
 
         vm.startPrank(keeper);
         token.approve(address(be), MAX_BOND);
-        be.escalateToUMA(disputeId, "QmEvidenceCID");
+        be.escalateToUMA(disputeId, "QmEvidenceCID", "QmReasoningCID");
         vm.stopPrank();
     }
 

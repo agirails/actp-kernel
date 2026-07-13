@@ -340,8 +340,13 @@ contract AIP14_DisputeBondTest is Test {
         uint256 bond = kernel.getTransaction(txId).disputeBond;
         uint256 requesterBalBefore = usdc.balanceOf(requester);
 
-        // Cancel with no resolution proof (admin decides to dismiss)
+        // [Apex F-II] An empty-proof dismissal of a DELIVERED dispute is rejected (M-2 proof
+        // symmetry now covers CANCELLED). The dismissal must state its distribution explicitly.
+        vm.expectRevert("Explicit resolution required");
         kernel.transitionState(txId, IACTPKernel.State.CANCELLED, "");
+
+        // Admin dismisses with an EXPLICIT full-refund resolution.
+        kernel.transitionState(txId, IACTPKernel.State.CANCELLED, abi.encode(TRANSACTION_AMOUNT, uint256(0)));
 
         // Requester gets escrow refund (full, via _refundRequester) + bond returned
         assertEq(usdc.balanceOf(requester), requesterBalBefore + TRANSACTION_AMOUNT + bond);
@@ -501,7 +506,8 @@ contract AIP14_DisputeBondTest is Test {
 
         assertTrue(escrow.bondBalance(txId) > 0);
 
-        kernel.transitionState(txId, IACTPKernel.State.CANCELLED, "");
+        // [Apex F-II] Explicit full-refund dismissal (empty proof is rejected for delivered disputes).
+        kernel.transitionState(txId, IACTPKernel.State.CANCELLED, abi.encode(TRANSACTION_AMOUNT, uint256(0)));
 
         assertEq(escrow.bondBalance(txId), 0, "Bond must be zero after cancellation");
     }
@@ -539,7 +545,7 @@ contract AIP14_DisputeBondTest is Test {
         bytes32 txId = kernel.createTransaction(
             provider, requester, TRANSACTION_AMOUNT,
             block.timestamp + 30 days, 2 days,
-            keccak256("service"), 0, reqAgentId
+            keccak256("service"), bytes32(0), 0, reqAgentId
         );
 
         IACTPKernel.TransactionView memory txn = kernel.getTransaction(txId);
@@ -551,7 +557,7 @@ contract AIP14_DisputeBondTest is Test {
         bytes32 txId = kernel.createTransaction(
             provider, requester, TRANSACTION_AMOUNT,
             block.timestamp + 30 days, 2 days,
-            keccak256("service"), 0, 0
+            keccak256("service"), bytes32(0), 0, 0
         );
 
         IACTPKernel.TransactionView memory txn = kernel.getTransaction(txId);
@@ -629,7 +635,7 @@ contract AIP14_DisputeBondTest is Test {
 
         // [M-2 FIX] No-resolution settle now reverts
         vm.warp(block.timestamp + 2 days + 1);
-        vm.expectRevert("Dispute resolution requires explicit proof");
+        vm.expectRevert("Explicit resolution required");
         kernel.transitionState(txId, IACTPKernel.State.SETTLED, "");
     }
 
@@ -644,7 +650,12 @@ contract AIP14_DisputeBondTest is Test {
 
         uint256 requesterBalBefore = usdc.balanceOf(requester);
 
+        // [Apex F-II] Empty proof is rejected for a delivered dispute; use the same 1-wei
+        // SENTINEL resolution the CompositeMediator emits for a zero-remaining escrow
+        // (the distribution block is skipped when remaining == 0; only the bond moves).
+        vm.expectRevert("Explicit resolution required");
         kernel.transitionState(txId, IACTPKernel.State.CANCELLED, "");
+        kernel.transitionState(txId, IACTPKernel.State.CANCELLED, abi.encode(uint256(1), uint256(0)));
 
         assertEq(escrow.bondBalance(txId), 0, "Bond must not remain locked on cancel");
         // Requester gets bond only (escrow was already drained)
@@ -663,7 +674,7 @@ contract AIP14_DisputeBondTest is Test {
 
         vm.warp(block.timestamp + 2 days + 1);
         // [M-2 FIX] Empty proof now reverts instead of defaulting to provider
-        vm.expectRevert("Dispute resolution requires explicit proof");
+        vm.expectRevert("Explicit resolution required");
         kernel.transitionState(txId, IACTPKernel.State.SETTLED, "");
     }
 
@@ -680,7 +691,7 @@ contract AIP14_DisputeBondTest is Test {
         txId = kernel.createTransaction(
             provider, requester, amount,
             block.timestamp + 30 days, 2 days,
-            keccak256("service"), 0, 0
+            keccak256("service"), bytes32(0), 0, 0
         );
 
         // Link escrow
@@ -693,7 +704,7 @@ contract AIP14_DisputeBondTest is Test {
         vm.prank(provider);
         kernel.transitionState(txId, IACTPKernel.State.IN_PROGRESS, "");
         vm.prank(provider);
-        kernel.transitionState(txId, IACTPKernel.State.DELIVERED, abi.encode(10 days));
+        kernel.transitionState(txId, IACTPKernel.State.DELIVERED, abi.encode(10 days, keccak256("result")));
     }
 
     function _createDisputedTransaction() internal returns (bytes32 txId) {

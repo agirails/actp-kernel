@@ -7,10 +7,14 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 /// @notice Vendored subset of UMA's OptimisticOracleV3 used by the AIP-14b three-tier
 ///         dispute system (Tier 3 escalation). On Base mainnet the canonical deployment is
 ///         `0x2aBf1Bd76655de80eDB3086114315Eec75AF500c`.
-/// @dev    IMPORTANT: the `identifier` argument to `assertTruth` MUST be read at runtime via
-///         `defaultIdentifier()` — it is `"ASSERT_TRUTH"` on Base mainnet (verified on-chain
-///         2026-06-21) but MUST NEVER be hardcoded. Reading it keeps the integration correct if
-///         UMA governance ever rotates the default identifier or if we deploy on another chain.
+/// @dev    IMPORTANT: the `identifier` argument to `assertTruth` MUST be one the live UMA
+///         `IdentifierWhitelist` accepts, resolved at runtime via `finder()` — NEVER hardcoded.
+///         Do NOT blindly forward `defaultIdentifier()`: UMA governance can retire an identifier
+///         from the Finder-resolved `IdentifierWhitelist` while `defaultIdentifier()` still returns
+///         the retired value. Verified on Base mainnet 2026-07-03: `defaultIdentifier()==ASSERT_TRUTH`
+///         but `isIdentifierSupported(ASSERT_TRUTH)==false` (migrated to `ASSERT_TRUTH2`), so a naive
+///         `defaultIdentifier()` forward reverts `"Unsupported identifier"`. Callers must pick the
+///         first candidate the live whitelist accepts (see `BondEscalation._resolveWhitelistedIdentifier`).
 ///         Likewise the bond is derived at runtime from `getMinimumBond` (R6): `escalateToUMA`
 ///         posts `max(UMA_BOND, getMinimumBond(USDC))`, so a UMA min-bond raise adapts instead of
 ///         reverting. The `currency` is fixed to the protocol's USDC by design (single settlement
@@ -44,8 +48,14 @@ interface IOptimisticOracleV3 {
     ) external returns (bytes32 assertionId);
 
     /// @notice The default price identifier used for disputes — `"ASSERT_TRUTH"` on Base mainnet.
-    /// @dev    Always read this rather than hardcoding the identifier.
+    /// @dev    This may be RETIRED from the live IdentifierWhitelist even though it is still returned
+    ///         here — do not forward it to `assertTruth` without a whitelist-membership check.
     function defaultIdentifier() external view returns (bytes32);
+
+    /// @notice The UMA Finder that resolves peripheral registries (IdentifierWhitelist, etc.).
+    /// @dev    Used to reach the live `IdentifierWhitelist` for a runtime `isIdentifierSupported`
+    ///         check before asserting (AIP-14b identifier-rotation fix).
+    function finder() external view returns (address);
 
     /// @notice The minimum bond required when asserting with the given `currency`.
     function getMinimumBond(address currency) external view returns (uint256);
@@ -69,4 +79,17 @@ interface IOptimisticOracleV3 {
 
     /// @notice The percentage of a losing party's bond that is burned, expressed in 1e18 fixed point.
     function burnedBondPercentage() external view returns (uint256);
+}
+
+/// @title IUMAFinder — minimal UMA Finder surface used to resolve peripheral registries.
+/// @dev   `interfaceName` is the raw `bytes32(string)` of the registry name, e.g.
+///        `bytes32("IdentifierWhitelist")` — UMA does NOT hash the name.
+interface IUMAFinder {
+    function getImplementationAddress(bytes32 interfaceName) external view returns (address);
+}
+
+/// @title IUMAIdentifierWhitelist — minimal UMA IdentifierWhitelist surface.
+/// @dev   `assertTruth` reverts `"Unsupported identifier"` unless the identifier is supported here.
+interface IUMAIdentifierWhitelist {
+    function isIdentifierSupported(bytes32 identifier) external view returns (bool);
 }

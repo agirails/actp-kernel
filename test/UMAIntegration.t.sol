@@ -24,6 +24,16 @@ contract IdentifierSpyOOV3 is IOptimisticOracleV3 {
     bool public assertTruthCalled;
     uint256 internal _nonce;
 
+    /// @dev The identifier this spy's (self-hosted) IdentifierWhitelist accepts. Defaults to the
+    ///      spy's own default so the default-preferred selection path runs; tests flip it to drive
+    ///      the ASSERT_TRUTH2 fallback and the no-whitelisted-identifier revert branch of
+    ///      BondEscalation._resolveWhitelistedIdentifier.
+    bytes32 public whitelistedId = SPY_IDENTIFIER;
+
+    function setWhitelistedId(bytes32 id) external {
+        whitelistedId = id;
+    }
+
     function assertTruth(
         bytes memory claim,
         address asserter,
@@ -65,6 +75,18 @@ contract IdentifierSpyOOV3 is IOptimisticOracleV3 {
     }
     function burnedBondPercentage() external pure override returns (uint256) {
         return 5e17;
+    }
+
+    // Finder -> IdentifierWhitelist flow: this spy doubles as its own Finder and IdentifierWhitelist
+    // so BondEscalation._resolveWhitelistedIdentifier exercises the same path as against the real OOV3.
+    function finder() external view override returns (address) {
+        return address(this);
+    }
+    function getImplementationAddress(bytes32) external view returns (address) {
+        return address(this);
+    }
+    function isIdentifierSupported(bytes32 identifier) external view returns (bool) {
+        return identifier == whitelistedId;
     }
 }
 
@@ -129,7 +151,7 @@ contract UMAIntegrationTest is DisputeTestBase {
         vm.startPrank(keeper);
         usdc.approve(address(bondEscalation), UMA_BOND);
         vm.expectRevert("Liveness expired - use finalize()");
-        bondEscalation.escalateToUMA(disputeId, "QmEvidenceCID");
+        bondEscalation.escalateToUMA(disputeId, "QmEvidenceCID", "QmReasoningCID");
         vm.stopPrank();
     }
 
@@ -148,7 +170,7 @@ contract UMAIntegrationTest is DisputeTestBase {
 
         vm.startPrank(keeper);
         usdc.approve(address(be), UMA_BOND);
-        be.escalateToUMA(disputeId, "QmEvidenceCID");
+        be.escalateToUMA(disputeId, "QmEvidenceCID", "QmReasoningCID");
         vm.stopPrank();
 
         assertTrue(spy.assertTruthCalled(), "assertTruth was not invoked");
@@ -159,6 +181,59 @@ contract UMAIntegrationTest is DisputeTestBase {
         );
         // Sanity: it is NOT the canonical Base-mainnet default — i.e. the value tracked the spy.
         assertTrue(spy.capturedIdentifier() != bytes32("ASSERT_TRUTH"), "identifier appears hardcoded");
+    }
+
+    /// @notice AIP-14b identifier-rotation fix: when the oracle's `defaultIdentifier()` is NOT on the
+    ///         live IdentifierWhitelist (as on Base mainnet, where ASSERT_TRUTH was retired in favour of
+    ///         ASSERT_TRUTH2), `escalateToUMA` must FALL BACK to the whitelisted ASSERT_TRUTH2 rather than
+    ///         forwarding the de-whitelisted default and reverting "Unsupported identifier" inside OOV3.
+    function test_EscalateToUMA_FallsBackToWhitelistedIdentifier() external {
+        IdentifierSpyOOV3 spy = new IdentifierSpyOOV3();
+        // defaultIdentifier() = SPY_IDENTIFIER, but the live whitelist only accepts ASSERT_TRUTH2.
+        spy.setWhitelistedId(bytes32("ASSERT_TRUTH2"));
+        BondEscalation be = _deployBondEscalationWithOracle(address(spy));
+
+        bytes32 disputeId = _openedFor(be);
+        _escalateBondToCeilingFor(be, disputeId);
+
+        vm.startPrank(keeper);
+        usdc.approve(address(be), UMA_BOND);
+        be.escalateToUMA(disputeId, "QmEvidenceCID", "QmReasoningCID");
+        vm.stopPrank();
+
+        assertTrue(spy.assertTruthCalled(), "assertTruth was not invoked");
+        assertEq(
+            spy.capturedIdentifier(),
+            bytes32("ASSERT_TRUTH2"),
+            "must fall back to the whitelisted ASSERT_TRUTH2 when the oracle default is de-whitelisted"
+        );
+        assertTrue(
+            spy.capturedIdentifier() != spy.SPY_IDENTIFIER(),
+            "must NOT forward the de-whitelisted default identifier"
+        );
+    }
+
+    /// @notice AIP-14b identifier-rotation fix: if NEITHER the oracle default NOR ASSERT_TRUTH2 is
+    ///         whitelisted (a hypothetical future ASSERT_TRUTH3 rotation), `escalateToUMA` must fail
+    ///         LOUDLY with a clear revert instead of silently posting an unsupported identifier —
+    ///         and must do so BEFORE pulling the escalator's bond.
+    function test_EscalateToUMA_RevertsWhenNoWhitelistedIdentifier() external {
+        IdentifierSpyOOV3 spy = new IdentifierSpyOOV3();
+        spy.setWhitelistedId(bytes32("ASSERT_TRUTH3")); // accepts neither SPY_IDENTIFIER nor ASSERT_TRUTH2
+        BondEscalation be = _deployBondEscalationWithOracle(address(spy));
+
+        bytes32 disputeId = _openedFor(be);
+        _escalateBondToCeilingFor(be, disputeId);
+
+        uint256 keeperBalBefore = usdc.balanceOf(keeper);
+        vm.startPrank(keeper);
+        usdc.approve(address(be), UMA_BOND);
+        vm.expectRevert("No whitelisted UMA identifier");
+        be.escalateToUMA(disputeId, "QmEvidenceCID", "QmReasoningCID");
+        vm.stopPrank();
+
+        assertFalse(spy.assertTruthCalled(), "assertTruth must not be reached");
+        assertEq(usdc.balanceOf(keeper), keeperBalBefore, "escalator bond must NOT be pulled on revert");
     }
 
     /// @notice §8.4 / INV-20: the assertion claim bytes MUST embed the IPFS evidence bundle —
@@ -172,7 +247,7 @@ contract UMAIntegrationTest is DisputeTestBase {
         string memory cid = "QmEvidenceBundleCID12345";
         vm.startPrank(keeper);
         usdc.approve(address(bondEscalation), UMA_BOND);
-        bondEscalation.escalateToUMA(disputeId, cid);
+        bondEscalation.escalateToUMA(disputeId, cid, "QmReasoningCID");
         vm.stopPrank();
 
         bytes32 assertionId = bondEscalation.disputeToAssertion(disputeId);
@@ -200,7 +275,7 @@ contract UMAIntegrationTest is DisputeTestBase {
 
         vm.startPrank(keeper);
         usdc.approve(address(bondEscalation), UMA_BOND);
-        bondEscalation.escalateToUMA(disputeId, "QmEvidenceCID");
+        bondEscalation.escalateToUMA(disputeId, "QmEvidenceCID", "QmReasoningCID");
         vm.stopPrank();
 
         bytes32 assertionId = bondEscalation.disputeToAssertion(disputeId);
@@ -243,7 +318,7 @@ contract UMAIntegrationTest is DisputeTestBase {
 
         vm.startPrank(keeper);
         usdc.approve(address(bondEscalation), UMA_BOND);
-        bondEscalation.escalateToUMA(disputeId, "QmEvidenceCID");
+        bondEscalation.escalateToUMA(disputeId, "QmEvidenceCID", "QmReasoningCID");
         vm.stopPrank();
 
         bytes32 assertionId = bondEscalation.disputeToAssertion(disputeId);
@@ -262,10 +337,15 @@ contract UMAIntegrationTest is DisputeTestBase {
         assertFalse(_resolvedOf(disputeId), "disputed callback must not resolve");
         assertEq(_tierOf(disputeId), 2, "should remain tier 2 after dispute");
 
-        // (3) §8.6: the 30-day stale fallback still resolves the dispute even after a disputed callback,
-        //     because the DVM may exceed the window. After warping past disputedAt + 30 days,
-        //     forceResolveStale() resolves locally to a 50/50 split and CANCELS the kernel tx.
+        // (3) §8.6: the stale fallback still resolves the dispute even after a disputed callback,
+        //     because the DVM may exceed the window. [Apex H2] For Tier-2 the fallback opens only
+        //     after the EXTENDED window (30d base + 30d TIER2_STALE_GRACE) so it cannot pre-empt a
+        //     rightful DVM verdict; then it resolves 50/50 and CANCELS the kernel tx.
         vm.warp(_disputedAtOf(disputeId) + 30 days + 1);
+        vm.expectRevert("UMA pending: settle assertion first");
+        bondEscalation.forceResolveStale(disputeId);
+
+        vm.warp(_disputedAtOf(disputeId) + 60 days + 1);
         bondEscalation.forceResolveStale(disputeId);
 
         assertTrue(_resolvedOf(disputeId), "stale fallback must resolve post-dispute");

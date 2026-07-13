@@ -100,14 +100,10 @@ contract ACTPKernelFuzzTest is Test {
     }
 
     function testFuzzDisputeWindowBoundary(uint256 windowRaw) external {
-        // Dispute window must be either 0 (use default) or >= MIN_DISPUTE_WINDOW
-        // Map windowRaw to valid range: if < half of range, use 0; otherwise use MIN to MAX
-        uint256 window;
-        if (windowRaw % 2 == 0) {
-            window = 0; // Use default
-        } else {
-            window = bound(windowRaw, kernel.MIN_DISPUTE_WINDOW(), kernel.MAX_DISPUTE_WINDOW());
-        }
+        // AIP-14c: dispute window is now MANDATORY and must satisfy
+        // MIN_DISPUTE_WINDOW <= window <= MAX_DISPUTE_WINDOW. The old
+        // window==0-means-DEFAULT_DISPUTE_WINDOW behavior is GONE.
+        uint256 window = bound(windowRaw, kernel.MIN_DISPUTE_WINDOW(), kernel.MAX_DISPUTE_WINDOW());
 
         bytes32 txId = _createBaseTx(ONE_USDC, block.timestamp + 2 days);
         _quote(txId);
@@ -116,14 +112,12 @@ contract ACTPKernelFuzzTest is Test {
         vm.prank(provider);
         kernel.transitionState(txId, IACTPKernel.State.IN_PROGRESS, "");
 
-        bytes memory proof = abi.encode(window);
+        bytes memory proof = abi.encode(window, keccak256("result"));
         vm.prank(provider);
         kernel.transitionState(txId, IACTPKernel.State.DELIVERED, proof);
 
         IACTPKernel.TransactionView memory txn = kernel.getTransaction(txId);
-        // If window is 0, kernel uses DEFAULT_DISPUTE_WINDOW (2 days)
-        uint256 expectedWindow = window == 0 ? kernel.DEFAULT_DISPUTE_WINDOW() : window;
-        assertEq(txn.disputeWindow, block.timestamp + expectedWindow);
+        assertEq(txn.disputeWindow, block.timestamp + window);
     }
 
     function testFuzzTransactionAmounts(uint96 amountRaw) external {
@@ -131,7 +125,7 @@ contract ACTPKernelFuzzTest is Test {
 
 
         vm.prank(requester);
-        bytes32 txId = kernel.createTransaction(provider, requester, amount, block.timestamp + 1 days, 2 days, keccak256("service"), 0, 0);
+        bytes32 txId = kernel.createTransaction(provider, requester, amount, block.timestamp + 1 days, 2 days, keccak256("service"), bytes32(0), 0, 0);
 
         IACTPKernel.TransactionView memory txn = kernel.getTransaction(txId);
         assertEq(txn.amount, amount);
@@ -173,7 +167,7 @@ contract ACTPKernelFuzzTest is Test {
 
         // [H-4 FIX] Requester should NOT be able to cancel after work started
         vm.prank(requester);
-        vm.expectRevert(bytes("Cannot cancel after work started"));
+        vm.expectRevert(bytes("No cancel after work started"));
         kernel.transitionState(txId, IACTPKernel.State.CANCELLED, "");
     }
 
@@ -190,7 +184,7 @@ contract ACTPKernelFuzzTest is Test {
 
     function _createBaseTx(uint256 amount, uint256 deadline) internal returns (bytes32 txId) {
         vm.prank(requester);
-        txId = kernel.createTransaction(provider, requester, amount, deadline, 2 days, keccak256("service"), 0, 0);
+        txId = kernel.createTransaction(provider, requester, amount, deadline, 2 days, keccak256("service"), bytes32(0), 0, 0);
     }
 
     function _quote(bytes32 txId) internal {
@@ -209,7 +203,7 @@ contract ACTPKernelFuzzTest is Test {
         vm.prank(provider);
         kernel.transitionState(txId, IACTPKernel.State.IN_PROGRESS, "");
         vm.prank(provider);
-        kernel.transitionState(txId, IACTPKernel.State.DELIVERED, abi.encode(disputeWindow));
+        kernel.transitionState(txId, IACTPKernel.State.DELIVERED, abi.encode(disputeWindow, keccak256("result")));
     }
 
     function _splitAmount(uint256 amount) internal view returns (uint256 providerNet, uint256 fee) {

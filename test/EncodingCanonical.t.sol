@@ -266,6 +266,8 @@ contract EncodingCanonicalTest is DisputeTestBase {
     uint64 internal constant GOLDEN_TIMESTAMP = 1_700_000_000;
     bytes32 internal constant GOLDEN_REASONING_HASH = keccak256("golden-reasoning");
     bytes32 internal constant GOLDEN_BUNDLE_HASH = keccak256("golden-bundle");
+    bytes32 internal constant GOLDEN_EVIDENCE_REF_HASH = keccak256("golden-evidence-ref"); // AIP-14c
+    bytes32 internal constant GOLDEN_REASONING_REF_HASH = keccak256("golden-reasoning-ref"); // AIP-14c
 
     // ---- FROZEN EXPECTED VALUES (the canonical anchor) ----
     // These were computed OUT-OF-BAND with `cast` from the fixed inputs above (cast keccak /
@@ -279,13 +281,14 @@ contract EncodingCanonicalTest is DisputeTestBase {
     //                      8453, GOLDEN_VERIFYING_CONTRACT))
     bytes32 internal constant GOLDEN_DOMAIN_SEPARATOR =
         0x49c919619319169442e048297d8b8dc2f0c6a78b8601c78a39656bc2b3b25db8;
-    // keccak256(abi.encode(RULING_TYPEHASH, GOLDEN_DISPUTE_ID, 1, 9500, 0, 1700000000,
-    //                      GOLDEN_REASONING_HASH, GOLDEN_BUNDLE_HASH))
+    // AIP-14c 9-field type: keccak256(abi.encode(RULING_TYPEHASH, GOLDEN_DISPUTE_ID, 1, 9500, 0,
+    //   1700000000, GOLDEN_REASONING_HASH, GOLDEN_BUNDLE_HASH, GOLDEN_EVIDENCE_REF_HASH,
+    //   GOLDEN_REASONING_REF_HASH)) — recomputed via cast, sanity-checked against the old value.
     bytes32 internal constant GOLDEN_STRUCT_HASH =
-        0x819e81f3ec882e0f9c6dc718e9cd9bcbc857c2c59f3074164ee219c2b25c12a9;
+        0x2b30b25ad0258f200a315a68b1a7ebffc4040679fca1a4bbdf1cae0b57c589b4;
     // keccak256("\x19\x01" || GOLDEN_DOMAIN_SEPARATOR || GOLDEN_STRUCT_HASH) — the SDK MUST match this.
     bytes32 internal constant GOLDEN_DIGEST =
-        0x9b477852dd1ddad0105ca5e2a320c6ca72105215985b53878ae12b49eb34e365;
+        0xc14778f377cd385dd4686b798cb2a010c8ff95e8a35a4f170af7e05bc8c2d8a0;
 
     /// @dev Independently recompute the domain separator from the FIXED inputs (no contract call).
     function _goldenDomainSeparator(address verifyingContract) internal pure returns (bytes32) {
@@ -305,7 +308,7 @@ contract EncodingCanonicalTest is DisputeTestBase {
     /// @dev Independently recompute the AIRuling struct hash from the FIXED fields (no contract call).
     function _goldenStructHash() internal pure returns (bytes32) {
         bytes32 rulingTypeHash = keccak256(
-            "AIRuling(bytes32 disputeId,uint8 ruling,uint16 confidence,uint16 splitBps,uint64 timestamp,bytes32 reasoningHash,bytes32 bundleHash)"
+            "AIRuling(bytes32 disputeId,uint8 ruling,uint16 confidence,uint16 splitBps,uint64 timestamp,bytes32 reasoningHash,bytes32 bundleHash,bytes32 evidenceRefHash,bytes32 reasoningRefHash)"
         );
         return keccak256(
             abi.encode(
@@ -316,7 +319,9 @@ contract EncodingCanonicalTest is DisputeTestBase {
                 GOLDEN_SPLIT_BPS,
                 GOLDEN_TIMESTAMP,
                 GOLDEN_REASONING_HASH,
-                GOLDEN_BUNDLE_HASH
+                GOLDEN_BUNDLE_HASH,
+                GOLDEN_EVIDENCE_REF_HASH,
+                GOLDEN_REASONING_REF_HASH
             )
         );
     }
@@ -419,7 +424,12 @@ contract EncodingCanonicalTest is DisputeTestBase {
             splitBps: GOLDEN_SPLIT_BPS,
             timestamp: uint64(block.timestamp),
             reasoningHash: GOLDEN_REASONING_HASH,
-            bundleHash: GOLDEN_BUNDLE_HASH
+            bundleHash: GOLDEN_BUNDLE_HASH,
+            // AIP-14c D7: refs derived from the CIDs actually passed to submitAIRuling so the on-chain
+            // recompute matches (the frozen GOLDEN_*_REF_HASH anchors are exercised by the pure-hash
+            // digest tests above; here we drive the REAL CID-bound submit path).
+            evidenceRefHash: _evidenceRef(GOLDEN_BUNDLE_HASH, EVIDENCE_CID),
+            reasoningRefHash: _evidenceRef(GOLDEN_REASONING_HASH, REASONING_CID)
         });
 
         // Build the digest the SAME way the contract does (its DOMAIN_SEPARATOR + this struct).
@@ -432,7 +442,9 @@ contract EncodingCanonicalTest is DisputeTestBase {
                 r.splitBps,
                 r.timestamp,
                 r.reasoningHash,
-                r.bundleHash
+                r.bundleHash,
+                r.evidenceRefHash,
+                r.reasoningRefHash
             )
         );
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", be.DOMAIN_SEPARATOR(), structHash));
@@ -444,7 +456,7 @@ contract EncodingCanonicalTest is DisputeTestBase {
 
         vm.startPrank(keeper);
         usdc.approve(address(be), INITIAL_BOND);
-        be.submitAIRuling(disputeId, r, sigs);
+        be.submitAIRuling(disputeId, r, EVIDENCE_CID, REASONING_CID, sigs);
         vm.stopPrank();
 
         // tier flips 0 → 1 only if the 2/3 verification over the golden domain digest passed.

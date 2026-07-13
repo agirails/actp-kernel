@@ -102,17 +102,24 @@
       "recoveryGraceSeconds": 604800,
       "recoveryGraceHuman": "7 days (mainnet)",
       "existing": {
-        "ACTPKernel": "0x132B9eB321dBB57c828B083844287171BDC92d29",
-        "EscrowVault": "0x6aAF45882c4b0dD34130ecC790bb5Ec6be7fFb99",
+        "ACTPKernel": "0x048c811352e8a3fECd5b0Ec4AA2c2b94083CC842",
+        "EscrowVault": "0x262D5912A9612F0c66dA5d13B4E678D50ebC44b5",
         "USDC": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
-        "AgentRegistry": "0x6fB222CF3DDdf37Bcb248EE7BBBA42Fb41901de8",
+        "AgentRegistry": "0x64Cb18bfb3CC1aCb1370a3B01613391D3561a009",
         "X402Relay": "0x81DFb954A3D58FEc24Fc9c946aC2C71a911609F8",
-        "ArchiveTreasury": "0x0516C411C0E8d75D17A768022819a0a4FB3cA2f2",
+        "ArchiveTreasury": "0x6159A80Ce8362aBB2307FbaB4Ed4D3F4A4231Acc",
         "EASDeliverySchema": "0x166501e7476e2fcf9214c4c5144533c2957d56fe59d639effc1719a0658d9c9a",
         "GnosisSafeAdmin": "0x61fE58E9EdB380EA65EC74bD364D9D2cba30B7f2",
-        "GnosisSafeAdminThreshold": "2-of-3",
+        "GnosisSafeAdminThreshold": "2-of-4",
         "Deployer": "0x1DC48019D708f3d7f1adCAAfA2Ffa198A6897E8d",
-        "existingNote": "Ground-truth deployed mainnet addresses. Per G3, P4-2/P6-1 redeploys kernel+vault as v2; the dispute system + re-point fan-out (AgentRegistry / X402Relay / EAS / Safe / CDP+Pimlico allowlists) wires against the v2 addresses, supplied via env at broadcast time. admin = Gnosis Safe (Safe-submittable calldata only; NO private keys)."
+        "preV3Superseded": {
+          "ACTPKernel": "0x132B9eB321dBB57c828B083844287171BDC92d29",
+          "EscrowVault": "0x6aAF45882c4b0dD34130ecC790bb5Ec6be7fFb99",
+          "AgentRegistry": "0x6fB222CF3DDdf37Bcb248EE7BBBA42Fb41901de8",
+          "ArchiveTreasury": "0x0516C411C0E8d75D17A768022819a0a4FB3cA2f2",
+          "note": "Pre-V3 stack, superseded by the V3 addresses above (2026-05-19). Retained for historical reference only; NOT on the active path."
+        },
+        "existingNote": "Ground-truth deployed mainnet addresses — CORRECTED 2026-07-03 (on-chain verified via cast). These are the V3 stack (kernel deployBlock 46212266, 2026-05-19), which SUPERSEDES the pre-V3 kernel/vault this file originally listed (now under preV3Superseded). Per G3, P4-2/P6-1 redeploys kernel+vault as v2 off THIS V3 stack; the dispute system + re-point fan-out (AgentRegistry / X402Relay / EAS / Safe / CDP+Pimlico allowlists) wires against the v2 addresses, supplied via env at broadcast time. admin = Gnosis Safe (Safe-submittable calldata only; NO private keys). EMPIRICAL: live V3 kernel 0x048c81 already exposes approveMediator/disputeBondBps()=500 but its bytecode LACKS resolveDisputeWhilePaused (0x65f44ba0) + F-6 recoveryGrace/recoverStalledInProgress — that selector gap is the concrete v2 driver (CompositeMediator resolves via kernel.resolveDisputeWhilePaused)."
       },
       "disputeContracts": {
         "CompositeMediator": {
@@ -131,7 +138,7 @@
             "usdc": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
             "compositeMediator": "AWAIT_BROADCAST",
             "admin": "0x61fE58E9EdB380EA65EC74bD364D9D2cba30B7f2",
-            "adminNote": "Gnosis Safe (2-of-3). approveMediator + initialize wiring submitted as Safe transactions.",
+            "adminNote": "Gnosis Safe (2-of-4). approveMediator + initialize wiring submitted as Safe transactions.",
             "fixedEvaluators": [
               "${EVALUATOR_FIXED_0}",
               "${EVALUATOR_FIXED_1}"
@@ -148,7 +155,8 @@
       "g2Recon": {
         "probedAt": "2026-06-21",
         "probeMethod": "read-only cast against mainnet.base.org (public RPC, no key)",
-        "result": "PASS",
+        "result": "PASS_AFTER_IDENTIFIER_FIX",
+        "resultNote": "CORRECTED 2026-07-03 (22-agent adversarial root-cause + independent re-verify on canonical public RPC). The 2026-06-21 probe read defaultIdentifier()=ASSERT_TRUTH + bond floor and marked PASS, but did NOT check IdentifierWhitelist.isIdentifierSupported. On live Base mainnet ASSERT_TRUTH is DE-WHITELISTED (isIdentifierSupported=false); its successor ASSERT_TRUTH2 is the live one (isIdentifierSupported=true, cachedIdentifiers=true). Forwarding defaultIdentifier() blindly reverts 'Unsupported identifier'. Fixed in BondEscalation._resolveWhitelistedIdentifier (runtime whitelist-membership check; prefers the oracle default, falls back to ASSERT_TRUTH2, reverts 'No whitelisted UMA identifier' if none). Verified: E2E_UMA_Fork 4/4 PASS + SmokeUMAEscalation PASS against the real OOV3; full unit suite 687/0.",
         "OOV3": {
           "address": "0x2aBf1Bd76655de80eDB3086114315Eec75AF500c",
           "hasCode": true,
@@ -168,7 +176,15 @@
         "defaultIdentifier": {
           "value": "ASSERT_TRUTH",
           "valueHex": "0x4153534552545f54525554480000000000000000000000000000000000000000",
-          "note": "Read at runtime via OOV3.defaultIdentifier() per INV-20 \u2014 NEVER hardcoded. Earlier 'ASSERT_TRUTH2' doc claim corrected 2026-06-21."
+          "isIdentifierSupported": false,
+          "note": "CORRECTED 2026-07-03: OOV3.defaultIdentifier() still RETURNS ASSERT_TRUTH, but it is RETIRED from the Finder-resolved IdentifierWhitelist (0xAd517D72B9Cd31F578197D5e903d041B88c69795): isIdentifierSupported(ASSERT_TRUTH)=false. The 2026-06-21 'corrected to ASSERT_TRUTH' note was itself the mistake \u2014 it inferred the identifier from defaultIdentifier() alone without checking whitelist membership. NEVER forward defaultIdentifier() blindly."
+        },
+        "assertionIdentifier": {
+          "value": "ASSERT_TRUTH2",
+          "valueHex": "0x4153534552545f54525554483200000000000000000000000000000000000000",
+          "isIdentifierSupported": true,
+          "cachedIdentifiers": true,
+          "note": "The live-whitelisted identifier BondEscalation._resolveWhitelistedIdentifier selects on Base mainnet. cachedIdentifiers(ASSERT_TRUTH2)=true confirms real third-party assertions already cleared this exact gate with it (Strix Lab prediction-market AssertionMade events on this OOV3)."
         },
         "burnedBondPercentage": {
           "value": "5e17",
@@ -202,7 +218,7 @@
     "evidenceClaimNote": "escalateToUMA embeds 'ipfs://' + evidence CID in the assertTruth claim (INV-20)."
   },
   "safeCalldata": {
-    "note": "Mainnet wiring is Safe-submitted (admin = Gnosis Safe 0x61fE58E9...b7f2, 2-of-3). NO private keys in any file. The deploy script (P6-1) emits these as console hints; the Safe operator builds the actual txs. Address placeholders resolved from env / written-back addresses at broadcast time.",
+    "note": "Mainnet wiring is Safe-submitted (admin = Gnosis Safe 0x61fE58E9...b7f2, 2-of-4). NO private keys in any file. The deploy script (P6-1) emits these as console hints; the Safe operator builds the actual txs. Address placeholders resolved from env / written-back addresses at broadcast time.",
     "transactions": [
       {
         "step": 3,

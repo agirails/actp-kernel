@@ -190,9 +190,15 @@ contract H1_MultisigAdminTest is Test {
         kernel.approveEscrowVault(newVault, true);
         assertTrue(kernel.approvedEscrowVaults(newVault));
 
-        // Multisig revokes vault
+        // Multisig revokes vault — [Apex H4] only via the 2-day scheduled path.
         vm.prank(multisig);
+        vm.expectRevert("Revocation must be scheduled");
         kernel.approveEscrowVault(newVault, false);
+
+        vm.prank(multisig);
+        kernel.scheduleEscrowVaultRevocation(newVault);
+        vm.warp(block.timestamp + 2 days);
+        kernel.executeEscrowVaultRevocation(newVault); // permissionless post-timelock
         assertFalse(kernel.approvedEscrowVaults(newVault));
     }
 

@@ -23,6 +23,13 @@ contract BondEscalationTest is DisputeTestBase {
 
     // Mirror events for vm.expectEmit.
     event DisputeOpened(bytes32 indexed disputeId, bytes32 indexed txId, uint256 escrowAmount, address opener);
+    event AIRulingEvidenceCommitted(
+        bytes32 indexed disputeId,
+        bytes32 evidenceRefHash,
+        bytes32 reasoningRefHash,
+        string evidenceCID,
+        string reasoningCID
+    );
 
     function setUp() external {
         _setUpStack();
@@ -58,7 +65,7 @@ contract BondEscalationTest is DisputeTestBase {
         // Create a tx but leave it pre-DISPUTED.
         vm.prank(requester);
         bytes32 txId = kernel.createTransaction(
-            provider, requester, TRANSACTION_AMOUNT, block.timestamp + 30 days, 2 days, keccak256("svc2"), 0, 0
+            provider, requester, TRANSACTION_AMOUNT, block.timestamp + 30 days, 2 days, keccak256("svc2"), bytes32(0), 0, 0
         );
         vm.expectRevert("Not in DISPUTED state");
         bondEscalation.openDispute(txId);
@@ -119,7 +126,7 @@ contract BondEscalationTest is DisputeTestBase {
 
         vm.startPrank(keeper);
         usdc.approve(address(bondEscalation), INITIAL_BOND);
-        bondEscalation.submitAIRuling(disputeId, r, sigs);
+        bondEscalation.submitAIRuling(disputeId, r, EVIDENCE_CID, REASONING_CID, sigs);
         vm.stopPrank();
 
         assertEq(_tierOf(disputeId), 1, "AI ruling should enter tier 1");
@@ -139,7 +146,7 @@ contract BondEscalationTest is DisputeTestBase {
 
         vm.startPrank(keeper);
         usdc.approve(address(bondEscalation), INITIAL_BOND);
-        bondEscalation.submitAIRuling(disputeId, r, sigs);
+        bondEscalation.submitAIRuling(disputeId, r, EVIDENCE_CID, REASONING_CID, sigs);
         vm.stopPrank();
 
         assertEq(_tierOf(disputeId), 1);
@@ -161,7 +168,7 @@ contract BondEscalationTest is DisputeTestBase {
         vm.startPrank(keeper);
         usdc.approve(address(bondEscalation), INITIAL_BOND);
         vm.expectRevert("Ruling stale");
-        bondEscalation.submitAIRuling(disputeId, r, sigs);
+        bondEscalation.submitAIRuling(disputeId, r, EVIDENCE_CID, REASONING_CID, sigs);
         vm.stopPrank();
     }
 
@@ -177,7 +184,7 @@ contract BondEscalationTest is DisputeTestBase {
         vm.startPrank(keeper);
         usdc.approve(address(bondEscalation), INITIAL_BOND);
         vm.expectRevert("Insufficient valid signatures");
-        bondEscalation.submitAIRuling(disputeId, r, sigs);
+        bondEscalation.submitAIRuling(disputeId, r, EVIDENCE_CID, REASONING_CID, sigs);
         vm.stopPrank();
     }
 
@@ -330,7 +337,7 @@ contract BondEscalationTest is DisputeTestBase {
         // Escalator posts the UMA bond ($500).
         vm.startPrank(keeper);
         usdc.approve(address(bondEscalation), 500_000_000);
-        bondEscalation.escalateToUMA(disputeId, "QmEvidenceCID");
+        bondEscalation.escalateToUMA(disputeId, "QmEvidenceCID", "QmReasoningCID");
         vm.stopPrank();
 
         assertEq(_tierOf(disputeId), 2, "should be tier 2");
@@ -351,7 +358,7 @@ contract BondEscalationTest is DisputeTestBase {
         vm.startPrank(keeper);
         usdc.approve(address(bondEscalation), 500_000_000);
         vm.expectRevert("Bond ceiling not reached");
-        bondEscalation.escalateToUMA(disputeId, "QmEvidenceCID");
+        bondEscalation.escalateToUMA(disputeId, "QmEvidenceCID", "QmReasoningCID");
         vm.stopPrank();
     }
 
@@ -360,8 +367,8 @@ contract BondEscalationTest is DisputeTestBase {
         _escalateBondToCeiling(disputeId);
         vm.startPrank(keeper);
         usdc.approve(address(bondEscalation), 500_000_000);
-        vm.expectRevert("Evidence CID required");
-        bondEscalation.escalateToUMA(disputeId, "");
+        vm.expectRevert("CID required");
+        bondEscalation.escalateToUMA(disputeId, "", "QmReasoningCID");
         vm.stopPrank();
     }
 
@@ -378,7 +385,7 @@ contract BondEscalationTest is DisputeTestBase {
 
         vm.startPrank(keeper);
         usdc.approve(address(bondEscalation), 500_000_000);
-        bondEscalation.escalateToUMA(disputeId, "QmEvidenceCID");
+        bondEscalation.escalateToUMA(disputeId, "QmEvidenceCID", "QmReasoningCID");
         vm.stopPrank();
 
         bytes32 assertionId = bondEscalation.disputeToAssertion(disputeId);
@@ -407,7 +414,7 @@ contract BondEscalationTest is DisputeTestBase {
 
         vm.startPrank(keeper);
         usdc.approve(address(bondEscalation), 500_000_000);
-        bondEscalation.escalateToUMA(disputeId, "QmEvidenceCID");
+        bondEscalation.escalateToUMA(disputeId, "QmEvidenceCID", "QmReasoningCID");
         vm.stopPrank();
 
         bytes32 assertionId = bondEscalation.disputeToAssertion(disputeId);
@@ -442,7 +449,7 @@ contract BondEscalationTest is DisputeTestBase {
 
         vm.startPrank(keeper);
         usdc.approve(address(bondEscalation), 500_000_000);
-        bondEscalation.escalateToUMA(disputeId, "QmEvidenceCID");
+        bondEscalation.escalateToUMA(disputeId, "QmEvidenceCID", "QmReasoningCID");
         vm.stopPrank();
 
         bytes32 assertionId = bondEscalation.disputeToAssertion(disputeId);
@@ -471,7 +478,7 @@ contract BondEscalationTest is DisputeTestBase {
         _escalateBondToCeiling(disputeId);
         vm.startPrank(keeper);
         usdc.approve(address(bondEscalation), 500_000_000);
-        bondEscalation.escalateToUMA(disputeId, "QmEvidenceCID");
+        bondEscalation.escalateToUMA(disputeId, "QmEvidenceCID", "QmReasoningCID");
         vm.stopPrank();
 
         bytes32 assertionId = bondEscalation.disputeToAssertion(disputeId);
@@ -487,13 +494,21 @@ contract BondEscalationTest is DisputeTestBase {
         _escalateBondToCeiling(disputeId);
         vm.startPrank(keeper);
         usdc.approve(address(bondEscalation), 500_000_000);
-        bondEscalation.escalateToUMA(disputeId, "QmEvidenceCID");
+        bondEscalation.escalateToUMA(disputeId, "QmEvidenceCID", "QmReasoningCID");
         vm.stopPrank();
 
         bytes32 assertionId = bondEscalation.disputeToAssertion(disputeId);
 
-        // Force-resolve as stale (30-day fallback) BEFORE UMA replies.
-        vm.warp(block.timestamp + 30 days + 1);
+        // Force-resolve as stale BEFORE UMA replies. [Apex H2] Tier-2 needs the EXTENDED
+        // window (30d base + 30d TIER2_STALE_GRACE): at the plain 30-day mark the force is
+        // rejected so it cannot pre-empt a rightful UMA verdict. (Absolute warps: via-IR
+        // CSEs repeated block.timestamp reads, so relative chained warps would go backward.)
+        uint256 t0 = block.timestamp;
+        vm.warp(t0 + 30 days + 1);
+        vm.expectRevert("UMA pending: settle assertion first");
+        bondEscalation.forceResolveStale(disputeId);
+
+        vm.warp(t0 + 60 days + 1);
         bondEscalation.forceResolveStale(disputeId);
         assertTrue(_resolvedOf(disputeId));
 
@@ -509,7 +524,7 @@ contract BondEscalationTest is DisputeTestBase {
         _escalateBondToCeiling(disputeId);
         vm.startPrank(keeper);
         usdc.approve(address(bondEscalation), 500_000_000);
-        bondEscalation.escalateToUMA(disputeId, "QmEvidenceCID");
+        bondEscalation.escalateToUMA(disputeId, "QmEvidenceCID", "QmReasoningCID");
         vm.stopPrank();
 
         bytes32 assertionId = bondEscalation.disputeToAssertion(disputeId);
@@ -576,6 +591,151 @@ contract BondEscalationTest is DisputeTestBase {
     }
 
     // =====================================================================
+    // AIP-14c D7 — CID binding into submitAIRuling + Tier-2 no-swap in escalateToUMA
+    // =====================================================================
+
+    /// @notice submitAIRuling persists the SIGNED bytes32 refs + bundleHash (no CID strings in storage)
+    ///         and surfaces the CIDs in AIRulingEvidenceCommitted.
+    function test_D7_SubmitAIRuling_PersistsSignedRefs_AndEmitsCIDs() external {
+        bytes32 disputeId = _opened();
+        AIRuling memory r = _ruling(disputeId, 0, 0);
+        bytes[] memory sigs = new bytes[](2);
+        sigs[0] = _signRuling(r, fixed0Pk);
+        sigs[1] = _signRuling(r, fixed1Pk);
+
+        vm.startPrank(keeper);
+        usdc.approve(address(bondEscalation), INITIAL_BOND);
+        vm.expectEmit(true, false, false, true, address(bondEscalation));
+        emit AIRulingEvidenceCommitted(disputeId, r.evidenceRefHash, r.reasoningRefHash, EVIDENCE_CID, REASONING_CID);
+        bondEscalation.submitAIRuling(disputeId, r, EVIDENCE_CID, REASONING_CID, sigs);
+        vm.stopPrank();
+
+        assertEq(bondEscalation.evidenceRefHashOf(disputeId), r.evidenceRefHash, "evidence ref not persisted");
+        assertEq(bondEscalation.reasoningRefHashOf(disputeId), r.reasoningRefHash, "reasoning ref not persisted");
+        assertEq(bondEscalation.evidenceBundleHashOf(disputeId), r.bundleHash, "bundleHash not persisted");
+    }
+
+    /// @notice An empty evidence OR reasoning CID is rejected (before any state change).
+    function test_D7_SubmitAIRuling_EmptyCID_Reverts() external {
+        bytes32 disputeId = _opened();
+        AIRuling memory r = _ruling(disputeId, 0, 0);
+        bytes[] memory sigs = new bytes[](2);
+        sigs[0] = _signRuling(r, fixed0Pk);
+        sigs[1] = _signRuling(r, fixed1Pk);
+
+        vm.startPrank(keeper);
+        usdc.approve(address(bondEscalation), INITIAL_BOND);
+        vm.expectRevert("CID required");
+        bondEscalation.submitAIRuling(disputeId, r, "", REASONING_CID, sigs);
+        vm.expectRevert("CID required");
+        bondEscalation.submitAIRuling(disputeId, r, EVIDENCE_CID, "", sigs);
+        vm.stopPrank();
+    }
+
+    /// @notice A CID longer than MAX_CID_LENGTH (256) is rejected.
+    function test_D7_SubmitAIRuling_OverlongCID_Reverts() external {
+        bytes32 disputeId = _opened();
+        AIRuling memory r = _ruling(disputeId, 0, 0);
+        bytes[] memory sigs = new bytes[](2);
+        sigs[0] = _signRuling(r, fixed0Pk);
+        sigs[1] = _signRuling(r, fixed1Pk);
+
+        bytes memory big = new bytes(257);
+        for (uint256 i = 0; i < 257; i++) {
+            big[i] = 0x61; // 'a'
+        }
+        string memory longCid = string(big);
+
+        vm.startPrank(keeper);
+        usdc.approve(address(bondEscalation), INITIAL_BOND);
+        vm.expectRevert("CID too long");
+        bondEscalation.submitAIRuling(disputeId, r, longCid, REASONING_CID, sigs);
+        vm.stopPrank();
+    }
+
+    /// @notice A CID whose recomputed ref != the SIGNED evidenceRefHash is rejected (the signature covers
+    ///         the ref, so a swapped evidence CID no longer verifies). Same for the reasoning CID.
+    function test_D7_SubmitAIRuling_MismatchedCID_Reverts() external {
+        bytes32 disputeId = _opened();
+        AIRuling memory r = _ruling(disputeId, 0, 0); // refs derived from EVIDENCE_CID / REASONING_CID
+        bytes[] memory sigs = new bytes[](2);
+        sigs[0] = _signRuling(r, fixed0Pk);
+        sigs[1] = _signRuling(r, fixed1Pk);
+
+        vm.startPrank(keeper);
+        usdc.approve(address(bondEscalation), INITIAL_BOND);
+        // Swapped evidence CID → evidence ref recompute fails first.
+        vm.expectRevert("Evidence CID mismatch");
+        bondEscalation.submitAIRuling(disputeId, r, "QmSwappedEvidence", REASONING_CID, sigs);
+        // Correct evidence CID, swapped reasoning CID → reasoning ref recompute fails.
+        vm.expectRevert("Reasoning CID mismatch");
+        bondEscalation.submitAIRuling(disputeId, r, EVIDENCE_CID, "QmSwappedReasoning", sigs);
+        vm.stopPrank();
+    }
+
+    /// @notice Tier-2 no-swap (D7): a dispute committed via submitAIRuling escalates to UMA ONLY with the
+    ///         SIGNED evidence CID; a mutated CID reverts, the exact committed CID succeeds.
+    function test_D7_EscalateToUMA_CommittedEvidence_BindsCID() external {
+        bytes32 disputeId = _submitAIRulingToCeiling(_opened());
+        // Mutated CID → recompute against persisted (bundleHash, ref) fails.
+        vm.startPrank(keeper);
+        usdc.approve(address(bondEscalation), MAX_BOND);
+        vm.expectRevert("Evidence CID mismatch");
+        bondEscalation.escalateToUMA(disputeId, "QmSwappedEvidence", REASONING_CID);
+        // Correct committed evidence CID, but a swapped reasoning CID → reasoning recompute fails.
+        vm.expectRevert("Reasoning CID mismatch");
+        bondEscalation.escalateToUMA(disputeId, EVIDENCE_CID, "QmSwappedReasoning");
+        // The exact committed CIDs are accepted.
+        bondEscalation.escalateToUMA(disputeId, EVIDENCE_CID, REASONING_CID);
+        vm.stopPrank();
+
+        assertEq(_tierOf(disputeId), 2, "committed-evidence escalation with matching CID must reach tier 2");
+    }
+
+    /// @notice A dispute that reached Tier-1 via proposeDirectly has NO signed commitment (ref == 0), so
+    ///         escalateToUMA accepts the escalator's fresh evidence CID (nothing signed to protect).
+    function test_D7_EscalateToUMA_NoCommitment_AcceptsArbitraryCID() external {
+        bytes32 disputeId = _opened();
+        _escalateBondToCeiling(disputeId);
+        assertEq(bondEscalation.evidenceRefHashOf(disputeId), bytes32(0), "no commitment expected on propose path");
+
+        vm.startPrank(keeper);
+        usdc.approve(address(bondEscalation), MAX_BOND);
+        bondEscalation.escalateToUMA(disputeId, "QmAnyFreshEvidence", "QmReasoningCID");
+        vm.stopPrank();
+        assertEq(_tierOf(disputeId), 2, "propose-path escalation must accept a fresh CID");
+    }
+
+    /// @dev Enters Tier-1 via submitAIRuling (committing EVIDENCE_CID), then challenges to the $500
+    ///      ceiling so escalateToUMA's preconditions are met. Returns the (unchanged) dispute id.
+    function _submitAIRulingToCeiling(bytes32 disputeId) internal returns (bytes32) {
+        AIRuling memory r = _ruling(disputeId, 0, 0);
+        bytes[] memory sigs = new bytes[](2);
+        sigs[0] = _signRuling(r, fixed0Pk);
+        sigs[1] = _signRuling(r, fixed1Pk);
+        vm.startPrank(keeper);
+        usdc.approve(address(bondEscalation), INITIAL_BOND);
+        bondEscalation.submitAIRuling(disputeId, r, EVIDENCE_CID, REASONING_CID, sigs);
+        vm.stopPrank();
+
+        uint256 bond = INITIAL_BOND;
+        uint8 ruling = 0;
+        for (uint256 i = 0; i < 6; i++) {
+            ruling = ruling == 0 ? 1 : 0;
+            bond = bond * 2;
+            if (bond > MAX_BOND) bond = MAX_BOND;
+            address who = (i % 2 == 0) ? rando : keeper;
+            vm.startPrank(who);
+            usdc.approve(address(bondEscalation), bond);
+            bondEscalation.challenge(disputeId, ruling, 0);
+            vm.stopPrank();
+        }
+        require(_currentBondOf(disputeId) == MAX_BOND, "ceiling not reached");
+        require(_lastProposerOf(disputeId) == keeper, "keeper should be last proposer (ruling 0)");
+        return disputeId;
+    }
+
+    // =====================================================================
     // Internal helpers — typed accessors over the `disputes` public getter (13-tuple).
     // =====================================================================
     function _txIdOf(bytes32 disputeId) internal view returns (bytes32 t) {
@@ -631,7 +791,7 @@ contract BondEscalationTest is DisputeTestBase {
     function _opened2() internal returns (bytes32 disputeId) {
         vm.prank(requester);
         bytes32 txId = kernel.createTransaction(
-            provider, requester, TRANSACTION_AMOUNT, block.timestamp + 30 days, 2 days, keccak256("service2"), 0, 0
+            provider, requester, TRANSACTION_AMOUNT, block.timestamp + 30 days, 2 days, keccak256("service2"), bytes32(0), 0, 0
         );
         vm.startPrank(requester);
         usdc.approve(address(escrow), TRANSACTION_AMOUNT);
@@ -640,7 +800,7 @@ contract BondEscalationTest is DisputeTestBase {
         vm.prank(provider);
         kernel.transitionState(txId, IACTPKernel.State.IN_PROGRESS, "");
         vm.prank(provider);
-        kernel.transitionState(txId, IACTPKernel.State.DELIVERED, abi.encode(10 days));
+        kernel.transitionState(txId, IACTPKernel.State.DELIVERED, abi.encode(10 days, keccak256("result")));
         uint256 bond = (TRANSACTION_AMOUNT * kernel.disputeBondBps()) / kernel.MAX_BPS();
         vm.startPrank(requester);
         usdc.approve(address(escrow), bond);

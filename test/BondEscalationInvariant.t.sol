@@ -58,6 +58,9 @@ contract BondEscalationHandler is Test {
     address internal fixed1;
     uint256 internal fixed1Pk;
     bytes32 internal RULING_TYPEHASH_LOCAL;
+    // AIP-14c D7: canonical CIDs whose derived refs match the ruling built in submitAIRuling().
+    string internal constant EVIDENCE_CID = "QmEvidenceCID";
+    string internal constant REASONING_CID = "QmReasoningCID";
 
     constructor(
         BondEscalation _be,
@@ -84,7 +87,7 @@ contract BondEscalationHandler is Test {
         fixed1 = _f1;
         fixed1Pk = _f1Pk;
         RULING_TYPEHASH_LOCAL = keccak256(
-            "AIRuling(bytes32 disputeId,uint8 ruling,uint16 confidence,uint16 splitBps,uint64 timestamp,bytes32 reasoningHash,bytes32 bundleHash)"
+            "AIRuling(bytes32 disputeId,uint8 ruling,uint16 confidence,uint16 splitBps,uint64 timestamp,bytes32 reasoningHash,bytes32 bundleHash,bytes32 evidenceRefHash,bytes32 reasoningRefHash)"
         );
 
         // Pre-mint generously to every actor + the handler itself.
@@ -111,7 +114,7 @@ contract BondEscalationHandler is Test {
         uint256 amount = 1_000 * ONE_USDC;
         vm.prank(requester);
         txId = kernel.createTransaction(
-            provider, requester, amount, block.timestamp + 60 days, 2 days, keccak256("service"), 0, 0
+            provider, requester, amount, block.timestamp + 60 days, 2 days, keccak256("service"), bytes32(0), 0, 0
         );
 
         vm.startPrank(requester);
@@ -122,7 +125,7 @@ contract BondEscalationHandler is Test {
         vm.prank(provider);
         kernel.transitionState(txId, IACTPKernel.State.IN_PROGRESS, "");
         vm.prank(provider);
-        kernel.transitionState(txId, IACTPKernel.State.DELIVERED, abi.encode(10 days));
+        kernel.transitionState(txId, IACTPKernel.State.DELIVERED, abi.encode(10 days, keccak256("result")));
 
         uint256 bond = (amount * kernel.disputeBondBps()) / kernel.MAX_BPS();
         vm.startPrank(requester);
@@ -159,7 +162,9 @@ contract BondEscalationHandler is Test {
                 ruling.splitBps,
                 ruling.timestamp,
                 ruling.reasoningHash,
-                ruling.bundleHash
+                ruling.bundleHash,
+                ruling.evidenceRefHash,
+                ruling.reasoningRefHash
             )
         );
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", bondEscalation.DOMAIN_SEPARATOR(), structHash));
@@ -216,7 +221,10 @@ contract BondEscalationHandler is Test {
             splitBps: splitBps,
             timestamp: uint64(block.timestamp),
             reasoningHash: keccak256("reasoning"),
-            bundleHash: keccak256("bundle")
+            bundleHash: keccak256("bundle"),
+            // AIP-14c D7: refs derived from the canonical CIDs so submitAIRuling's recompute matches.
+            evidenceRefHash: keccak256(abi.encode(keccak256("bundle"), keccak256(bytes(EVIDENCE_CID)))),
+            reasoningRefHash: keccak256(abi.encode(keccak256("reasoning"), keccak256(bytes(REASONING_CID))))
         });
         bytes[] memory sigs = new bytes[](2);
         sigs[0] = _signRulingLocal(r, fixed0Pk);
@@ -225,7 +233,7 @@ contract BondEscalationHandler is Test {
         address who = _pickActor(aSeed);
         vm.startPrank(who);
         usdc.approve(address(bondEscalation), type(uint256).max);
-        bondEscalation.submitAIRuling(disputeId, r, sigs);
+        bondEscalation.submitAIRuling(disputeId, r, EVIDENCE_CID, REASONING_CID, sigs);
         vm.stopPrank();
 
         _recordDeposit(disputeId, who);
@@ -321,7 +329,7 @@ contract BondEscalationHandler is Test {
         address who = _pickActor(aSeed);
         vm.startPrank(who);
         usdc.approve(address(bondEscalation), type(uint256).max);
-        bondEscalation.escalateToUMA(disputeId, "QmEvidenceCID");
+        bondEscalation.escalateToUMA(disputeId, "QmEvidenceCID", REASONING_CID);
         vm.stopPrank();
         callsEscalate++;
     }

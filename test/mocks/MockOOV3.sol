@@ -156,6 +156,32 @@ contract MockOOV3 is IOptimisticOracleV3 {
     }
 
     // ---------------------------------------------------------------------------------------
+    // IdentifierWhitelist flow — models UMA Finder -> IdentifierWhitelist so BondEscalation's
+    // runtime identifier-selection guard (`_resolveWhitelistedIdentifier`) exercises the SAME
+    // path against the mock as against the real OOV3. This mock doubles as its own Finder and
+    // IdentifierWhitelist, whitelisting exactly its own default identifier (ASSERT_TRUTH). Thus
+    // mock-driven unit tests continue to assert with ASSERT_TRUTH, while the real-oracle fork test
+    // (where ASSERT_TRUTH is de-whitelisted) exercises the ASSERT_TRUTH2 fallback.
+    // ---------------------------------------------------------------------------------------
+
+    /// @inheritdoc IOptimisticOracleV3
+    /// @dev The mock is its own Finder (see `getImplementationAddress`).
+    function finder() external view override returns (address) {
+        return address(this);
+    }
+
+    /// @notice IUMAFinder surface: resolves every registry name to this mock (which also serves as
+    ///         the IdentifierWhitelist). Not part of IOptimisticOracleV3 — matched by selector.
+    function getImplementationAddress(bytes32 /* interfaceName */ ) external view returns (address) {
+        return address(this);
+    }
+
+    /// @notice IUMAIdentifierWhitelist surface: whitelists exactly this mock's default identifier.
+    function isIdentifierSupported(bytes32 identifier) external pure returns (bool) {
+        return identifier == DEFAULT_IDENTIFIER;
+    }
+
+    // ---------------------------------------------------------------------------------------
     // Test-only helpers (NOT part of IOptimisticOracleV3)
     // ---------------------------------------------------------------------------------------
 

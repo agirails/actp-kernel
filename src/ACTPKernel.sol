@@ -44,6 +44,8 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         uint256 requesterAgentId; // AIP-14: Requester's ERC-8004 agent ID (0 if not an agent)
         address disputeInitiator; // AIP-14: Who opened the dispute (for bond return)
         uint256 disputeBond; // AIP-14: Bond amount locked at dispute time
+        bytes32 resultHash; // AIP-14c: keccak of delivered result (public plaintext / encrypted envelope), committed at DELIVERED
+        bytes32 agreementHash; // AIP-14c: keccak of request+input+SLA (NOT the quote), committed at createTransaction
     }
 
     mapping(bytes32 => Transaction) private transactions;
@@ -92,6 +94,8 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
     uint256 public immutable recoveryGrace;
 
     mapping(address => bool) public approvedEscrowVaults;
+    /// @notice [Apex 2026-07-12 H4] Scheduled vault-revocation unlock time (0 = none pending).
+    mapping(address => uint256) public pendingVaultRevocationAt;
     mapping(address => bool) public approvedMediators;
     mapping(address => uint256) public mediatorApprovedAt;
     mapping(address => uint256) public mediatorRevokedAt; // [C-1 FIX] Track revocation time to prevent timelock bypass
@@ -100,6 +104,11 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
 
     event MediatorApproved(address indexed mediator, bool approved);
     event AdminTransferInitiated(address indexed currentAdmin, address indexed pendingAdmin);
+    /// @notice [Apex 2026-07-12 H4] Timelocked vault-revocation lifecycle.
+    event EscrowVaultRevocationScheduled(address indexed vault, uint256 executeAfter);
+    event EscrowVaultRevocationCancelled(address indexed vault);
+    /// @notice [Apex 2026-07-12 F-III] Live dispute-bond-rate change (in-flight txns keep the locked rate, INV-30).
+    event DisputeBondBpsUpdated(uint16 oldBps, uint16 newBps);
     event AgentRegistryUpdated(address indexed oldRegistry, address indexed newRegistry);
     event AgentRegistryUpdateScheduled(address indexed newRegistry, uint256 executeAfter);
     event AgentRegistryUpdateCancelled(address indexed newRegistry, uint256 timestamp);
@@ -190,6 +199,7 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         uint256 deadline,
         uint256 disputeWindow,
         bytes32 serviceHash,
+        bytes32 agreementHash,
         uint256 agentId,
         uint256 requesterAgentId
     ) external override whenNotPaused returns (bytes32 transactionId) {
@@ -224,6 +234,7 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         txn.deadline = deadline;
         txn.disputeWindow = disputeWindow;
         txn.serviceHash = serviceHash;
+        txn.agreementHash = agreementHash; // AIP-14c: request+input+SLA commitment (0 = no auto AI ruling)
         txn.platformFeeBpsLocked = platformFeeBps; // AIP-5: Lock current platform fee % at creation
         txn.requesterPenaltyBpsLocked = requesterPenaltyBps; // Lock penalty rate at creation
         txn.disputeBondBpsLocked = disputeBondBps; // INV-30: Lock dispute bond rate at creation (immune to live updateDisputeBondBps changes)
@@ -231,7 +242,7 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         txn.requesterAgentId = requesterAgentId; // AIP-14: Requester's ERC-8004 agent ID
 
         // State changes must be observable
-        emit TransactionCreated(transactionId, requester, provider, amount, serviceHash, deadline, block.timestamp, agentId);
+        emit TransactionCreated(transactionId, requester, provider, amount, serviceHash, deadline, block.timestamp, agentId, agreementHash);
     }
 
     /// @notice The single general-purpose state-machine entrypoint. Frozen by pause.
@@ -294,11 +305,14 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         _enforceTiming(txn, oldState, newState);
 
         if (newState == State.DELIVERED) {
-            // Bilateral protection: both parties get dispute window
-            uint256 window = _decodeDisputeWindow(proof);
-            uint256 windowDuration = (window == 0 ? DEFAULT_DISPUTE_WINDOW : window);
-            require(block.timestamp <= type(uint256).max - windowDuration, "Timestamp overflow");
-            txn.disputeWindow = block.timestamp + windowDuration;
+            // AIP-14c (D1): the DELIVERED proof MUST be the 64-byte (window, resultHash) tuple with an
+            // explicit bounded non-zero window and a non-zero resultHash. Legacy empty/32-byte proofs are
+            // rejected on v2 — no default-window sentinel, and every delivery commits its result hash so a
+            // dispute always has an on-chain-anchored deliverable to authenticate against.
+            (uint256 window, bytes32 resultHash) = _decodeDeliveryProof(proof);
+            require(block.timestamp <= type(uint256).max - window, "Timestamp overflow");
+            txn.disputeWindow = block.timestamp + window;
+            txn.resultHash = resultHash;
         } else if (newState == State.QUOTED && proof.length > 0) {
             // AIP-2: Store quote hash for verification (optional - only if proof provided)
             require(proof.length == 32, "Quote hash must be 32 bytes");
@@ -367,8 +381,16 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
                 agentId: txn.agentId, // ERC-8004 agent ID
                 requesterAgentId: txn.requesterAgentId, // AIP-14
                 disputeInitiator: txn.disputeInitiator, // AIP-14
-                disputeBond: txn.disputeBond // AIP-14
+                disputeBond: txn.disputeBond, // AIP-14
+                resultHash: txn.resultHash, // AIP-14c
+                agreementHash: txn.agreementHash // AIP-14c
             });
+    }
+
+    /// @notice Deterministic on-chain identity of this kernel build (AIP-14c §6). Deploy gates pin
+    ///         this PLUS the network-specific audited runtime codehash — never a human version string.
+    function kernelVersion() external pure returns (bytes32) {
+        return keccak256("ACTP_KERNEL_V2_AIP14C_REV2");
     }
 
     // ---------------------------------------------------------------------
@@ -383,7 +405,7 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         usedEscrowIds[escrowContract][escrowId] = true;
 
         Transaction storage txn = _getTransaction(transactionId);
-        require(txn.state == State.INITIATED || txn.state == State.QUOTED, "Invalid state for linking escrow");
+        require(txn.state == State.INITIATED || txn.state == State.QUOTED, "Invalid state for linkEscrow");
         // Authorization: only transaction requester
         require(msg.sender == txn.requester, "Only requester");
         require(block.timestamp <= txn.deadline, "Transaction expired");
@@ -577,8 +599,42 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
 
     function approveEscrowVault(address vault, bool approved) external onlyAdmin {
         require(vault != address(0), "Zero vault");
-        approvedEscrowVaults[vault] = approved;
-        emit EscrowVaultApproved(vault, approved);
+        // [Apex 2026-07-12 H4] Approval stays immediate (grants no withdrawal power), but
+        // REVOCATION is the dangerous direction: every payout/refund/mediator path hard-requires
+        // the approval flag, so an instant revoke would freeze ALL in-flight escrow in that vault
+        // in a single tx (compromised admin / fat-finger). Revocation must go through the
+        // ECONOMIC_PARAM_DELAY schedule below — same discipline as economic params.
+        require(approved, "Revocation must be scheduled");
+        // Re-approval doubles as the CANCEL of any scheduled revocation (a fresh admin
+        // approval statement supersedes the pending removal — no surprise execution later).
+        if (pendingVaultRevocationAt[vault] != 0) {
+            delete pendingVaultRevocationAt[vault];
+            emit EscrowVaultRevocationCancelled(vault);
+        }
+        approvedEscrowVaults[vault] = true;
+        emit EscrowVaultApproved(vault, true);
+    }
+
+    /// @notice [Apex H4] Schedule a vault revocation behind the 2-day economic-param delay.
+    /// @dev Cancel by re-calling `approveEscrowVault(vault, true)` before execution.
+    function scheduleEscrowVaultRevocation(address vault) external onlyAdmin {
+        require(approvedEscrowVaults[vault], "Vault not approved");
+        require(pendingVaultRevocationAt[vault] == 0, "Revocation already scheduled");
+        pendingVaultRevocationAt[vault] = block.timestamp + ECONOMIC_PARAM_DELAY;
+        emit EscrowVaultRevocationScheduled(vault, pendingVaultRevocationAt[vault]);
+    }
+
+    /// @notice [Apex H4] Execute a scheduled vault revocation after the timelock expires.
+    /// @dev Permissionless post-timelock (same rationale as executeAgentRegistryUpdate);
+    ///      admin can cancel instead. The 2-day window gives in-flight transactions and
+    ///      watchers time to settle/react before the vault is frozen out.
+    function executeEscrowVaultRevocation(address vault) external {
+        uint256 executeAfter = pendingVaultRevocationAt[vault];
+        require(executeAfter != 0, "No scheduled revocation");
+        require(block.timestamp >= executeAfter, "Timelock not expired");
+        delete pendingVaultRevocationAt[vault];
+        approvedEscrowVaults[vault] = false;
+        emit EscrowVaultApproved(vault, false);
     }
 
     /**
@@ -598,7 +654,7 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
             if (mediatorRevokedAt[mediator] > 0) {
                 require(
                     block.timestamp >= mediatorRevokedAt[mediator] + MEDIATOR_APPROVAL_DELAY,
-                    "Cannot bypass timelock via revoke-reapprove"
+                    "Revoke-reapprove timelock"
                 );
             }
 
@@ -619,7 +675,7 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
 
     function scheduleAgentRegistryUpdate(address newRegistry) external onlyAdmin {
         require(newRegistry != address(0), "Zero registry");
-        require(!pendingRegistryUpdate.active, "Pending update exists - cancel first");
+        require(!pendingRegistryUpdate.active, "Pending update - cancel first");
 
         pendingRegistryUpdate = PendingRegistryUpdate({
             newRegistry: newRegistry,
@@ -668,7 +724,7 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
     }
 
     function scheduleEconomicParams(uint16 newPlatformFeeBps, uint16 newRequesterPenaltyBps) external override onlyAdmin {
-        require(!pendingEconomicParams.active, "Pending update exists - cancel first");
+        require(!pendingEconomicParams.active, "Pending update - cancel first");
         _validatePlatformFee(newPlatformFeeBps);
         _validateRequesterPenalty(newRequesterPenaltyBps);
 
@@ -808,7 +864,7 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
 
         // [H-4 FIX] Prevent requester from canceling after work started (IN_PROGRESS state)
         if (fromState == State.IN_PROGRESS && toState == State.CANCELLED) {
-            require(msg.sender != txn.requester, "Cannot cancel after work started");
+            require(msg.sender != txn.requester, "No cancel after work started");
         }
 
         if (fromState == State.COMMITTED && toState == State.CANCELLED) {
@@ -828,18 +884,21 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         }
     }
 
-    function _decodeDisputeWindow(bytes calldata proof) internal view returns (uint256) {
-        if (proof.length == 0) return 0;
-        require(proof.length == 32, "Invalid dispute window proof");
-        uint256 window = abi.decode(proof, (uint256));
-        // If window is 0, DEFAULT_DISPUTE_WINDOW will be used (which meets minimum)
-        // If window > 0, enforce minimum and maximum bounds
-        if (window > 0) {
-            require(window >= MIN_DISPUTE_WINDOW, "Dispute window too short");
-            require(window <= MAX_DISPUTE_WINDOW, "Dispute window too long");
-        }
-        require(window <= type(uint256).max - block.timestamp, "Timestamp overflow");
-        return window;
+    /// @dev AIP-14c (D1): decode + validate the DELIVERED-transition proof. MUST be exactly 64 bytes,
+    ///      `abi.encode(uint256 window, bytes32 resultHash)`, with an explicit bounded non-zero `window`
+    ///      (`window == 0` forbidden — NOT a default sentinel) and a non-zero `resultHash`. Legacy
+    ///      empty/32-byte proofs are rejected. `resultHash` is the on-chain commitment of the delivered
+    ///      result (public plaintext hash or encrypted-envelope hash — see AIP-14c §2 D2).
+    function _decodeDeliveryProof(bytes calldata proof)
+        internal
+        pure
+        returns (uint256 window, bytes32 resultHash)
+    {
+        require(proof.length == 64, "Delivery proof must be (window,resultHash)");
+        (window, resultHash) = abi.decode(proof, (uint256, bytes32));
+        require(window >= MIN_DISPUTE_WINDOW, "Dispute window too short");
+        require(window <= MAX_DISPUTE_WINDOW, "Dispute window too long");
+        require(resultHash != bytes32(0), "resultHash required");
     }
 
     function _decodeResolutionProof(bytes calldata proof)
@@ -932,7 +991,7 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         // Previously, empty proof defaulted to full payout to provider — this allowed
         // a compromised admin to resolve disputes without evidence. Now reverts.
         // Must be checked BEFORE any state changes (CEI pattern).
-        require(hasResolution, "Dispute resolution requires explicit proof");
+        require(hasResolution, "Explicit resolution required");
 
         // [C-2 FIX] Update reputation only if not yet processed by current registry (prevents double-counting on registry upgrade)
         // AIP-14: Pass providerAtFault instead of txn.wasDisputed — only at-fault disputes affect reputation
@@ -1000,7 +1059,7 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
                 uint256 totalDistributed = requesterAmount + providerAmount + mediatorAmount;
                 require(totalDistributed > 0, "Empty resolution not allowed");
                 require(totalDistributed == remaining, "Must distribute ALL funds");
-                require(totalDistributed <= txn.amount, "Resolution exceeds transaction amount");
+                require(totalDistributed <= txn.amount, "Resolution exceeds amount");
 
                 if (providerAmount > 0) {
                     _payoutProviderAmount(txn, vault, providerAmount);
@@ -1020,6 +1079,14 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
 
         // AIP-14: Return bond on non-resolution DISPUTED→CANCELLED
         if (oldState == State.DISPUTED) {
+            // [Apex 2026-07-12 F-II] M-2 proof symmetry now also guards the CANCELLED path: on a
+            // v2 kernel every DISPUTED transaction passed DELIVERED (resultHash committed), so an
+            // EMPTY-proof dismissal falling through to a FULL requester refund would let a resolver
+            // silently zero out a provider whose delivery is anchored on-chain. A full-refund
+            // dismissal stays possible — but only via an EXPLICIT (remaining, 0) resolution proof,
+            // which keeps the distribution auditable. (Pre-delivery disputes cannot exist on v2:
+            // DELIVERED is the only edge into DISPUTED.)
+            require(hasResolution || txn.resultHash == bytes32(0), "Explicit resolution required");
             _distributeBondOnCancellation(txn, vault);
         }
 
@@ -1084,7 +1151,11 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
     function _distributeFee(Transaction storage txn, IEscrowValidator vault, uint256 totalFee) internal {
         // Split fee: 0.1% to archive treasury, 99.9% to fee recipient
         uint256 archiveFee;
-        bool archiveSuccess;
+        // [AIP-14c] Amount of the archive portion ACTUALLY removed from escrow. Used below to size the
+        // remaining treasury fee so the archive slice is never double-counted — previously, when
+        // receiveFunds failed, the fee was redirected out of escrow AND still subtracted as if it stayed,
+        // stranding ~archiveFee in the terminal escrow (recoverable by the provider via releaseEscrow).
+        uint256 escrowedArchive;
         if (archiveTreasury != address(0)) {
             archiveFee = (totalFee * ARCHIVE_ALLOCATION_BPS) / MAX_BPS;
             if (archiveFee > 0) {
@@ -1092,12 +1163,18 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
                 // [H-1 FIX] Wrap outer vault.payout in try-catch to prevent entire settlement failure
                 try vault.payout(txn.escrowId, address(this), archiveFee) returns (uint256 payoutResult) {
                     if (payoutResult == archiveFee) {
+                        // archiveFee has LEFT the escrow (paid to the kernel); account it here regardless
+                        // of whether receiveFunds succeeds or we redirect it to feeRecipient below.
+                        escrowedArchive = archiveFee;
                         USDC.forceApprove(archiveTreasury, archiveFee);
                         try IArchiveTreasury(archiveTreasury).receiveFunds(archiveFee) {
-                            archiveSuccess = true;
+                            // Delivered to the archive treasury. [Apex 2026-07-12 F-C] Clear the
+                            // allowance even on success: a non-canonical treasury that RETURNS
+                            // without pulling must not leave a live approval dangling over
+                            // kernel-held USDC (the canonical ArchiveTreasury consumes it fully).
+                            USDC.forceApprove(archiveTreasury, 0);
                         } catch (bytes memory reason) {
                             // Archive treasury failed - redirect to fee recipient
-                            archiveSuccess = false;
                             emit ArchiveTreasuryFailed(txn.transactionId, archiveFee, reason);
                             // [H-1 FIX] Clear dangling approval before redirecting to fee recipient
                             USDC.forceApprove(archiveTreasury, 0);
@@ -1116,6 +1193,7 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
                         // Redirect any partial payout to feeRecipient (don't leave stuck in escrow)
                         if (payoutResult > 0) {
                             USDC.safeTransfer(feeRecipient, payoutResult);
+                            escrowedArchive = payoutResult; // this much already left the escrow
                         }
                         archiveFee = 0;
                     }
@@ -1126,7 +1204,9 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
                 }
             }
         }
-        uint256 treasuryFee = totalFee - (archiveSuccess ? archiveFee : 0);
+        // [AIP-14c fix] Subtract only what the archive path ACTUALLY removed from escrow (never the
+        // nominal archiveFee when it stayed in escrow), so the remaining fee empties the escrow exactly.
+        uint256 treasuryFee = totalFee - escrowedArchive;
         if (treasuryFee > 0) {
             // [AUDIT FIX] Wrap in try-catch to prevent a misconfigured feeRecipient
             // from DOSing all settlements. On failure, fee stays in vault (recoverable).
@@ -1134,7 +1214,10 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
                 require(feeResult == treasuryFee, "Partial fee");
                 emit PlatformFeeAccrued(txn.transactionId, feeRecipient, treasuryFee, block.timestamp);
             } catch {
-                // Fee remains in escrow vault — admin can update feeRecipient and retry
+                // [Apex 2026-07-12 F-IV] Fee remains in the escrow vault for this escrowId. There is
+                // NO in-contract retry on a terminal transaction — recovery is operational: rotate
+                // `feeRecipient` for FUTURE settlements; this txn's stranded fee is surfaced via
+                // ArchivePayoutMismatch for accounting. Only platform fee is affected, never principal.
                 emit ArchivePayoutMismatch(txn.transactionId, treasuryFee, 0);
             }
         }
@@ -1159,7 +1242,7 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         require(amount <= maxMediatorFee, "Mediator fee exceeds maximum");
 
         uint256 actualPayout = vault.payout(txn.escrowId, mediator, amount);
-        require(actualPayout == amount, "Partial mediator payout not allowed");
+        require(actualPayout == amount, "Partial mediator payout");
         emit EscrowMediatorPaid(txn.transactionId, mediator, actualPayout, block.timestamp);
     }
 
@@ -1207,6 +1290,10 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
 
     function updateDisputeBondBps(uint16 newBps) external onlyAdmin {
         require(newBps <= MAX_DISPUTE_BOND_BPS, "Exceeds max bond cap");
+        // [Apex 2026-07-12 F-III] Observability: emit the change. No timelock needed — INV-30
+        // locks the rate per-transaction at creation (disputeBondBpsLocked), so a live update
+        // never touches in-flight transactions and is capped by MAX_DISPUTE_BOND_BPS.
+        emit DisputeBondBpsUpdated(disputeBondBps, newBps);
         disputeBondBps = newBps;
     }
 

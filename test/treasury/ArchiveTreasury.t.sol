@@ -568,6 +568,8 @@ contract MockACTPKernel {
         uint256 requesterAgentId;
         address disputeInitiator;
         uint256 disputeBond;
+        bytes32 resultHash; // AIP-14c: mirror IACTPKernel.TransactionView field order
+        bytes32 agreementHash; // AIP-14c: mirror IACTPKernel.TransactionView field order
     }
 
     mapping(bytes32 => TransactionView) public transactions;
@@ -603,7 +605,9 @@ contract MockACTPKernel {
             agentId: 0,
             requesterAgentId: 0,
             disputeInitiator: address(0),
-            disputeBond: 0
+            disputeBond: 0,
+            resultHash: bytes32(0),
+            agreementHash: bytes32(0)
         });
     }
 

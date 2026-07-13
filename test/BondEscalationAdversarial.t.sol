@@ -118,7 +118,7 @@ contract BondEscalationAdversarialTest is DisputeTestBase {
         vm.startPrank(keeper);
         usdc.approve(address(bondEscalation), INITIAL_BOND);
         vm.expectRevert("Insufficient valid signatures");
-        bondEscalation.submitAIRuling(disputeId, r, sigs);
+        bondEscalation.submitAIRuling(disputeId, r, EVIDENCE_CID, REASONING_CID, sigs);
         vm.stopPrank();
     }
 
@@ -145,7 +145,7 @@ contract BondEscalationAdversarialTest is DisputeTestBase {
         vm.startPrank(keeper);
         usdc.approve(address(bondEscalation), INITIAL_BOND);
         vm.expectRevert("Insufficient valid signatures");
-        bondEscalation.submitAIRuling(disputeId, r, sigs);
+        bondEscalation.submitAIRuling(disputeId, r, EVIDENCE_CID, REASONING_CID, sigs);
         vm.stopPrank();
     }
 
@@ -165,7 +165,7 @@ contract BondEscalationAdversarialTest is DisputeTestBase {
 
         vm.startPrank(keeper);
         usdc.approve(address(bondEscalation), INITIAL_BOND);
-        bondEscalation.submitAIRuling(disputeId, r, sigs); // must NOT revert
+        bondEscalation.submitAIRuling(disputeId, r, EVIDENCE_CID, REASONING_CID, sigs); // must NOT revert
         vm.stopPrank();
 
         assertEq(bondEscalation.lastProposerForRuling(disputeId, 0), keeper, "valid 2/3 should have landed");
@@ -214,7 +214,7 @@ contract BondEscalationAdversarialTest is DisputeTestBase {
 
         vm.startPrank(keeper);
         usdc.approve(address(bondEscalation), INITIAL_BOND);
-        bondEscalation.submitAIRuling(disputeId, r, sigs);
+        bondEscalation.submitAIRuling(disputeId, r, EVIDENCE_CID, REASONING_CID, sigs);
         vm.stopPrank();
 
         assertEq(_tierOf(disputeId), 1, "garbage 3rd sig must not block a valid 2/3");
@@ -242,7 +242,7 @@ contract BondEscalationAdversarialTest is DisputeTestBase {
 
         vm.startPrank(keeper);
         usdc.approve(address(bondEscalation), INITIAL_BOND);
-        bondEscalation.submitAIRuling(disputeId, r, sigs);
+        bondEscalation.submitAIRuling(disputeId, r, EVIDENCE_CID, REASONING_CID, sigs);
         vm.stopPrank();
 
         assertEq(_tierOf(disputeId), 1, "high-s 3rd sig must not block a valid 2/3");
@@ -358,7 +358,9 @@ contract BondEscalationAdversarialTest is DisputeTestBase {
                 r.splitBps,
                 r.timestamp,
                 r.reasoningHash,
-                r.bundleHash
+                r.bundleHash,
+                r.evidenceRefHash,
+                r.reasoningRefHash
             )
         );
         return keccak256(abi.encodePacked("\x19\x01", bondEscalation.DOMAIN_SEPARATOR(), structHash));
@@ -399,7 +401,7 @@ contract BondEscalationAdversarialTest is DisputeTestBase {
 
         vm.startPrank(keeper);
         usdc.approve(address(bondEscalation), 500_000_000);
-        bondEscalation.escalateToUMA(disputeId, "QmEvidenceCID");
+        bondEscalation.escalateToUMA(disputeId, "QmEvidenceCID", "QmReasoningCID");
         vm.stopPrank();
         assertionId = bondEscalation.disputeToAssertion(disputeId);
     }

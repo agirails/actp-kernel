@@ -99,7 +99,7 @@ contract ACTPKernelBranchCoverage2Test is Test {
         AgentRegistry newRegistry = new AgentRegistry(address(kernel));
         kernel.scheduleAgentRegistryUpdate(address(newRegistry));
 
-        vm.expectRevert("Pending update exists - cancel first");
+        vm.expectRevert("Pending update - cancel first");
         kernel.scheduleAgentRegistryUpdate(address(newRegistry));
     }
 
@@ -158,13 +158,13 @@ contract ACTPKernelBranchCoverage2Test is Test {
     function testCreateTransactionRejectsRequesterMismatch() external {
         vm.prank(address(0x999)); // Not the requester
         vm.expectRevert("Requester mismatch");
-        kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"), 0, 0);
+        kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"), bytes32(0), 0, 0);
     }
 
     function testCreateTransactionRejectsDisputeWindowTooLong() external {
         vm.prank(requester);
         vm.expectRevert("Dispute window too long");
-        kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 31 days, keccak256("service"), 0, 0);
+        kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 31 days, keccak256("service"), bytes32(0), 0, 0);
     }
 
     function testCreateTransactionRejectsNonceOverflow() external {
@@ -172,7 +172,7 @@ contract ACTPKernelBranchCoverage2Test is Test {
         // We can't really test nonce overflow without 2^256 transactions
         // So we just verify the logic exists by checking normal flow works
         vm.prank(requester);
-        bytes32 txId = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"), 0, 0);
+        bytes32 txId = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"), bytes32(0), 0, 0);
         assertTrue(txId != bytes32(0));
     }
 
@@ -226,7 +226,7 @@ contract ACTPKernelBranchCoverage2Test is Test {
     function testReleaseEscrowRejectsEscrowMissing() external {
         // Create transaction without escrow
         vm.prank(requester);
-        bytes32 txId = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"), 0, 0);
+        bytes32 txId = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"), bytes32(0), 0, 0);
 
         // Can't get to SETTLED without escrow, so this branch is covered by linkEscrow requirement
     }
@@ -471,11 +471,11 @@ contract ACTPKernelBranchCoverage2Test is Test {
         vm.prank(provider);
         kernel.transitionState(txId, IACTPKernel.State.IN_PROGRESS, "");
 
-        // 16-byte proof (invalid - must be 0 or 32)
+        // 16-byte proof (invalid - must be 64-byte (window,resultHash) tuple)
         bytes memory invalidProof = abi.encodePacked(uint128(3600));
 
         vm.prank(provider);
-        vm.expectRevert("Invalid dispute window proof");
+        vm.expectRevert("Delivery proof must be (window,resultHash)");
         kernel.transitionState(txId, IACTPKernel.State.DELIVERED, invalidProof);
     }
 
@@ -490,7 +490,7 @@ contract ACTPKernelBranchCoverage2Test is Test {
         // Actually, max dispute window is 30 days, so first check catches it
         // The timestamp overflow check is after the max window check, so we can't easily trigger it
         // Let's just verify the window bounds work correctly
-        bytes memory validProof = abi.encode(uint256(1 hours));
+        bytes memory validProof = abi.encode(uint256(1 hours), keccak256("result"));
 
         vm.prank(provider);
         kernel.transitionState(txId, IACTPKernel.State.DELIVERED, validProof);
@@ -552,7 +552,7 @@ contract ACTPKernelBranchCoverage2Test is Test {
 
     function _createTx() internal returns (bytes32 txId) {
         vm.prank(requester);
-        txId = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"), 0, 0);
+        txId = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"), bytes32(0), 0, 0);
     }
 
     function _createCommittedTx() internal returns (bytes32 txId) {
@@ -568,7 +568,7 @@ contract ACTPKernelBranchCoverage2Test is Test {
         kernel.transitionState(txId, IACTPKernel.State.IN_PROGRESS, "");
 
         vm.prank(provider);
-        kernel.transitionState(txId, IACTPKernel.State.DELIVERED, abi.encode(uint256(1 hours)));
+        kernel.transitionState(txId, IACTPKernel.State.DELIVERED, abi.encode(uint256(1 hours), keccak256("result")));
     }
 
     function _createSettledTx() internal returns (bytes32 txId) {

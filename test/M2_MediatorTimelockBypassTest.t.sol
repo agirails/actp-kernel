@@ -83,7 +83,7 @@ contract M2_MediatorTimelockBypassTest is Test {
         // EXPLOIT PREVENTED: Mediator is NOT immediately active at Day 10
         // Create a disputed transaction at Day 10
         vm.prank(requester);
-        bytes32 txId = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"), 0, 0);
+        bytes32 txId = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"), bytes32(0), 0, 0);
 
         vm.startPrank(requester);
         usdc.approve(address(escrow), ONE_USDC);
@@ -94,7 +94,7 @@ contract M2_MediatorTimelockBypassTest is Test {
         kernel.transitionState(txId, IACTPKernel.State.IN_PROGRESS, "");
 
         vm.prank(provider);
-        kernel.transitionState(txId, IACTPKernel.State.DELIVERED, abi.encode(10 days)); // Long dispute window
+        kernel.transitionState(txId, IACTPKernel.State.DELIVERED, abi.encode(10 days, keccak256("result"))); // Long dispute window
 
         // Immediately dispute at Day 10 (before mediator timelock expires)
         vm.startPrank(requester);

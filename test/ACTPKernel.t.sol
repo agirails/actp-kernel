@@ -34,7 +34,7 @@ contract ACTPKernelTest is Test {
 
     function _createBaseTx() internal returns (bytes32 txId) {
         vm.prank(requester);
-        txId = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"), 0, 0);
+        txId = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"), bytes32(0), 0, 0);
     }
 
     function _quote(bytes32 txId) internal {
@@ -53,7 +53,7 @@ contract ACTPKernelTest is Test {
         vm.prank(provider);
         kernel.transitionState(txId, IACTPKernel.State.IN_PROGRESS, "");
         vm.prank(provider);
-        kernel.transitionState(txId, IACTPKernel.State.DELIVERED, abi.encode(disputeWindow));
+        kernel.transitionState(txId, IACTPKernel.State.DELIVERED, abi.encode(disputeWindow, keccak256("result")));
     }
 
     function _splitAmount(uint256 amount) internal view returns (uint256 providerNet, uint256 fee) {
@@ -80,11 +80,11 @@ contract ACTPKernelTest is Test {
         // With nonce-based ID generation, identical parameters produce DIFFERENT txIds
         // Create first transaction
         vm.prank(requester);
-        bytes32 txId1 = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"), 0, 0);
+        bytes32 txId1 = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"), bytes32(0), 0, 0);
 
         // Create second transaction with SAME inputs - should succeed with DIFFERENT txId
         vm.prank(requester);
-        bytes32 txId2 = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"), 0, 0);
+        bytes32 txId2 = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"), bytes32(0), 0, 0);
 
         // Verify both transactions exist with different IDs
         assertTrue(txId1 != txId2, "Nonce should produce different IDs");
@@ -102,7 +102,7 @@ contract ACTPKernelTest is Test {
         bytes32 txId = kernel.createTransaction(
             provider, requester, ONE_USDC,
             block.timestamp + 7 days, 2 days,
-            keccak256("service"), testAgentId, 0
+            keccak256("service"), bytes32(0), testAgentId, 0
         );
 
         IACTPKernel.TransactionView memory txView = kernel.getTransaction(txId);
@@ -114,7 +114,7 @@ contract ACTPKernelTest is Test {
         bytes32 txId = kernel.createTransaction(
             provider, requester, ONE_USDC,
             block.timestamp + 7 days, 2 days,
-            keccak256("service"), 0, 0
+            keccak256("service"), bytes32(0), 0, 0
         );
 
         IACTPKernel.TransactionView memory txView = kernel.getTransaction(txId);
@@ -142,7 +142,13 @@ contract ACTPKernelTest is Test {
         kernel.transitionState(txId, IACTPKernel.State.DISPUTED, "");
         vm.stopPrank();
 
+        // [Apex F-II] An empty-proof dismissal of a DELIVERED dispute is rejected; the
+        // full-refund dismissal needs an EXPLICIT (remaining, 0) resolution proof.
+        vm.expectRevert("Explicit resolution required");
         kernel.transitionState(txId, IACTPKernel.State.CANCELLED, "");
+
+        uint256 remaining = escrow.remaining(escrowId);
+        kernel.transitionState(txId, IACTPKernel.State.CANCELLED, abi.encode(remaining, uint256(0)));
         IACTPKernel.TransactionView memory viewData = kernel.getTransaction(txId);
         assertEq(uint8(viewData.state), uint8(IACTPKernel.State.CANCELLED));
         assertEq(usdc.balanceOf(requester), 1_000_000_000); // refunded
@@ -166,7 +172,7 @@ contract ACTPKernelTest is Test {
     function testCancelBeforeDeadlineFailsUntilExpired() external {
         // Use a short deadline (1 day) for this test to check cancel behavior
         vm.prank(requester);
-        bytes32 txId = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 1 days, 2 days, keccak256("service"), 0, 0);
+        bytes32 txId = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 1 days, 2 days, keccak256("service"), bytes32(0), 0, 0);
 
         _quote(txId);
         bytes32 escrowId = keccak256("escrow4");
@@ -186,7 +192,7 @@ contract ACTPKernelTest is Test {
         _quote(txId);
         bytes32 escrowId = keccak256("escrow5");
         _commit(txId, escrowId, ONE_USDC);
-        _deliver(txId, 0);
+        _deliver(txId, 1 days);
 
         vm.prank(requester);
         kernel.transitionState(txId, IACTPKernel.State.SETTLED, "");
@@ -224,7 +230,7 @@ contract ACTPKernelTest is Test {
         _quote(txId);
         bytes32 escrowId = keccak256("escrow6");
         _commit(txId, escrowId, ONE_USDC);
-        _deliver(txId, 0);
+        _deliver(txId, 1 days);
 
         vm.prank(requester);
         kernel.transitionState(txId, IACTPKernel.State.SETTLED, "");
@@ -276,7 +282,7 @@ contract ACTPKernelTest is Test {
 
         // [H-4 FIX] Requester should NOT be able to cancel after work started
         vm.prank(requester);
-        vm.expectRevert(bytes("Cannot cancel after work started"));
+        vm.expectRevert(bytes("No cancel after work started"));
         kernel.transitionState(txId, IACTPKernel.State.CANCELLED, "");
     }
 
@@ -440,7 +446,7 @@ contract ACTPKernelTest is Test {
         kernel.scheduleEconomicParams(200, 600);
 
         // Try to schedule another while first is pending (should revert)
-        vm.expectRevert("Pending update exists - cancel first");
+        vm.expectRevert("Pending update - cancel first");
         kernel.scheduleEconomicParams(300, 700);
 
         // Cancel first, then new schedule should work
@@ -474,7 +480,7 @@ contract ACTPKernelTest is Test {
 
         // Create transaction with original fee (1%)
         vm.prank(requester);
-        bytes32 txId = kernel.createTransaction(provider, requester, TEN_USDC, block.timestamp + 1 days, 2 days, keccak256("aip5test1fee"), 0, 0);
+        bytes32 txId = kernel.createTransaction(provider, requester, TEN_USDC, block.timestamp + 1 days, 2 days, keccak256("aip5test1fee"), bytes32(0), 0, 0);
         bytes32 escrowId = keccak256("aip5test1");
         _commit(txId, escrowId, TEN_USDC);
         _deliver(txId, 1 days);
@@ -519,7 +525,7 @@ contract ACTPKernelTest is Test {
 
         // Create second transaction with new fee
         vm.prank(requester);
-        bytes32 txId2 = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 1 days, 2 days, bytes32(uint256(1)), 0, 0);
+        bytes32 txId2 = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 1 days, 2 days, bytes32(uint256(1)), bytes32(0), 0, 0);
 
         // Verify first transaction locked original fee
         IACTPKernel.TransactionView memory txView1 = kernel.getTransaction(txId1);
@@ -535,7 +541,7 @@ contract ACTPKernelTest is Test {
 
         // Create transaction with 1% fee
         vm.prank(requester);
-        bytes32 txId = kernel.createTransaction(provider, requester, TEN_USDC, block.timestamp + 1 days, 2 days, keccak256("aip5settlement-svc"), 0, 0);
+        bytes32 txId = kernel.createTransaction(provider, requester, TEN_USDC, block.timestamp + 1 days, 2 days, keccak256("aip5settlement-svc"), bytes32(0), 0, 0);
         uint16 lockedFee = kernel.platformFeeBps(); // 100 bps = 1%
 
         bytes32 escrowId = keccak256("aip5settlement");
@@ -569,7 +575,7 @@ contract ACTPKernelTest is Test {
 
         // Create transaction with 1% fee
         vm.prank(requester);
-        bytes32 txId = kernel.createTransaction(provider, requester, TEN_USDC, block.timestamp + 1 days, 2 days, keccak256("aip5milestone-svc"), 0, 0);
+        bytes32 txId = kernel.createTransaction(provider, requester, TEN_USDC, block.timestamp + 1 days, 2 days, keccak256("aip5milestone-svc"), bytes32(0), 0, 0);
         uint16 lockedFee = kernel.platformFeeBps(); // 100 bps = 1%
 
         bytes32 escrowId = keccak256("aip5milestone");
@@ -728,7 +734,7 @@ contract ACTPKernelTest is Test {
     // Returns to IN_PROGRESS with escrow holding `amount`.
     function _toInProgress(bytes32 svc, uint256 deadline, uint256 amount) internal returns (bytes32 txId) {
         vm.prank(requester);
-        txId = kernel.createTransaction(provider, requester, amount, deadline, 2 days, svc, 0, 0);
+        txId = kernel.createTransaction(provider, requester, amount, deadline, 2 days, svc, bytes32(0), 0, 0);
         _quote(txId);
         _commit(txId, svc, amount);
         vm.prank(provider);
@@ -768,7 +774,7 @@ contract ACTPKernelTest is Test {
         // Even AFTER deadline+grace, the cancellation path (transitionState) stays blocked.
         vm.warp(deadline + RECOVERY_GRACE + 1);
         vm.prank(requester);
-        vm.expectRevert(bytes("Cannot cancel after work started"));
+        vm.expectRevert(bytes("No cancel after work started"));
         kernel.transitionState(txId, IACTPKernel.State.CANCELLED, "");
     }
 
@@ -835,7 +841,7 @@ contract ACTPKernelTest is Test {
         kernel.createTransaction(
             provider, requester, ONE_USDC,
             block.timestamp + 1 hours - 1, // just under MIN_DEADLINE floor
-            2 days, keccak256("f6mindeadline"), 0, 0
+            2 days, keccak256("f6mindeadline"), bytes32(0), 0, 0
         );
     }
 
@@ -891,7 +897,7 @@ contract ACTPKernelTest is Test {
         // Sanity: normal transitions are frozen...
         vm.prank(provider);
         vm.expectRevert(bytes("Kernel paused"));
-        kernel.transitionState(txId, IACTPKernel.State.DELIVERED, abi.encode(uint256(1 days)));
+        kernel.transitionState(txId, IACTPKernel.State.DELIVERED, abi.encode(uint256(1 days), keccak256("result")));
 
         // ...but fund recovery still works under pause.
         kernel.recoverStalledInProgress(txId);
@@ -920,7 +926,7 @@ contract ACTPKernelTest is Test {
         // After the deadline but before deadline+recoveryGrace: delivery still allowed.
         vm.warp(deadline + RECOVERY_GRACE - 1);
         vm.prank(provider);
-        kernel.transitionState(txId, IACTPKernel.State.DELIVERED, abi.encode(uint256(1 hours)));
+        kernel.transitionState(txId, IACTPKernel.State.DELIVERED, abi.encode(uint256(1 hours), keccak256("result")));
 
         IACTPKernel.TransactionView memory v = kernel.getTransaction(txId);
         assertEq(uint8(v.state), uint8(IACTPKernel.State.DELIVERED), "delivered during grace");
@@ -945,7 +951,7 @@ contract ACTPKernelTest is Test {
 
         vm.prank(provider);
         vm.expectRevert(bytes("Delivery grace expired"));
-        kernel.transitionState(txId, IACTPKernel.State.DELIVERED, abi.encode(uint256(1 hours)));
+        kernel.transitionState(txId, IACTPKernel.State.DELIVERED, abi.encode(uint256(1 hours), keccak256("result")));
 
         // Recovery succeeds at the same instant.
         kernel.recoverStalledInProgress(txId);

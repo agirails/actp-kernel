@@ -75,7 +75,7 @@ contract PoC_UMABondTheft is DisputeTestBase {
         // The non-participant attacker only posts the $500 UMA bond; the honest keeper keeps the slot.
         vm.startPrank(attacker);
         usdc.approve(address(bondEscalation), UMA_BOND);
-        bondEscalation.escalateToUMA(disputeId, "QmAttackerEvidenceCID");
+        bondEscalation.escalateToUMA(disputeId, "QmAttackerEvidenceCID", "QmReasoningCID");
         vm.stopPrank();
 
         assertEq(

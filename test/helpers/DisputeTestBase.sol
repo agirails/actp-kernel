@@ -56,8 +56,24 @@ abstract contract DisputeTestBase is Test {
 
     // EIP-712 typehash mirror (MUST match BondEscalation.RULING_TYPEHASH).
     bytes32 internal constant RULING_TYPEHASH = keccak256(
-        "AIRuling(bytes32 disputeId,uint8 ruling,uint16 confidence,uint16 splitBps,uint64 timestamp,bytes32 reasoningHash,bytes32 bundleHash)"
+        "AIRuling(bytes32 disputeId,uint8 ruling,uint16 confidence,uint16 splitBps,uint64 timestamp,bytes32 reasoningHash,bytes32 bundleHash,bytes32 evidenceRefHash,bytes32 reasoningRefHash)"
     );
+
+    // AIP-14c D7: canonical evidence/reasoning CIDs used by `_ruling()`. The ruling's ref-hashes are
+    // derived from these via the on-chain formula, so `submitAIRuling(..., EVIDENCE_CID, REASONING_CID,
+    // ...)` recomputes matching refs. Helpers below expose the derivation for manual-ruling call sites.
+    string internal constant EVIDENCE_CID = "QmEvidenceCID";
+    string internal constant REASONING_CID = "QmReasoningCID";
+
+    /// @notice D7 ref derivation, mirroring BondEscalation.submitAIRuling (abi.encode, NOT encodePacked).
+    function _evidenceRef(bytes32 bundleHash, string memory cid) internal pure returns (bytes32) {
+        return keccak256(abi.encode(bundleHash, keccak256(bytes(cid))));
+    }
+
+    /// @notice Convenience wrapper: submit an AI ruling built by `_ruling()` with the canonical CIDs.
+    function _submitAIRuling(bytes32 disputeId, AIRuling memory r, bytes[] memory sigs) internal {
+        bondEscalation.submitAIRuling(disputeId, r, EVIDENCE_CID, REASONING_CID, sigs);
+    }
 
     function _setUpStack() internal {
         // 1) Token + kernel + escrow (mirrors ResolverAuth.t.sol setUp).
@@ -118,7 +134,7 @@ abstract contract DisputeTestBase is Test {
     function _createDisputed() internal returns (bytes32 txId) {
         vm.prank(requester);
         txId = kernel.createTransaction(
-            provider, requester, TRANSACTION_AMOUNT, block.timestamp + 30 days, 2 days, keccak256("service"), 0, 0
+            provider, requester, TRANSACTION_AMOUNT, block.timestamp + 30 days, 2 days, keccak256("service"), bytes32(0), 0, 0
         );
 
         vm.startPrank(requester);
@@ -129,7 +145,7 @@ abstract contract DisputeTestBase is Test {
         vm.prank(provider);
         kernel.transitionState(txId, IACTPKernel.State.IN_PROGRESS, "");
         vm.prank(provider);
-        kernel.transitionState(txId, IACTPKernel.State.DELIVERED, abi.encode(10 days));
+        kernel.transitionState(txId, IACTPKernel.State.DELIVERED, abi.encode(10 days, keccak256("result")));
 
         uint256 bond = (TRANSACTION_AMOUNT * kernel.disputeBondBps()) / kernel.MAX_BPS();
         vm.startPrank(requester);
@@ -151,7 +167,9 @@ abstract contract DisputeTestBase is Test {
                 ruling.splitBps,
                 ruling.timestamp,
                 ruling.reasoningHash,
-                ruling.bundleHash
+                ruling.bundleHash,
+                ruling.evidenceRefHash,
+                ruling.reasoningRefHash
             )
         );
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", bondEscalation.DOMAIN_SEPARATOR(), structHash));
@@ -168,7 +186,10 @@ abstract contract DisputeTestBase is Test {
             splitBps: splitBps,
             timestamp: uint64(block.timestamp),
             reasoningHash: keccak256("reasoning"),
-            bundleHash: keccak256("bundle")
+            bundleHash: keccak256("bundle"),
+            // AIP-14c D7: refs derived from the canonical CIDs so submitAIRuling's recompute matches.
+            evidenceRefHash: _evidenceRef(keccak256("bundle"), EVIDENCE_CID),
+            reasoningRefHash: _evidenceRef(keccak256("reasoning"), REASONING_CID)
         });
     }
 

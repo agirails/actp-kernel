@@ -45,7 +45,7 @@ contract EscrowReuseTest is Test {
         // ==================== TX1: Normal transaction lifecycle ====================
         // Alice creates transaction
         vm.prank(alice);
-        bytes32 tx1 = kernel.createTransaction(bob, alice, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service1"), 0, 0);
+        bytes32 tx1 = kernel.createTransaction(bob, alice, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service1"), bytes32(0), 0, 0);
 
         // Bob quotes
         vm.prank(bob);
@@ -61,7 +61,7 @@ contract EscrowReuseTest is Test {
         vm.prank(bob);
         kernel.transitionState(tx1, IACTPKernel.State.IN_PROGRESS, "");
         vm.prank(bob);
-        kernel.transitionState(tx1, IACTPKernel.State.DELIVERED, abi.encode(1 hours));
+        kernel.transitionState(tx1, IACTPKernel.State.DELIVERED, abi.encode(1 hours, keccak256("result")));
 
         // Alice settles (or wait for dispute window)
         vm.warp(block.timestamp + 1 hours + 1);
@@ -76,7 +76,7 @@ contract EscrowReuseTest is Test {
         // ==================== TX2: Attacker tries to reuse escrowId (SHOULD FAIL) ====================
         // Attacker creates transaction (attacker is now requester)
         vm.prank(attacker);
-        bytes32 tx2 = kernel.createTransaction(bob, attacker, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service2"), 0, 0);
+        bytes32 tx2 = kernel.createTransaction(bob, attacker, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service2"), bytes32(0), 0, 0);
 
         // SECURITY FIX: Trying to reuse SAME escrowId should REVERT with "Escrow ID already used"
         vm.startPrank(attacker);
@@ -94,7 +94,7 @@ contract EscrowReuseTest is Test {
 
         // TX1: Create and cancel
         vm.prank(alice);
-        bytes32 tx1 = kernel.createTransaction(bob, alice, ONE_USDC, block.timestamp + 1 days, 2 days, keccak256("service"), 0, 0);
+        bytes32 tx1 = kernel.createTransaction(bob, alice, ONE_USDC, block.timestamp + 1 days, 2 days, keccak256("service"), bytes32(0), 0, 0);
 
         vm.prank(bob);
         kernel.transitionState(tx1, IACTPKernel.State.QUOTED, "");
@@ -114,7 +114,7 @@ contract EscrowReuseTest is Test {
 
         // TX2: Try to reuse escrowId - SHOULD FAIL
         vm.prank(attacker);
-        bytes32 tx2 = kernel.createTransaction(bob, attacker, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service2"), 0, 0);
+        bytes32 tx2 = kernel.createTransaction(bob, attacker, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service2"), bytes32(0), 0, 0);
 
         // SECURITY FIX: Escrow ID is permanently banned, cannot be reused
         vm.startPrank(attacker);
@@ -133,7 +133,7 @@ contract EscrowReuseTest is Test {
 
         // TX1: Alice creates transaction
         vm.prank(alice);
-        bytes32 tx1 = kernel.createTransaction(bob, alice, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service1"), 0, 0);
+        bytes32 tx1 = kernel.createTransaction(bob, alice, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service1"), bytes32(0), 0, 0);
 
         vm.startPrank(alice);
         usdc.approve(address(escrow), ONE_USDC);
@@ -142,7 +142,7 @@ contract EscrowReuseTest is Test {
 
         // TX2: Alice tries to create another transaction with SAME escrowId - SHOULD FAIL
         vm.prank(alice);
-        bytes32 tx2 = kernel.createTransaction(bob, alice, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service2"), 0, 0);
+        bytes32 tx2 = kernel.createTransaction(bob, alice, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service2"), bytes32(0), 0, 0);
 
         vm.startPrank(alice);
         usdc.approve(address(escrow), ONE_USDC);
@@ -159,7 +159,7 @@ contract EscrowReuseTest is Test {
         bytes32 escrowId1 = keccak256("escrow1");
 
         vm.prank(alice);
-        bytes32 tx1 = kernel.createTransaction(bob, alice, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service1"), 0, 0);
+        bytes32 tx1 = kernel.createTransaction(bob, alice, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service1"), bytes32(0), 0, 0);
 
         vm.startPrank(alice);
         usdc.approve(address(escrow), ONE_USDC);
@@ -170,7 +170,7 @@ contract EscrowReuseTest is Test {
         bytes32 escrowId2 = keccak256("escrow2"); // DIFFERENT ID
 
         vm.prank(alice);
-        bytes32 tx2 = kernel.createTransaction(bob, alice, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service2"), 0, 0);
+        bytes32 tx2 = kernel.createTransaction(bob, alice, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service2"), bytes32(0), 0, 0);
 
         vm.startPrank(alice);
         usdc.approve(address(escrow), ONE_USDC);
@@ -191,7 +191,7 @@ contract EscrowReuseTest is Test {
 
         // TX1: Create and settle
         vm.prank(alice);
-        bytes32 tx1 = kernel.createTransaction(bob, alice, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"), 0, 0);
+        bytes32 tx1 = kernel.createTransaction(bob, alice, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"), bytes32(0), 0, 0);
 
         vm.startPrank(alice);
         usdc.approve(address(escrow), ONE_USDC);
@@ -201,7 +201,7 @@ contract EscrowReuseTest is Test {
         vm.prank(bob);
         kernel.transitionState(tx1, IACTPKernel.State.IN_PROGRESS, "");
         vm.prank(bob);
-        kernel.transitionState(tx1, IACTPKernel.State.DELIVERED, abi.encode(0));
+        kernel.transitionState(tx1, IACTPKernel.State.DELIVERED, abi.encode(uint256(2 days), keccak256("result")));
 
         vm.prank(alice);
         kernel.transitionState(tx1, IACTPKernel.State.SETTLED, "");
@@ -211,7 +211,7 @@ contract EscrowReuseTest is Test {
 
         // TX2: Try to reuse the SAME escrowId - SHOULD FAIL
         vm.prank(attacker);
-        bytes32 tx2 = kernel.createTransaction(bob, attacker, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service2"), 0, 0);
+        bytes32 tx2 = kernel.createTransaction(bob, attacker, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service2"), bytes32(0), 0, 0);
 
         // SECURITY FIX: Escrow ID is permanently banned, cannot be reused
         vm.startPrank(attacker);

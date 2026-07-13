@@ -37,7 +37,7 @@ contract SmokeArmAutoSettle is Script {
         usdc.mint(requester, amount);
         bytes32 txId = kernel.createTransaction(
             provider, requester, amount, block.timestamp + 7 days, disputeWindow,
-            keccak256("smoke-autosettle"), 0, 0
+            keccak256("smoke-autosettle"), bytes32(0), 0, 0
         );
         vm.stopBroadcast();
 
@@ -53,7 +53,7 @@ contract SmokeArmAutoSettle is Script {
 
         vm.startBroadcast(provPk);
         kernel.transitionState(txId, IACTPKernel.State.IN_PROGRESS, "");
-        kernel.transitionState(txId, IACTPKernel.State.DELIVERED, abi.encode(disputeWindow));
+        kernel.transitionState(txId, IACTPKernel.State.DELIVERED, abi.encode(disputeWindow, keccak256("result")));
         vm.stopBroadcast();
 
         IACTPKernel.TransactionView memory v = kernel.getTransaction(txId);

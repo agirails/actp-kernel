@@ -154,7 +154,7 @@ contract ACTPKernelBranchCoverageTest is Test {
 
         vm.prank(requester);
         vm.expectRevert("Kernel paused");
-        bytes32 txId = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"), 0, 0);
+        bytes32 txId = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"), bytes32(0), 0, 0);
     }
 
     function testPausedLinkEscrowReverts() external {
@@ -188,7 +188,16 @@ contract ACTPKernelBranchCoverageTest is Test {
     function testRevokeEscrowVaultClearsApproval() external {
         address vault = address(0x123);
         kernel.approveEscrowVault(vault, true);
+        // [Apex H4] Immediate revocation is rejected; it must go through the 2-day schedule.
+        vm.expectRevert("Revocation must be scheduled");
         kernel.approveEscrowVault(vault, false);
+
+        kernel.scheduleEscrowVaultRevocation(vault);
+        vm.expectRevert("Timelock not expired");
+        kernel.executeEscrowVaultRevocation(vault);
+
+        vm.warp(block.timestamp + 2 days);
+        kernel.executeEscrowVaultRevocation(vault);
         assertFalse(kernel.approvedEscrowVaults(vault));
     }
 
@@ -237,7 +246,7 @@ contract ACTPKernelBranchCoverageTest is Test {
         // SECURITY [C-1 FIX]: Cannot bypass timelock via revoke-reapprove
         // Must wait MEDIATOR_APPROVAL_DELAY (2 days) after revoke before re-approval
         vm.warp(block.timestamp + 1 days);
-        vm.expectRevert("Cannot bypass timelock via revoke-reapprove");
+        vm.expectRevert("Revoke-reapprove timelock");
         kernel.approveMediator(mediator, true);
 
         // After waiting the full delay, re-approval should work
@@ -261,7 +270,7 @@ contract ACTPKernelBranchCoverageTest is Test {
     function testScheduleEconomicParamsRejectsIfActive() external {
         kernel.scheduleEconomicParams(200, 600);
 
-        vm.expectRevert("Pending update exists - cancel first");
+        vm.expectRevert("Pending update - cancel first");
         kernel.scheduleEconomicParams(300, 700);
     }
 
@@ -302,23 +311,23 @@ contract ACTPKernelBranchCoverageTest is Test {
     function testCreateTransactionRejectsZeroProvider() external {
         vm.prank(requester);
         vm.expectRevert("Zero provider");
-        bytes32 txId = kernel.createTransaction(address(0), requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"), 0, 0);
+        bytes32 txId = kernel.createTransaction(address(0), requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"), bytes32(0), 0, 0);
     }
 
     function testCreateTransactionRejectsSelfTransaction() external {
         vm.prank(requester);
         vm.expectRevert("Self-transaction not allowed");
-        bytes32 txId = kernel.createTransaction(requester, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"), 0, 0);
+        bytes32 txId = kernel.createTransaction(requester, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"), bytes32(0), 0, 0);
     }
 
     function testNonceBasedIdAllowsIdenticalParams() external {
         // Nonce-based ID generation allows identical parameters
         vm.prank(requester);
-        bytes32 txId1 = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"), 0, 0);
+        bytes32 txId1 = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"), bytes32(0), 0, 0);
 
         // Second call with identical params succeeds with different ID (due to nonce)
         vm.prank(requester);
-        bytes32 txId2 = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"), 0, 0);
+        bytes32 txId2 = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"), bytes32(0), 0, 0);
 
         // Verify both exist and are different
         assertTrue(txId1 != txId2, "Nonce-based IDs should be unique");
@@ -347,7 +356,7 @@ contract ACTPKernelBranchCoverageTest is Test {
         // Try to link again from wrong state
         vm.startPrank(requester);
         usdc.approve(address(escrow), ONE_USDC);
-        vm.expectRevert("Invalid state for linking escrow");
+        vm.expectRevert("Invalid state for linkEscrow");
         kernel.linkEscrow(txId, address(escrow), keccak256("escrow2"));
         vm.stopPrank();
     }
@@ -376,7 +385,7 @@ contract ACTPKernelBranchCoverageTest is Test {
 
     function testLinkEscrowRejectsAfterDeadline() external {
         vm.prank(requester);
-        bytes32 txId = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 1 hours, 2 days, keccak256("service"), 0, 0);
+        bytes32 txId = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 1 hours, 2 days, keccak256("service"), bytes32(0), 0, 0);
 
         // Warp past deadline
         vm.warp(block.timestamp + 2 hours);
@@ -437,7 +446,7 @@ contract ACTPKernelBranchCoverageTest is Test {
 
     function _createTx() internal returns (bytes32 txId) {
         vm.prank(requester);
-        txId = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"), 0, 0);
+        txId = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"), bytes32(0), 0, 0);
     }
 
     function _createCommittedTx() internal returns (bytes32 txId) {
@@ -455,7 +464,7 @@ contract ACTPKernelBranchCoverageTest is Test {
         kernel.transitionState(txId, IACTPKernel.State.IN_PROGRESS, "");
 
         vm.prank(provider);
-        kernel.transitionState(txId, IACTPKernel.State.DELIVERED, abi.encode(0));
+        kernel.transitionState(txId, IACTPKernel.State.DELIVERED, abi.encode(uint256(2 days), keccak256("result")));
 
         vm.prank(requester);
         kernel.transitionState(txId, IACTPKernel.State.SETTLED, "");

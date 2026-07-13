@@ -41,7 +41,7 @@ contract E2E_AIP14_Fork is Test {
         vm.prank(requester);
         txId = kernel.createTransaction(
             provider, requester, TX_AMOUNT,
-            block.timestamp + 30 days, 2 days, salt, 0, 0
+            block.timestamp + 30 days, 2 days, salt, bytes32(0), 0, 0
         );
 
         vm.prank(requester);
@@ -50,7 +50,7 @@ contract E2E_AIP14_Fork is Test {
         vm.prank(provider);
         kernel.transitionState(txId, IACTPKernel.State.IN_PROGRESS, "");
         vm.prank(provider);
-        kernel.transitionState(txId, IACTPKernel.State.DELIVERED, abi.encode(10 days));
+        kernel.transitionState(txId, IACTPKernel.State.DELIVERED, abi.encode(10 days, keccak256("result")));
 
         uint256 bond = (TX_AMOUNT * kernel.disputeBondBps()) / kernel.MAX_BPS();
         if (bond < kernel.MIN_DISPUTE_BOND()) bond = kernel.MIN_DISPUTE_BOND();
@@ -66,7 +66,7 @@ contract E2E_AIP14_Fork is Test {
         bytes32 txId = kernel.createTransaction(
             provider, requester, TX_AMOUNT,
             block.timestamp + 30 days, 2 days,
-            keccak256("e2e-agentid"), 0, 42
+            keccak256("e2e-agentid"), bytes32(0), 0, 42
         );
 
         IACTPKernel.TransactionView memory txn = kernel.getTransaction(txId);
@@ -127,7 +127,7 @@ contract E2E_AIP14_Fork is Test {
         bytes32 txId = kernel.createTransaction(
             provider, requester, smallAmount,
             block.timestamp + 30 days, 2 days,
-            keccak256("e2e-test4"), 0, 0
+            keccak256("e2e-test4"), bytes32(0), 0, 0
         );
 
         vm.prank(requester);
@@ -136,7 +136,7 @@ contract E2E_AIP14_Fork is Test {
         vm.prank(provider);
         kernel.transitionState(txId, IACTPKernel.State.IN_PROGRESS, "");
         vm.prank(provider);
-        kernel.transitionState(txId, IACTPKernel.State.DELIVERED, abi.encode(10 days));
+        kernel.transitionState(txId, IACTPKernel.State.DELIVERED, abi.encode(10 days, keccak256("result")));
 
         uint256 minBond = kernel.MIN_DISPUTE_BOND();
         vm.startPrank(requester);
@@ -153,7 +153,7 @@ contract E2E_AIP14_Fork is Test {
         bytes32 txId = kernel.createTransaction(
             provider, requester, TX_AMOUNT,
             block.timestamp + 30 days, 2 days,
-            keccak256("e2e-test5"), 0, 0
+            keccak256("e2e-test5"), bytes32(0), 0, 0
         );
 
         vm.prank(requester);
@@ -162,7 +162,7 @@ contract E2E_AIP14_Fork is Test {
         vm.prank(provider);
         kernel.transitionState(txId, IACTPKernel.State.IN_PROGRESS, "");
         vm.prank(provider);
-        kernel.transitionState(txId, IACTPKernel.State.DELIVERED, abi.encode(10 days));
+        kernel.transitionState(txId, IACTPKernel.State.DELIVERED, abi.encode(10 days, keccak256("result")));
 
         // Provider disputes
         uint256 bond = (TX_AMOUNT * kernel.disputeBondBps()) / kernel.MAX_BPS();
@@ -192,14 +192,14 @@ contract E2E_AIP14_Fork is Test {
         bytes32 txId = kernel.createTransaction(
             provider, requester, TX_AMOUNT,
             block.timestamp + 30 days, 2 days,
-            keccak256("e2e-test6"), 0, 0
+            keccak256("e2e-test6"), bytes32(0), 0, 0
         );
         vm.prank(requester);
         kernel.linkEscrow(txId, address(escrow), txId);
         vm.prank(provider);
         kernel.transitionState(txId, IACTPKernel.State.IN_PROGRESS, "");
         vm.prank(provider);
-        kernel.transitionState(txId, IACTPKernel.State.DELIVERED, abi.encode(10 days));
+        kernel.transitionState(txId, IACTPKernel.State.DELIVERED, abi.encode(10 days, keccak256("result")));
 
         uint256 bond = (TX_AMOUNT * kernel.disputeBondBps()) / kernel.MAX_BPS();
         vm.startPrank(requester);
