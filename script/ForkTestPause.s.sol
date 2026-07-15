@@ -66,7 +66,8 @@ contract ForkTestPause is Script {
             deployer,     // pauser
             deployer,     // feeRecipient
             address(0),   // agentRegistry
-            USDC
+            USDC,
+            1 hours       // recoveryGrace (F-6)
         );
         console.log("ACTPKernel:", address(kernel));
 
@@ -90,6 +91,7 @@ contract ForkTestPause is Script {
             block.timestamp + 1 days,
             1 hours,
             keccak256("fork-test-1"),
+            bytes32(0), // agreementHash (AIP-14c)
             0, // agentId
             0 // requesterAgentId (AIP-14)
         );
@@ -122,6 +124,7 @@ contract ForkTestPause is Script {
             block.timestamp + 1 days,
             1 hours,
             keccak256("fork-test-2"),
+            bytes32(0), // agreementHash (AIP-14c)
             0, // agentId
             0 // requesterAgentId (AIP-14)
         ) {
@@ -225,6 +228,7 @@ contract ForkTestPause is Script {
             block.timestamp + 1 days,
             1 hours,
             keccak256("fork-test-3"),
+            bytes32(0), // agreementHash (AIP-14c)
             0, // agentId
             0 // requesterAgentId (AIP-14)
         );
@@ -253,6 +257,7 @@ contract ForkTestPause is Script {
             block.timestamp + 1 days,
             1 hours,
             keccak256("fork-test-4"),
+            bytes32(0), // agreementHash (AIP-14c)
             0, // agentId
             0 // requesterAgentId (AIP-14)
         );

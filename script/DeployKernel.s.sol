@@ -12,7 +12,7 @@ contract DeployKernel is Script {
         address usdc = vm.envAddress("USDC_ADDRESS");
 
         vm.startBroadcast();
-        ACTPKernel kernel = new ACTPKernel(admin, pauser, feeRecipient, address(0), usdc);
+        ACTPKernel kernel = new ACTPKernel(admin, pauser, feeRecipient, address(0), usdc, vm.envOr("RECOVERY_GRACE", uint256(7 days)));
         vm.stopBroadcast();
 
         console2.log("ACTP Kernel deployed:", address(kernel));

@@ -88,7 +88,8 @@ contract DeployBaseMainnet is Script {
             gnosisSafe,    // pauser (same Safe for security)
             treasury,      // fee recipient
             address(0),    // agentRegistry (set later via timelock)
-            USDC           // USDC mainnet
+            USDC,          // USDC mainnet
+            7 days         // recoveryGrace (F-6)
         );
         console.log("   ACTPKernel deployed at:", address(kernel));
 

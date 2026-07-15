@@ -55,7 +55,7 @@ contract H2_EmptyDisputeResolutionTest is Test {
 
     function setUp() external {
         usdc = new MockUSDC();
-        kernel = new ACTPKernel(admin, pauser, feeCollector, address(0), address(usdc));
+        kernel = new ACTPKernel(admin, pauser, feeCollector, address(0), address(usdc), 1 hours);
         escrow = new EscrowVault(address(usdc), address(kernel));
         kernel.approveEscrowVault(address(escrow), true);
         kernel.approveMediator(mediator, true);
@@ -397,7 +397,7 @@ contract H2_EmptyDisputeResolutionTest is Test {
 
         // Create transaction
         vm.prank(requester);
-        txId = kernel.createTransaction(provider, requester, TRANSACTION_AMOUNT, block.timestamp + 30 days, 2 days, keccak256("service"), 0, 0);
+        txId = kernel.createTransaction(provider, requester, TRANSACTION_AMOUNT, block.timestamp + 30 days, 2 days, keccak256("service"), bytes32(0), 0, 0);
 
         // Link escrow (auto-transitions to COMMITTED)
         vm.startPrank(requester);
@@ -411,7 +411,7 @@ contract H2_EmptyDisputeResolutionTest is Test {
 
         // Provider delivers
         vm.prank(provider);
-        kernel.transitionState(txId, IACTPKernel.State.DELIVERED, abi.encode(10 days));
+        kernel.transitionState(txId, IACTPKernel.State.DELIVERED, abi.encode(10 days, keccak256("result")));
 
         // Requester disputes
         vm.startPrank(requester);

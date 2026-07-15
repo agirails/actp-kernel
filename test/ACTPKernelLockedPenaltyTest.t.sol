@@ -36,7 +36,7 @@ contract ACTPKernelLockedPenaltyTest is Test {
         admin = address(this);
         usdc = new MockUSDC();
         // ACTPKernel(admin, pauser, feeRecipient, agentRegistry, usdc)
-        kernel = new ACTPKernel(admin, pauser, feeCollector, address(0), address(usdc));
+        kernel = new ACTPKernel(admin, pauser, feeCollector, address(0), address(usdc), 1 hours);
         escrow = new EscrowVault(address(usdc), address(kernel));
         kernel.approveEscrowVault(address(escrow), true);
         usdc.mint(requester, 1_000_000_000);
@@ -48,7 +48,7 @@ contract ACTPKernelLockedPenaltyTest is Test {
         vm.prank(requester);
         txId = kernel.createTransaction(
             provider, requester, amount, block.timestamp + 7 days, 2 days,
-            keccak256("svc"), 0, 0
+            keccak256("svc"), bytes32(0), 0, 0
         );
     }
 
@@ -145,7 +145,7 @@ contract ACTPKernelLockedPenaltyTest is Test {
         // Escrow is now empty. Move through DELIVERED → SETTLED — must not revert
         // even though _releaseEscrow finds remaining == 0.
         vm.prank(provider);
-        kernel.transitionState(txId, IACTPKernel.State.DELIVERED, abi.encode(uint256(2 days)));
+        kernel.transitionState(txId, IACTPKernel.State.DELIVERED, abi.encode(uint256(2 days), keccak256("result")));
 
         vm.warp(block.timestamp + 2 days + 1);
         vm.prank(provider);
@@ -165,7 +165,7 @@ contract ACTPKernelLockedPenaltyTest is Test {
         vm.prank(provider);
         kernel.transitionState(txId, IACTPKernel.State.IN_PROGRESS, "");
         vm.prank(provider);
-        kernel.transitionState(txId, IACTPKernel.State.DELIVERED, abi.encode(uint256(2 days)));
+        kernel.transitionState(txId, IACTPKernel.State.DELIVERED, abi.encode(uint256(2 days), keccak256("result")));
 
         // AIP-14: requester opening a dispute deposits a bond into the vault.
         _approveBond(ONE_USDC);

@@ -11,6 +11,8 @@ coverage/
 # Environment
 .env
 .env.*
+# .env.example is the committable, secret-free template (placeholders only) — keep it tracked.
+!.env.example
 
 # OS
 .DS_Store

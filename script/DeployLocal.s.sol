@@ -35,7 +35,8 @@ contract DeployLocal is Script {
             address(this), // pauser (same as admin)
             address(this), // fee recipient
             address(0),    // agentRegistry (deploy later)
-            address(usdc)  // USDC token
+            address(usdc), // USDC token
+            1 hours        // recoveryGrace (F-6)
         );
         console.log("ACTPKernel deployed at:", address(kernel));
 

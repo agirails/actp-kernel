@@ -28,7 +28,7 @@ contract ACTPKernelSecurityTest is Test {
 
     function setUp() external {
         usdc = new MockUSDC();
-        kernel = new ACTPKernel(admin, admin, feeCollector, address(0), address(usdc));
+        kernel = new ACTPKernel(admin, admin, feeCollector, address(0), address(usdc), 1 hours);
         escrow = new EscrowVault(address(usdc), address(kernel));
         kernel.approveEscrowVault(address(escrow), true);
         usdc.mint(requester, 1_000_000_000);
@@ -98,8 +98,21 @@ contract ACTPKernelSecurityTest is Test {
         kernel.approveEscrowVault(vault, true);
         assertTrue(kernel.approvedEscrowVaults(vault));
 
-        // Revoke
+        // Revoke — [Apex H4] only via the scheduled path (immediate revoke is rejected);
+        // a scheduled revocation is admin-cancellable until executed.
+        vm.expectRevert("Revocation must be scheduled");
         kernel.approveEscrowVault(vault, false);
+
+        kernel.scheduleEscrowVaultRevocation(vault);
+        kernel.approveEscrowVault(vault, true); // re-approval cancels the pending revocation
+        assertTrue(kernel.approvedEscrowVaults(vault));
+        vm.warp(block.timestamp + 3 days);
+        vm.expectRevert("No scheduled revocation");
+        kernel.executeEscrowVaultRevocation(vault);
+
+        kernel.scheduleEscrowVaultRevocation(vault);
+        vm.warp(block.timestamp + 2 days);
+        kernel.executeEscrowVaultRevocation(vault);
         assertFalse(kernel.approvedEscrowVaults(vault));
     }
 
@@ -114,7 +127,7 @@ contract ACTPKernelSecurityTest is Test {
 
         // Try to set dispute window to 31 days (should fail)
         uint256 excessiveWindow = 31 days;
-        bytes memory proof = abi.encode(excessiveWindow);
+        bytes memory proof = abi.encode(excessiveWindow, keccak256("result"));
 
         vm.prank(provider);
         vm.expectRevert("Dispute window too long");
@@ -131,7 +144,7 @@ contract ACTPKernelSecurityTest is Test {
 
         // Set dispute window to exactly 30 days (should succeed)
         uint256 maxWindow = 30 days;
-        bytes memory proof = abi.encode(maxWindow);
+        bytes memory proof = abi.encode(maxWindow, keccak256("result"));
 
         vm.prank(provider);
         kernel.transitionState(txId, IACTPKernel.State.DELIVERED, proof);
@@ -262,7 +275,7 @@ contract ACTPKernelSecurityTest is Test {
     // Helpers
     function _createBaseTx() internal returns (bytes32 txId) {
         vm.prank(requester);
-        txId = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"), 0, 0);
+        txId = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"), bytes32(0), 0, 0);
     }
 
     function _quote(bytes32 txId) internal {
@@ -281,7 +294,7 @@ contract ACTPKernelSecurityTest is Test {
         vm.prank(provider);
         kernel.transitionState(txId, IACTPKernel.State.IN_PROGRESS, "");
         vm.prank(provider);
-        kernel.transitionState(txId, IACTPKernel.State.DELIVERED, abi.encode(disputeWindow));
+        kernel.transitionState(txId, IACTPKernel.State.DELIVERED, abi.encode(disputeWindow, keccak256("result")));
     }
 }
 

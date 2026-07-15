@@ -8,6 +8,48 @@ optimizer_runs = 200
 via_ir = true
 ffi = false
 
+# AIP-14b P4-1 (DeployDisputeSystem.s.sol): scoped read+write to the single dispute deploy-config
+# file so the opt-in address write-back (WRITE_DEPLOYMENTS_JSON=true) can persist the deployed
+# CompositeMediator / BondEscalation addresses. Narrowly scoped — NOT a broad fs grant.
+fs_permissions = [{ access = "read-write", path = "./deployments/aip14b.json" }]
+
+# PRD P1-8: stateful invariant suite must run >= 256 randomized sequences.
+# Default depth (500) is reduced to 100 — each handler step opens kernel txs / warps time,
+# so 100 steps already drives every dispute in the pool through its full lifecycle many times.
+# fail_on_revert = false: the handler intentionally short-circuits invalid actions with `return`,
+# but a few fuzzer inputs still bounce off contract `require`s (e.g. liveness races) — those are
+# expected and must NOT abort the sequence; the invariants are what enforce correctness.
+[invariant]
+runs = 256
+depth = 100
+fail_on_revert = false
+
+# AIP-14b P4-5: named RPC aliases so fork tests/scripts can reference an env-backed URL by alias
+# (forge --fork-url <alias>, vm.createSelectFork("<alias>")) without hardcoding gateways. The values
+# resolve from the environment at runtime; a missing var leaves the alias unusable but does NOT break
+# a plain `forge test` (the UMA fork suite guards on the var being set and vm.skips cleanly otherwise).
+[rpc_endpoints]
+base_sepolia = "${BASE_SEPOLIA_RPC}"
+# Base Mainnet RPC — REQUIRED to RUN the UMA Tier-2 fork test (test/E2E_UMA_Fork.t.sol) and
+# script/SmokeUMAEscalation.s.sol, since Base Sepolia has NO UMA OOV3 (G2 probe 2026-06-21).
+base_mainnet = "${BASE_MAINNET_RPC}"
+
+# AIP-14b P4-5: Base-mainnet fork profile for the Tier-2 UMA real-OOV3 suite. Mirrors the default
+# profile and pins the fork RPC. The fork RUN still needs BASE_MAINNET_RPC set in the environment;
+# with no RPC the E2E_UMA_Fork tests skip cleanly (fork-required guard) and the rest of the suite is
+# unaffected. Invoke with:  FOUNDRY_PROFILE=base_mainnet_fork forge test --match-contract E2E_UMA_Fork
+# (or simply: forge test --match-contract E2E_UMA_Fork  — the test reads BASE_MAINNET_RPC itself).
+[profile.base_mainnet_fork]
+src = "src"
+out = "out"
+libs = ["lib"]
+solc_version = "0.8.34"
+optimizer = true
+optimizer_runs = 200
+via_ir = true
+ffi = false
+eth_rpc_url = "${BASE_MAINNET_RPC}"
+
 [fmt]
 line_length = 100
 tab_width = 4

@@ -1,0 +1,244 @@
+{
+  "artifact": "AIP-14b three-tier dispute system deploy config",
+  "task": "P4-0",
+  "prdRef": "DISPUTE SYSTEM/PRD-dispute-system-implementation.md §7.4, §8.4, §8.6, §11",
+  "decisionsRef": "DISPUTE SYSTEM/AIP14B-DECISIONS.md (G1/G2/G3/G4)",
+  "createdAt": "2026-06-24",
+  "note": "Config artifact ONLY (P4-0). NO broadcast performed. BondEscalation + CompositeMediator address slots are null until P4-1 (Sepolia) / P6-1 (mainnet) broadcast and write them back. G2 RECON block is filled from the empirical 2026-06-21 mainnet probe (AIP14B-DECISIONS.md §'G2 Probe Results') — no placeholders for known facts. Deploy scripts (P4-1) MUST read addresses from this file / env, never hardcode broadcast literals (except known immutables: USDC, UMA OOV3).",
+  "wiring": {
+    "decision": "G4 — write-once init (NOT immutable)",
+    "deployOrder": [
+      "1. Deploy CompositeMediator(kernel) — captures deployer as the only initialize() caller (front-run-proof).",
+      "2. Deploy BondEscalation(kernel, usdc, compositeMediator, admin, fixedEvaluators[2], rotatingPool[], umaOOV3=0) — production passes umaOOV3=address(0) so the contract resolves the canonical DEFAULT_UMA_OOV3 (0x2aBf...500c) on-chain (§8.4 testability override).",
+      "3. compositeMediator.initialize(bondEscalation) — one-shot, deployer-guarded, freezes the back-reference forever.",
+      "4. kernel.approveMediator(compositeMediator, true) — starts the 2-day MEDIATOR_APPROVAL_DELAY timelock; CompositeMediator.resolve()/resolveDisputeWhilePaused is NOT usable until block.timestamp >= mediatorApprovedAt."
+    ],
+    "postDeployTimelock": {
+      "function": "ACTPKernel.approveMediator(address,bool)",
+      "delaySeconds": 172800,
+      "delayHuman": "2 days (MEDIATOR_APPROVAL_DELAY)",
+      "note": "Mediator becomes an active kernel resolver only after the 2-day delay. On mainnet this call is Safe-submitted (calldata below), never a raw key broadcast."
+    }
+  },
+  "networks": {
+    "base-sepolia": {
+      "network": "Base Sepolia",
+      "chainId": 84532,
+      "blockExplorer": "https://sepolia.basescan.org",
+      "umaTier2Mode": "fork",
+      "forkRequired": true,
+      "forkRequiredReason": "Base Sepolia OOV3 ABSENT at the spec address (eth_getCode = 0x, G2 probe 2026-06-21). Tier-2 (UMA) testnet testing runs against a Base-MAINNET fork (PRD P4-5). On a live Sepolia deploy, BondEscalation is constructed with umaOOV3=address(0) → resolves to the mainnet DEFAULT_UMA_OOV3 constant, which has NO code on Sepolia, so escalateToUMA is non-functional on live Sepolia by design — Tier-0/1 (bond escalation) is fully functional; Tier-2 is exercised only via the mainnet fork test.",
+      "recoveryGraceSeconds": 3600,
+      "recoveryGraceHuman": "1 hour (testnet; >= MIN_RECOVERY_GRACE)",
+      "existing": {
+        "ACTPKernel": "0xD8f7829c4555Fc95fc92e54729DaE7d28ace349B",
+        "EscrowVault": "0xAf35801fd0613c583a08ADbdA6131A431C7C69eb",
+        "MockUSDC": "0x444b4e1A65949AB2ac75979D5d0166Eb7A248Ccb",
+        "X402Relay": "0x4DCD02b276Dbeab57c265B72435e90507b6Ac81A",
+        "existingNote": "CANONICAL current Sepolia deployment (mirrors deployments/base-sepolia.json, F-6 kernel deployBlock 43262304). CORRECTED 2026-07-02: was the pre-F-6 kernel 0x469CBADb…3411 + vault 0x57f8…49E5, which LACK the AIP-14 dispute-era code (disputeBondBps reverts). The dispute system was briefly deployed against the stale kernel then redeployed against this F-6 kernel; the stale-kernel dispute contracts are orphaned (harmless testnet). DISPUTE_KERNEL env still overrides for a future v2 redeploy."
+      },
+      "disputeContracts": {
+        "CompositeMediator": {
+          "address": "0x45a440a34303AEe597672C1D47d1ce83BEC8aD1C",
+          "status": "DEPLOYED",
+          "constructorArgs": {
+            "kernel": "0xD8f7829c4555Fc95fc92e54729DaE7d28ace349B"
+          },
+          "writeBackBy": "P4-1 (DeployDisputeSystem.s.sol)"
+        },
+        "BondEscalation": {
+          "address": "0x84CB23F1bCebC286270EE5E62A19a64686D3Ca0A",
+          "status": "DEPLOYED",
+          "constructorArgs": {
+            "kernel": "0xD8f7829c4555Fc95fc92e54729DaE7d28ace349B",
+            "usdc": "0x444b4e1A65949AB2ac75979D5d0166Eb7A248Ccb",
+            "compositeMediator": "0xf8095f8df0102d5f9fA36fF0792c89Db6FB814a0",
+            "admin": "${DISPUTE_ADMIN} (defaults to deployer / Sepolia admin EOA)",
+            "fixedEvaluators": [
+              "${EVALUATOR_FIXED_0}",
+              "${EVALUATOR_FIXED_1}"
+            ],
+            "rotatingPool": [
+              "${EVALUATOR_ROTATING} (>=3 comma-delimited addresses; legacy fallback EVALUATOR_ROTATING_0.._7)"
+            ],
+            "umaOOV3": "0xa3CEeb8df5949cA825421f7029554ddca30C976B (MockOOV3, DEPLOY_MOCK_OOV3=true)",
+            "umaOOV3Note": "address(0) → BondEscalation resolves DEFAULT_UMA_OOV3 (0x2aBf...500c) on-chain. Tests inject a MockOOV3 (§8.4). With DEPLOY_MOCK_OOV3=true the deploy script instead wires the STEP-1.5 MockOOV3 (live testnet Tier-2 — see the MockOOV3 slot below)."
+          },
+          "writeBackBy": "P4-1 (DeployDisputeSystem.s.sol)"
+        },
+        "MockOOV3": {
+          "address": "0x64C81e2F8a8f72D20AF24a8d9b3A22A93D80AC6A",
+          "status": "DEPLOYED",
+          "note": "TESTNET-ONLY Tier-2 double (test/mocks/MockOOV3.sol). Deployed by DeployDisputeSystem STEP 1.5 when DEPLOY_MOCK_OOV3=true; BondEscalation is then constructed against it so escalateToUMA → mockResolve/mockArmResult+settleAssertion → resolved-callbacks are live-drivable on Sepolia (G2: canonical OOV3 has no code here). mockResolve is PERMISSIONLESS — acceptable only for MockUSDC-denominated testnet value. The deploy script preflight hard-reverts if this flag is set on base-mainnet.",
+          "writeBackBy": "P4-1 (DeployDisputeSystem.s.sol, DEPLOY_MOCK_OOV3=true)"
+        }
+      },
+      "g2Recon": {
+        "probedAt": "2026-06-21",
+        "probeMethod": "read-only cast against sepolia.base.org (public RPC, no key)",
+        "result": "OOV3_ABSENT",
+        "OOV3": {
+          "address": "ABSENT",
+          "hasCode": false,
+          "note": "eth_getCode at the spec OOV3 address returns 0x on Base Sepolia. No UMA OptimisticOracleV3 on this chain at the known address."
+        },
+        "umaWhitelist": {
+          "usdcWhitelistedCollateral": "N/A (no OOV3 on Sepolia)",
+          "minBondUSDC": "N/A",
+          "umaBondUSDC": 500000000,
+          "minBondSatisfied": "N/A"
+        },
+        "defaultIdentifier": "N/A (no OOV3 on Sepolia)",
+        "forkRequired": true,
+        "forkRequiredNote": "Tier-2 testnet coverage = Base-mainnet fork (P4-5). closes OQ-2 for Sepolia."
+      }
+    },
+    "base-mainnet": {
+      "network": "Base Mainnet",
+      "chainId": 8453,
+      "blockExplorer": "https://basescan.org",
+      "umaTier2Mode": "live",
+      "forkRequired": false,
+      "recoveryGraceSeconds": 604800,
+      "recoveryGraceHuman": "7 days (mainnet)",
+      "existing": {
+        "ACTPKernel": "0x048c811352e8a3fECd5b0Ec4AA2c2b94083CC842",
+        "EscrowVault": "0x262D5912A9612F0c66dA5d13B4E678D50ebC44b5",
+        "USDC": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+        "AgentRegistry": "0x64Cb18bfb3CC1aCb1370a3B01613391D3561a009",
+        "X402Relay": "0x81DFb954A3D58FEc24Fc9c946aC2C71a911609F8",
+        "ArchiveTreasury": "0x6159A80Ce8362aBB2307FbaB4Ed4D3F4A4231Acc",
+        "EASDeliverySchema": "0x166501e7476e2fcf9214c4c5144533c2957d56fe59d639effc1719a0658d9c9a",
+        "GnosisSafeAdmin": "0x61fE58E9EdB380EA65EC74bD364D9D2cba30B7f2",
+        "GnosisSafeAdminThreshold": "2-of-4",
+        "Deployer": "0x1DC48019D708f3d7f1adCAAfA2Ffa198A6897E8d",
+        "preV3Superseded": {
+          "ACTPKernel": "0x132B9eB321dBB57c828B083844287171BDC92d29",
+          "EscrowVault": "0x6aAF45882c4b0dD34130ecC790bb5Ec6be7fFb99",
+          "AgentRegistry": "0x6fB222CF3DDdf37Bcb248EE7BBBA42Fb41901de8",
+          "ArchiveTreasury": "0x0516C411C0E8d75D17A768022819a0a4FB3cA2f2",
+          "note": "Pre-V3 stack, superseded by the V3 addresses above (2026-05-19). Retained for historical reference only; NOT on the active path."
+        },
+        "existingNote": "Ground-truth deployed mainnet addresses — CORRECTED 2026-07-03 (on-chain verified via cast). These are the V3 stack (kernel deployBlock 46212266, 2026-05-19), which SUPERSEDES the pre-V3 kernel/vault this file originally listed (now under preV3Superseded). Per G3, P4-2/P6-1 redeploys kernel+vault as v2 off THIS V3 stack; the dispute system + re-point fan-out (AgentRegistry / X402Relay / EAS / Safe / CDP+Pimlico allowlists) wires against the v2 addresses, supplied via env at broadcast time. admin = Gnosis Safe (Safe-submittable calldata only; NO private keys). EMPIRICAL: live V3 kernel 0x048c81 already exposes approveMediator/disputeBondBps()=500 but its bytecode LACKS resolveDisputeWhilePaused (0x65f44ba0) + F-6 recoveryGrace/recoverStalledInProgress — that selector gap is the concrete v2 driver (CompositeMediator resolves via kernel.resolveDisputeWhilePaused)."
+      },
+      "disputeContracts": {
+        "CompositeMediator": {
+          "address": null,
+          "status": "AWAIT_BROADCAST",
+          "constructorArgs": {
+            "kernel": "${MAINNET_KERNEL_V2} (P4-2 redeploy address, NOT the pre-v2 0x132B...2d29)"
+          },
+          "writeBackBy": "P6-1 (mainnet deploy)"
+        },
+        "BondEscalation": {
+          "address": null,
+          "status": "AWAIT_BROADCAST",
+          "constructorArgs": {
+            "kernel": "${MAINNET_KERNEL_V2}",
+            "usdc": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+            "compositeMediator": "AWAIT_BROADCAST",
+            "admin": "0x61fE58E9EdB380EA65EC74bD364D9D2cba30B7f2",
+            "adminNote": "Gnosis Safe (2-of-4). approveMediator + initialize wiring submitted as Safe transactions.",
+            "fixedEvaluators": [
+              "${EVALUATOR_FIXED_0}",
+              "${EVALUATOR_FIXED_1}"
+            ],
+            "rotatingPool": [
+              "${EVALUATOR_ROTATING} (>=3 comma-delimited addresses; legacy fallback EVALUATOR_ROTATING_0.._7)"
+            ],
+            "umaOOV3": "0x0000000000000000000000000000000000000000",
+            "umaOOV3Note": "address(0) → resolves DEFAULT_UMA_OOV3 (0x2aBf...500c), the LIVE Base-mainnet OOV3."
+          },
+          "writeBackBy": "P6-1 (mainnet deploy)"
+        }
+      },
+      "g2Recon": {
+        "probedAt": "2026-06-21",
+        "probeMethod": "read-only cast against mainnet.base.org (public RPC, no key)",
+        "result": "PASS_AFTER_IDENTIFIER_FIX",
+        "resultNote": "CORRECTED 2026-07-03 (22-agent adversarial root-cause + independent re-verify on canonical public RPC). The 2026-06-21 probe read defaultIdentifier()=ASSERT_TRUTH + bond floor and marked PASS, but did NOT check IdentifierWhitelist.isIdentifierSupported. On live Base mainnet ASSERT_TRUTH is DE-WHITELISTED (isIdentifierSupported=false); its successor ASSERT_TRUTH2 is the live one (isIdentifierSupported=true, cachedIdentifiers=true). Forwarding defaultIdentifier() blindly reverts 'Unsupported identifier'. Fixed in BondEscalation._resolveWhitelistedIdentifier (runtime whitelist-membership check; prefers the oracle default, falls back to ASSERT_TRUTH2, reverts 'No whitelisted UMA identifier' if none). Verified: E2E_UMA_Fork 4/4 PASS + SmokeUMAEscalation PASS against the real OOV3; full unit suite 687/0.",
+        "OOV3": {
+          "address": "0x2aBf1Bd76655de80eDB3086114315Eec75AF500c",
+          "hasCode": true,
+          "note": "Canonical UMA OptimisticOracleV3 on Base mainnet. Matches BondEscalation.DEFAULT_UMA_OOV3 and the IOptimisticOracleV3 vendored interface header."
+        },
+        "umaWhitelist": {
+          "usdcWhitelistedCollateral": true,
+          "usdcWhitelistedNote": "Non-zero getMinimumBond(USDC) ($500 final fee) is a strong positive whitelist signal; belt-and-suspenders AddressWhitelist/CollateralWhitelist confirmation deferred to P4-5.",
+          "minBondUSDC": 500000000,
+          "minBondHuman": "$500.00 (6dp)",
+          "umaBondUSDC": 500000000,
+          "umaBondHuman": "$500.00 (UMA_BOND constant)",
+          "minBondSatisfied": true,
+          "minBondMargin": "ZERO (UMA_BOND == getMinimumBond(USDC) exactly — at the floor)",
+          "bondAtFloorAlert": "RISK R6 sub-risk: a UMA USDC-fee increase would push min-bond above UMA_BOND and make escalateToUMA revert. Keep UMA_BOND config-adjustable + min-bond drift alert (OPS P5-4)."
+        },
+        "defaultIdentifier": {
+          "value": "ASSERT_TRUTH",
+          "valueHex": "0x4153534552545f54525554480000000000000000000000000000000000000000",
+          "isIdentifierSupported": false,
+          "note": "CORRECTED 2026-07-03: OOV3.defaultIdentifier() still RETURNS ASSERT_TRUTH, but it is RETIRED from the Finder-resolved IdentifierWhitelist (0xAd517D72B9Cd31F578197D5e903d041B88c69795): isIdentifierSupported(ASSERT_TRUTH)=false. The 2026-06-21 'corrected to ASSERT_TRUTH' note was itself the mistake — it inferred the identifier from defaultIdentifier() alone without checking whitelist membership. NEVER forward defaultIdentifier() blindly."
+        },
+        "assertionIdentifier": {
+          "value": "ASSERT_TRUTH2",
+          "valueHex": "0x4153534552545f54525554483200000000000000000000000000000000000000",
+          "isIdentifierSupported": true,
+          "cachedIdentifiers": true,
+          "note": "The live-whitelisted identifier BondEscalation._resolveWhitelistedIdentifier selects on Base mainnet. cachedIdentifiers(ASSERT_TRUTH2)=true confirms real third-party assertions already cleared this exact gate with it (Strix Lab prediction-market AssertionMade events on this OOV3)."
+        },
+        "burnedBondPercentage": {
+          "value": "5e17",
+          "human": "50%",
+          "note": "Confirms spec §8.2 — UMA Store burns 50% of the loser's bond on disputed assertions."
+        },
+        "defaultCurrency": {
+          "value": "0xd9aA...b6CA",
+          "note": "NOT USDC — irrelevant: escalateToUMA passes USDC explicitly as the currency arg (§8.4)."
+        },
+        "umaLivenessSeconds": 7200,
+        "umaLivenessHuman": "2 hours (UMA_LIVENESS constant)",
+        "forkRequired": false
+      }
+    }
+  },
+  "umaConstants": {
+    "source": "src/BondEscalation.sol constants (§7.4 / §8.4)",
+    "DEFAULT_UMA_OOV3": "0x2aBf1Bd76655de80eDB3086114315Eec75AF500c",
+    "UMA_BOND": 500000000,
+    "UMA_BOND_HUMAN": "$500.00",
+    "UMA_LIVENESS": 7200,
+    "ESCALATION_INITIAL_BPS": 200,
+    "MIN_ESCALATION_BOND": 1000000,
+    "MAX_ESCALATION_BOND": 500000000,
+    "ESCALATION_MULTIPLIER": 2,
+    "MAX_DISPUTE_DURATION_DAYS": 30,
+    "FINALIZATION_BOUNTY_BPS": 1000,
+    "MIN_FINALIZATION_BOUNTY": 100000,
+    "evidenceClaimPrefix": "ipfs://",
+    "evidenceClaimNote": "escalateToUMA embeds 'ipfs://' + evidence CID in the assertTruth claim (INV-20)."
+  },
+  "safeCalldata": {
+    "note": "Mainnet wiring is Safe-submitted (admin = Gnosis Safe 0x61fE58E9...b7f2, 2-of-4). NO private keys in any file. The deploy script (P6-1) emits these as console hints; the Safe operator builds the actual txs. Address placeholders resolved from env / written-back addresses at broadcast time.",
+    "transactions": [
+      {
+        "step": 3,
+        "to": "${COMPOSITE_MEDIATOR}",
+        "function": "initialize(address)",
+        "args": [
+          "${BOND_ESCALATION}"
+        ],
+        "purpose": "G4 write-once back-reference wiring (deployer/Safe guarded)."
+      },
+      {
+        "step": 4,
+        "to": "${MAINNET_KERNEL_V2}",
+        "function": "approveMediator(address,bool)",
+        "args": [
+          "${COMPOSITE_MEDIATOR}",
+          true
+        ],
+        "purpose": "Register CompositeMediator as an approved resolver; starts 2-day MEDIATOR_APPROVAL_DELAY timelock (G1: admin-only + timelocked mediator, no pauser)."
+      }
+    ]
+  }
+}

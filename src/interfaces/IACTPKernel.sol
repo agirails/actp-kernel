@@ -35,6 +35,8 @@ interface IACTPKernel {
         uint256 requesterAgentId; // AIP-14: Requester's ERC-8004 agent ID (0 if not an agent)
         address disputeInitiator; // AIP-14: Who opened the dispute (for bond return)
         uint256 disputeBond; // AIP-14: Bond amount locked at dispute time
+        bytes32 resultHash; // AIP-14c: keccak of delivered result (committed at DELIVERED)
+        bytes32 agreementHash; // AIP-14c: keccak of request+input+SLA (committed at createTransaction)
     }
 
     event TransactionCreated(
@@ -45,7 +47,8 @@ interface IACTPKernel {
         bytes32 serviceHash,
         uint256 deadline,
         uint256 timestamp,
-        uint256 agentId // ERC-8004 agent ID (0 if not applicable)
+        uint256 agentId, // ERC-8004 agent ID (0 if not applicable)
+        bytes32 agreementHash // AIP-14c: request+input+SLA commitment (0 = no automatic AI ruling)
     );
 
     event StateTransitioned(
@@ -55,6 +58,9 @@ interface IACTPKernel {
         address triggeredBy,
         uint256 timestamp
     );
+
+    /// @notice F-6: stalled IN_PROGRESS escrow recovered (full refund to requester) after deadline+recoveryGrace.
+    event StalledInProgressRecovered(bytes32 indexed transactionId, address indexed requester, uint256 amount);
 
     event EscrowLinked(
         bytes32 indexed transactionId,
@@ -149,13 +155,25 @@ interface IACTPKernel {
         uint256 deadline,
         uint256 disputeWindow,
         bytes32 serviceHash,
+        bytes32 agreementHash,
         uint256 agentId,
         uint256 requesterAgentId
     ) external returns (bytes32 transactionId);
 
     function transitionState(bytes32 transactionId, State newState, bytes calldata proof) external;
 
+    /// @notice [F-2 AUDIT FIX] Pause-exempt entrypoint restricted to DISPUTED→{SETTLED,CANCELLED}
+    ///         by an approved resolver. Lets honest dispute recovery (CompositeMediator.resolve →
+    ///         BondEscalation finalize / forceResolveStale / UMA callback) survive a kernel pause,
+    ///         preserving the INV-9 walk-away guarantee. Grants no power beyond the existing resolver
+    ///         set on the existing DISPUTED-exit transition.
+    function resolveDisputeWhilePaused(bytes32 transactionId, State newState, bytes calldata proof) external;
+
     function getTransaction(bytes32 transactionId) external view returns (TransactionView memory);
+
+    /// @notice Deterministic on-chain identity of the kernel build (AIP-14c §6). Deploy gates pin this
+    ///         plus the network-specific audited runtime codehash.
+    function kernelVersion() external pure returns (bytes32);
 
 
     function acceptQuote(bytes32 transactionId, uint256 newAmount) external;
@@ -165,6 +183,10 @@ interface IACTPKernel {
     function releaseMilestone(bytes32 transactionId, uint256 amount) external;
 
     function releaseEscrow(bytes32 transactionId) external;
+
+    /// @notice F-6: Permissionless liveness backstop. After deadline+recoveryGrace, anyone may move a stalled
+    ///         IN_PROGRESS txn to CANCELLED with a full refund of remaining escrow to the requester.
+    function recoverStalledInProgress(bytes32 transactionId) external;
 
     function anchorAttestation(bytes32 transactionId, bytes32 attestationUID) external;
 
