@@ -158,19 +158,19 @@ contract PoC_UMABondTheft is DisputeTestBase {
     //   livenessEnd, disputedAt, lastProposer, tier, resolved, winnerPaid, originalPool, escrowAmount
     // ==========================================================================================
     function _currentRulingOf(bytes32 d) internal view returns (uint8 r) {
-        (, r,,,,,,,,,,,) = bondEscalation.disputes(d);
+        (, r,,,,,,,,,,,,) = bondEscalation.disputes(d);
     }
 
     function _currentBondOf(bytes32 d) internal view returns (uint256 b) {
-        (,,, b,,,,,,,,,) = bondEscalation.disputes(d);
+        (,,, b,,,,,,,,,,) = bondEscalation.disputes(d);
     }
 
     function _accumulatedBondsOf(bytes32 d) internal view returns (uint256 a) {
-        (,,,, a,,,,,,,,) = bondEscalation.disputes(d);
+        (,,,, a,,,,,,,,,) = bondEscalation.disputes(d);
     }
 
     function _winnerPaidOf(bytes32 d) internal view returns (bool w) {
-        (,,,,,,,,,, w,,) = bondEscalation.disputes(d);
+        (,,,,,,,,,, w,,,) = bondEscalation.disputes(d);
     }
 
     function _depositOf(bytes32 d, address who) internal view returns (uint256) {

@@ -87,6 +87,34 @@ contract VerifyDeployGate is Script {
         _codehashGate("kernel", kernelCodehash, "EXPECTED_KERNEL_CODEHASH");
         _codehashGate("bond", bondCodehash, "EXPECTED_BOND_CODEHASH");
 
+        // (4) STORAGE ROLES + LIVENESS (Codex 2026-07-16 remediation #7). The kernel must NOT be
+        //     deployed paused, and admin/pauser must be the pinned governance (the Safe) when set.
+        ACTPKernel k = ACTPKernel(kernelAddr);
+        require(!k.paused(), "GATE: kernel deployed paused");
+        console2.log("OK  kernel not paused");
+        _assertOptionalAddr("kernel.admin()", k.admin(), "EXPECTED_KERNEL_ADMIN");
+        _assertOptionalAddr("kernel.pauser()", k.pauser(), "EXPECTED_KERNEL_PAUSER");
+
+        // (5) CONSUMER FANOUT — the fee/registry/treasury sinks must be the pinned addresses, so a
+        //     mis-wired feeRecipient can't divert fees and a stale registry can't drop reputation.
+        _assertOptionalAddr("kernel.feeRecipient()", k.feeRecipient(), "EXPECTED_FEE_RECIPIENT");
+        _assertOptionalAddr("kernel.agentRegistry()", address(k.agentRegistry()), "EXPECTED_AGENT_REGISTRY");
+        _assertOptionalAddr("kernel.archiveTreasury()", k.archiveTreasury(), "EXPECTED_ARCHIVE_TREASURY");
+
+        // (6) FEE INVARIANT — the protocol charges exactly 1% (platformFeeBps == 100). A deploy with
+        //     any other value violates the economic policy (only 1% with a $0.05 minimum).
+        require(k.platformFeeBps() == 100, "GATE: platformFeeBps != 100 (1%)");
+        console2.log("OK  platformFeeBps == 100 (1%)");
+
+        // (7) OFF-CHAIN OPERATOR CHECKLIST (cannot be asserted from this script — verify manually
+        //     before mainnet go, per report.md remediation #7):
+        //       - Safe policy: owners set, threshold (e.g. 2-of-4), no rogue modules, guard as intended.
+        //       - Evaluator registry: the 2 fixed + rotating evaluator addresses on-chain match the
+        //         signer keys in the dispute-evaluator secret store (boot.prod asserts this at boot).
+        //       - Constructor args: implicitly pinned by the codehash gate (3) once EXPECTED_*_CODEHASH
+        //         is set from the auditor-signed hashes.
+        console2.log("NOTE  verify Safe policy + evaluator registry + constructor args off-chain (remediation #7)");
+
         console2.log("=== GATE PASSED ===");
     }
 

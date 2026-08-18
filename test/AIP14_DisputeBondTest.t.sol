@@ -544,7 +544,7 @@ contract AIP14_DisputeBondTest is Test {
         vm.prank(requester);
         bytes32 txId = kernel.createTransaction(
             provider, requester, TRANSACTION_AMOUNT,
-            block.timestamp + 30 days, 2 days,
+            block.timestamp + 30 days, 1 hours,
             keccak256("service"), bytes32(0), 0, reqAgentId
         );
 
@@ -556,7 +556,7 @@ contract AIP14_DisputeBondTest is Test {
         vm.prank(requester);
         bytes32 txId = kernel.createTransaction(
             provider, requester, TRANSACTION_AMOUNT,
-            block.timestamp + 30 days, 2 days,
+            block.timestamp + 30 days, 1 hours,
             keccak256("service"), bytes32(0), 0, 0
         );
 
@@ -690,7 +690,7 @@ contract AIP14_DisputeBondTest is Test {
         vm.prank(requester);
         txId = kernel.createTransaction(
             provider, requester, amount,
-            block.timestamp + 30 days, 2 days,
+            block.timestamp + 30 days, 1 hours,
             keccak256("service"), bytes32(0), 0, 0
         );
 

@@ -255,7 +255,7 @@ contract BondEscalationThreatModelTest is DisputeTestBase {
         assertTrue(rusdc.lastReentryReverted(), "nested finalize from the WINNER-PUSH frame must revert (nonReentrant)");
 
         // Dispute resolved exactly once; accumulatedBonds zeroed; winner paid once.
-        ( , , , , uint256 accumulated, , , , , bool resolved, bool winnerPaid, , ) = be.disputes(disputeId);
+        ( , , , , uint256 accumulated, , , , , bool resolved, bool winnerPaid, , ,) = be.disputes(disputeId);
         assertTrue(resolved, "resolved");
         assertTrue(winnerPaid, "winner paid");
         assertEq(accumulated, 0, "pool drained exactly once");
@@ -318,7 +318,7 @@ contract BondEscalationThreatModelTest is DisputeTestBase {
         assertTrue(rusdc.fired(), "re-entry path was not exercised");
         assertTrue(rusdc.lastReentryReverted(), "nested UMA callback must revert (nonReentrant)");
 
-        ( , uint8 finalRuling, , , uint256 accumulated, , , , uint8 tier, bool resolved, , , ) =
+        ( , uint8 finalRuling, , , uint256 accumulated, , , , uint8 tier, bool resolved, , , , ) =
             be.disputes(disputeId);
         assertTrue(resolved, "resolved exactly once");
         assertEq(tier, 2, "tier stays at UMA");
@@ -462,7 +462,7 @@ contract BondEscalationThreatModelTest is DisputeTestBase {
         emit log_named_uint("first-resolution UMA callback gas (end-to-end)", gasUsed);
 
         // The dispute must have actually resolved on the heavy path (NOT the cheap early-return).
-        ( , uint8 ruling, , , uint256 accumulated, , , , , bool resolved, , , ) =
+        ( , uint8 ruling, , , uint256 accumulated, , , , , bool resolved, , , , ) =
             bondEscalation.disputes(disputeId);
         assertTrue(resolved, "callback took the first-resolution path");
         assertEq(ruling, 0, "TRUE -> ruling 0");
@@ -508,7 +508,7 @@ contract BondEscalationThreatModelTest is DisputeTestBase {
 
         // First callback syncs locally (already-resolved-in-kernel branch). Now it IS resolved.
         oov3.mockResolve(assertionId, true);
-        ( , , , , , , , , , bool resolved, , , ) = bondEscalation.disputes(disputeId);
+        ( , , , , , , , , , bool resolved, , , ,) = bondEscalation.disputes(disputeId);
         assertTrue(resolved, "dispute resolved locally");
 
         // A SECOND callback now takes the cheap `if (d.resolved) return;` early-return. Measure it.
@@ -532,7 +532,7 @@ contract BondEscalationThreatModelTest is DisputeTestBase {
         // window (30d base + 30d TIER2_STALE_GRACE): the plain 30-day mark reverts so a losing
         // party cannot pre-empt a rightful UMA verdict; a genuinely hung assertion is still
         // recoverable after the grace.
-        ( , , , , , , uint64 disputedAt, , , , , , ) = bondEscalation.disputes(disputeId);
+        ( , , , , , , uint64 disputedAt, , , , , , ,) = bondEscalation.disputes(disputeId);
         vm.warp(uint256(disputedAt) + 30 days + 1);
         vm.expectRevert("UMA pending: settle assertion first");
         bondEscalation.forceResolveStale(disputeId);
@@ -540,7 +540,7 @@ contract BondEscalationThreatModelTest is DisputeTestBase {
         vm.warp(uint256(disputedAt) + 60 days + 1);
         bondEscalation.forceResolveStale(disputeId);
 
-        ( , uint8 ruling, uint16 splitBps, , , , , , , bool resolved, , , ) = bondEscalation.disputes(disputeId);
+        ( , uint8 ruling, uint16 splitBps, , , , , , , bool resolved, , , ,) = bondEscalation.disputes(disputeId);
         assertTrue(resolved, "stale recovery resolves the dispute without the callback");
         assertEq(ruling, 2, "forced 50/50 split on stale");
         assertEq(splitBps, 5000, "forced split bps");
@@ -589,7 +589,7 @@ contract BondEscalationThreatModelTest is DisputeTestBase {
     /// @dev Escalate a fresh dispute (on the base stack) all the way to a live UMA assertion (tier 2).
     function _escalatedToUMA() internal returns (bytes32 disputeId, bytes32 txId, bytes32 assertionId) {
         disputeId = _opened();
-        ( txId, , , , , , , , , , , , ) = bondEscalation.disputes(disputeId);
+        ( txId, , , , , , , , , , , , ,) = bondEscalation.disputes(disputeId);
 
         _proposeOn(bondEscalation, usdc, keeper, disputeId, 0, 0);
         uint256 bond = INITIAL_BOND;
@@ -660,7 +660,7 @@ contract BondEscalationThreatModelTest is DisputeTestBase {
     function _createDisputedOn(ACTPKernel k, EscrowVault esc, IERC20 token) internal returns (bytes32 txId) {
         vm.prank(requester);
         txId = k.createTransaction(
-            provider, requester, TRANSACTION_AMOUNT, block.timestamp + 60 days, 2 days, keccak256("service"), bytes32(0), 0, 0
+            provider, requester, TRANSACTION_AMOUNT, block.timestamp + 60 days, 1 hours, keccak256("service"), bytes32(0), 0, 0
         );
 
         vm.startPrank(requester);

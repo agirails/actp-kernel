@@ -55,7 +55,7 @@ contract ACTPKernelBranchCoverage2Test is Test {
 
     function testConstructorRejectsTooShortRecoveryGrace() external {
         // F-6: recoveryGrace below MIN_RECOVERY_GRACE (1 hours) must revert; all other args valid.
-        vm.expectRevert("Recovery grace too short");
+        vm.expectRevert("Grace too short");
         new ACTPKernel(admin, pauser, feeCollector, address(0), address(usdc), 0);
     }
 
@@ -158,7 +158,7 @@ contract ACTPKernelBranchCoverage2Test is Test {
     function testCreateTransactionRejectsRequesterMismatch() external {
         vm.prank(address(0x999)); // Not the requester
         vm.expectRevert("Requester mismatch");
-        kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"), bytes32(0), 0, 0);
+        kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 1 hours, keccak256("service"), bytes32(0), 0, 0);
     }
 
     function testCreateTransactionRejectsDisputeWindowTooLong() external {
@@ -172,7 +172,7 @@ contract ACTPKernelBranchCoverage2Test is Test {
         // We can't really test nonce overflow without 2^256 transactions
         // So we just verify the logic exists by checking normal flow works
         vm.prank(requester);
-        bytes32 txId = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"), bytes32(0), 0, 0);
+        bytes32 txId = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 1 hours, keccak256("service"), bytes32(0), 0, 0);
         assertTrue(txId != bytes32(0));
     }
 
@@ -226,7 +226,7 @@ contract ACTPKernelBranchCoverage2Test is Test {
     function testReleaseEscrowRejectsEscrowMissing() external {
         // Create transaction without escrow
         vm.prank(requester);
-        bytes32 txId = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"), bytes32(0), 0, 0);
+        bytes32 txId = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 1 hours, keccak256("service"), bytes32(0), 0, 0);
 
         // Can't get to SETTLED without escrow, so this branch is covered by linkEscrow requirement
     }
@@ -552,7 +552,7 @@ contract ACTPKernelBranchCoverage2Test is Test {
 
     function _createTx() internal returns (bytes32 txId) {
         vm.prank(requester);
-        txId = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"), bytes32(0), 0, 0);
+        txId = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 1 hours, keccak256("service"), bytes32(0), 0, 0);
     }
 
     function _createCommittedTx() internal returns (bytes32 txId) {

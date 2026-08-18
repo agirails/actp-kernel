@@ -34,7 +34,7 @@ contract ACTPKernelTest is Test {
 
     function _createBaseTx() internal returns (bytes32 txId) {
         vm.prank(requester);
-        txId = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"), bytes32(0), 0, 0);
+        txId = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 1 hours, keccak256("service"), bytes32(0), 0, 0);
     }
 
     function _quote(bytes32 txId) internal {
@@ -80,11 +80,11 @@ contract ACTPKernelTest is Test {
         // With nonce-based ID generation, identical parameters produce DIFFERENT txIds
         // Create first transaction
         vm.prank(requester);
-        bytes32 txId1 = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"), bytes32(0), 0, 0);
+        bytes32 txId1 = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 1 hours, keccak256("service"), bytes32(0), 0, 0);
 
         // Create second transaction with SAME inputs - should succeed with DIFFERENT txId
         vm.prank(requester);
-        bytes32 txId2 = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"), bytes32(0), 0, 0);
+        bytes32 txId2 = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 1 hours, keccak256("service"), bytes32(0), 0, 0);
 
         // Verify both transactions exist with different IDs
         assertTrue(txId1 != txId2, "Nonce should produce different IDs");
@@ -101,7 +101,7 @@ contract ACTPKernelTest is Test {
         vm.prank(requester);
         bytes32 txId = kernel.createTransaction(
             provider, requester, ONE_USDC,
-            block.timestamp + 7 days, 2 days,
+            block.timestamp + 7 days, 1 hours,
             keccak256("service"), bytes32(0), testAgentId, 0
         );
 
@@ -113,7 +113,7 @@ contract ACTPKernelTest is Test {
         vm.prank(requester);
         bytes32 txId = kernel.createTransaction(
             provider, requester, ONE_USDC,
-            block.timestamp + 7 days, 2 days,
+            block.timestamp + 7 days, 1 hours,
             keccak256("service"), bytes32(0), 0, 0
         );
 
@@ -172,7 +172,7 @@ contract ACTPKernelTest is Test {
     function testCancelBeforeDeadlineFailsUntilExpired() external {
         // Use a short deadline (1 day) for this test to check cancel behavior
         vm.prank(requester);
-        bytes32 txId = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 1 days, 2 days, keccak256("service"), bytes32(0), 0, 0);
+        bytes32 txId = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 1 days, 1 hours, keccak256("service"), bytes32(0), 0, 0);
 
         _quote(txId);
         bytes32 escrowId = keccak256("escrow4");
@@ -480,7 +480,7 @@ contract ACTPKernelTest is Test {
 
         // Create transaction with original fee (1%)
         vm.prank(requester);
-        bytes32 txId = kernel.createTransaction(provider, requester, TEN_USDC, block.timestamp + 1 days, 2 days, keccak256("aip5test1fee"), bytes32(0), 0, 0);
+        bytes32 txId = kernel.createTransaction(provider, requester, TEN_USDC, block.timestamp + 1 days, 1 hours, keccak256("aip5test1fee"), bytes32(0), 0, 0);
         bytes32 escrowId = keccak256("aip5test1");
         _commit(txId, escrowId, TEN_USDC);
         _deliver(txId, 1 days);
@@ -525,7 +525,7 @@ contract ACTPKernelTest is Test {
 
         // Create second transaction with new fee
         vm.prank(requester);
-        bytes32 txId2 = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 1 days, 2 days, bytes32(uint256(1)), bytes32(0), 0, 0);
+        bytes32 txId2 = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 1 days, 1 hours, bytes32(uint256(1)), bytes32(0), 0, 0);
 
         // Verify first transaction locked original fee
         IACTPKernel.TransactionView memory txView1 = kernel.getTransaction(txId1);
@@ -541,7 +541,7 @@ contract ACTPKernelTest is Test {
 
         // Create transaction with 1% fee
         vm.prank(requester);
-        bytes32 txId = kernel.createTransaction(provider, requester, TEN_USDC, block.timestamp + 1 days, 2 days, keccak256("aip5settlement-svc"), bytes32(0), 0, 0);
+        bytes32 txId = kernel.createTransaction(provider, requester, TEN_USDC, block.timestamp + 1 days, 1 hours, keccak256("aip5settlement-svc"), bytes32(0), 0, 0);
         uint16 lockedFee = kernel.platformFeeBps(); // 100 bps = 1%
 
         bytes32 escrowId = keccak256("aip5settlement");
@@ -575,7 +575,7 @@ contract ACTPKernelTest is Test {
 
         // Create transaction with 1% fee
         vm.prank(requester);
-        bytes32 txId = kernel.createTransaction(provider, requester, TEN_USDC, block.timestamp + 1 days, 2 days, keccak256("aip5milestone-svc"), bytes32(0), 0, 0);
+        bytes32 txId = kernel.createTransaction(provider, requester, TEN_USDC, block.timestamp + 1 days, 1 hours, keccak256("aip5milestone-svc"), bytes32(0), 0, 0);
         uint16 lockedFee = kernel.platformFeeBps(); // 100 bps = 1%
 
         bytes32 escrowId = keccak256("aip5milestone");
@@ -734,7 +734,7 @@ contract ACTPKernelTest is Test {
     // Returns to IN_PROGRESS with escrow holding `amount`.
     function _toInProgress(bytes32 svc, uint256 deadline, uint256 amount) internal returns (bytes32 txId) {
         vm.prank(requester);
-        txId = kernel.createTransaction(provider, requester, amount, deadline, 2 days, svc, bytes32(0), 0, 0);
+        txId = kernel.createTransaction(provider, requester, amount, deadline, 1 hours, svc, bytes32(0), 0, 0);
         _quote(txId);
         _commit(txId, svc, amount);
         vm.prank(provider);
@@ -785,7 +785,7 @@ contract ACTPKernelTest is Test {
 
         // 1 second before the window opens
         vm.warp(deadline + RECOVERY_GRACE - 1);
-        vm.expectRevert(bytes("Recovery not yet available"));
+        vm.expectRevert(bytes("Recovery pending"));
         kernel.recoverStalledInProgress(txId);
     }
 
@@ -798,7 +798,7 @@ contract ACTPKernelTest is Test {
         // Bound to [0, deadline + RECOVERY_GRACE - 1].
         uint256 target = bound(elapsed, block.timestamp, deadline + RECOVERY_GRACE - 1);
         vm.warp(target);
-        vm.expectRevert(bytes("Recovery not yet available"));
+        vm.expectRevert(bytes("Recovery pending"));
         kernel.recoverStalledInProgress(txId);
     }
 
@@ -983,6 +983,96 @@ contract ACTPKernelTest is Test {
 
         // reputationProcessedBy guard set to the current registry (idempotency).
         assertEq(kernel.reputationProcessedBy(txId), address(reg), "reputationProcessedBy set");
+    }
+
+    // ========================================================================
+    // F58 (INV-31): the requester's creation-time disputeWindow is a FLOOR — the
+    // provider may EXTEND it at delivery but may NEVER shorten it below the
+    // requester's committed value.
+    // ========================================================================
+
+    /// create(with a chosen creation window) → quote → commit(fund) → IN_PROGRESS; ready to deliver.
+    function _mkTxToInProgress(uint256 createWindow) internal returns (bytes32 txId) {
+        vm.prank(requester);
+        txId = kernel.createTransaction(
+            provider, requester, ONE_USDC, block.timestamp + 30 days, createWindow, keccak256("service"), bytes32(0), 0, 0
+        );
+        vm.prank(provider);
+        kernel.transitionState(txId, IACTPKernel.State.QUOTED, "");
+        vm.startPrank(requester);
+        usdc.approve(address(escrow), ONE_USDC);
+        kernel.linkEscrow(txId, address(escrow), keccak256(abi.encode("f58", createWindow, txId)));
+        vm.stopPrank();
+        vm.prank(provider);
+        kernel.transitionState(txId, IACTPKernel.State.IN_PROGRESS, "");
+    }
+
+    function _deliverWith(bytes32 txId, uint256 window) internal {
+        vm.prank(provider);
+        kernel.transitionState(txId, IACTPKernel.State.DELIVERED, abi.encode(window, keccak256("result")));
+    }
+
+    // (1) EXPLOIT BLOCKED — a provider cannot shorten below the requester's committed window.
+    function test_F58_ProviderCannotShortenDisputeWindow() external {
+        bytes32 txId = _mkTxToInProgress(7 days);
+        vm.prank(provider);
+        vm.expectRevert("Dispute window too short");
+        kernel.transitionState(txId, IACTPKernel.State.DELIVERED, abi.encode(uint256(1 hours), keccak256("result")));
+    }
+
+    // (2) PROVIDER MAY EXTEND — a longer window (trust signal) is honored.
+    function test_F58_ProviderMayExtendDisputeWindow() external {
+        bytes32 txId = _mkTxToInProgress(1 hours);
+        _deliverWith(txId, 30 days);
+        assertEq(kernel.getTransaction(txId).disputeWindow, block.timestamp + 30 days, "extension honored");
+    }
+
+    // (3) EQUAL window passes (>= is inclusive; guards a strict-greater regression).
+    function test_F58_EqualDisputeWindowAllowed() external {
+        bytes32 txId = _mkTxToInProgress(2 days);
+        _deliverWith(txId, 2 days);
+        assertEq(uint8(kernel.getTransaction(txId).state), uint8(IACTPKernel.State.DELIVERED), "equal window delivered");
+    }
+
+    // (4) REQUESTER EARLY-ACCEPT stays instant — the both-parties-want-speed path is unaffected,
+    //     which is why a provider never needs to shorten.
+    function test_F58_RequesterEarlyAcceptStillInstant() external {
+        bytes32 txId = _mkTxToInProgress(30 days);
+        _deliverWith(txId, 30 days);
+        uint256 provBefore = usdc.balanceOf(provider);
+        vm.prank(requester); // inside the window, no warp
+        kernel.transitionState(txId, IACTPKernel.State.SETTLED, "");
+        assertEq(uint8(kernel.getTransaction(txId).state), uint8(IACTPKernel.State.SETTLED), "requester settled early");
+        assertGt(usdc.balanceOf(provider), provBefore, "provider paid on early accept");
+    }
+
+    // (5) the floor does not break auto-settle timing — a non-requester participant (provider) still
+    //     cannot settle before the (now-floored) window, but can once it elapses.
+    function test_F58_AutoSettleTimingUnchanged() external {
+        bytes32 txId = _mkTxToInProgress(1 hours);
+        _deliverWith(txId, 1 hours);
+        vm.prank(provider);
+        vm.expectRevert("Requester decision pending");
+        kernel.transitionState(txId, IACTPKernel.State.SETTLED, "");
+        vm.warp(block.timestamp + 1 hours + 1);
+        vm.prank(provider);
+        kernel.transitionState(txId, IACTPKernel.State.SETTLED, "");
+        assertEq(uint8(kernel.getTransaction(txId).state), uint8(IACTPKernel.State.SETTLED), "auto-settle after window");
+    }
+
+    // (6) FUZZ INV-31: delivery succeeds IFF providerWindow >= createdWindow.
+    function testFuzz_F58_WindowFloor(uint32 createRaw, uint32 provRaw) external {
+        uint256 createWindow = bound(uint256(createRaw), 1 hours, 30 days);
+        uint256 provWindow = bound(uint256(provRaw), 1 hours, 30 days);
+        bytes32 txId = _mkTxToInProgress(createWindow);
+        if (provWindow >= createWindow) {
+            _deliverWith(txId, provWindow);
+            assertEq(kernel.getTransaction(txId).disputeWindow, block.timestamp + provWindow, "expiry set");
+        } else {
+            vm.prank(provider);
+            vm.expectRevert("Dispute window too short");
+            kernel.transitionState(txId, IACTPKernel.State.DELIVERED, abi.encode(provWindow, keccak256("result")));
+        }
     }
 
 }

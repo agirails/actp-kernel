@@ -138,6 +138,14 @@ contract BondEscalation is IBondEscalation, IBondEscalationAdmin, ReentrancyGuar
         bool winnerPaid;
         uint256 originalPool; // Snapshot of accumulatedBonds at resolution
         uint256 escrowAmount; // Cached at openDispute()
+        // H-01/F19 (Codex audit 2026-07-16): timestamp the dispute entered Tier-2 (escalateToUMA).
+        // Anchors the Tier-2 force-stale backstop on the ASSERTION timeline (escalatedAt +
+        // UMA_LIVENESS + grace) instead of disputedAt — so a dispute kept in Tier-1 past the
+        // absolute 60-day mark and THEN escalated still gets its full UMA window before any
+        // 50/50 stale is permitted. Appended LAST → every existing struct field offset and the
+        // disputes() getter's first 13 tuple slots are byte-for-byte preserved (13-field decoders
+        // read [0..12] and ignore the trailing word). Zero for every never-escalated (tier 0/1) dispute.
+        uint64 escalatedAt;
     }
 
     mapping(bytes32 => DisputeState) public disputes;
@@ -321,7 +329,8 @@ contract BondEscalation is IBondEscalation, IBondEscalationAdmin, ReentrancyGuar
             resolved: false,
             winnerPaid: false,
             originalPool: 0,
-            escrowAmount: escrowAmount
+            escrowAmount: escrowAmount,
+            escalatedAt: 0 // H-01/F19: set later in escalateToUMA
         });
 
         emit DisputeOpened(disputeId, txId, escrowAmount, msg.sender);
@@ -605,9 +614,14 @@ contract BondEscalation is IBondEscalation, IBondEscalationAdmin, ReentrancyGuar
         // the recovery path for a genuinely hung assertion (callback never runs), not a verdict override.
         // (No settleAssertion attempt here: both this function and the OOV3 resolved-callback are
         // nonReentrant — an inline settle would self-deadlock. Settlement stays its own entrypoint.)
+        // H-01/F19 (Codex 2026-07-16): re-anchor the Tier-2 backstop on `escalatedAt` (when the
+        // UMA assertion was actually created) + the assertion's own UMA_LIVENESS + the DVM grace —
+        // NOT on disputedAt. The prior `disputedAt + 60d` gate let a dispute kept in Tier-1 past
+        // day-60 then escalated be force-stale-preempted IMMEDIATELY, discarding a fresh assertion.
+        // A never-escalated tier-1 dispute is unaffected (escalatedAt==0 only reachable when tier<2).
         if (d.tier == 2) {
             require(
-                block.timestamp > d.disputedAt + MAX_DISPUTE_DURATION + TIER2_STALE_GRACE,
+                block.timestamp > uint256(d.escalatedAt) + UMA_LIVENESS + TIER2_STALE_GRACE,
                 "UMA pending: settle assertion first"
             );
         }
@@ -722,6 +736,7 @@ contract BondEscalation is IBondEscalation, IBondEscalationAdmin, ReentrancyGuar
         disputeToAssertion[disputeId] = assertionId;
 
         d.tier = 2;
+        d.escalatedAt = uint64(block.timestamp); // H-01/F19: anchor the Tier-2 stale backstop on the assertion timeline
         // NOTE: UMA bond is NOT added to accumulatedBonds - UMA now holds it.
 
         // F-3 (audit HIGH) FIX: do NOT overwrite the ruling-0 winner-of-record with the escalator.

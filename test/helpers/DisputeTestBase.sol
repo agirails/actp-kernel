@@ -134,7 +134,7 @@ abstract contract DisputeTestBase is Test {
     function _createDisputed() internal returns (bytes32 txId) {
         vm.prank(requester);
         txId = kernel.createTransaction(
-            provider, requester, TRANSACTION_AMOUNT, block.timestamp + 30 days, 2 days, keccak256("service"), bytes32(0), 0, 0
+            provider, requester, TRANSACTION_AMOUNT, block.timestamp + 30 days, 1 hours, keccak256("service"), bytes32(0), 0, 0
         );
 
         vm.startPrank(requester);

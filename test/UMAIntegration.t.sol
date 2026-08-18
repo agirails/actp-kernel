@@ -367,39 +367,39 @@ contract UMAIntegrationTest is DisputeTestBase {
     // Helpers — typed accessors over the `disputes` public getter (13-tuple).
     // =====================================================================
     function _txIdOf(bytes32 disputeId) internal view returns (bytes32 t) {
-        (t,,,,,,,,,,,,) = bondEscalation.disputes(disputeId);
+        (t,,,,,,,,,,,,,) = bondEscalation.disputes(disputeId);
     }
 
     function _tierOf(bytes32 disputeId) internal view returns (uint8 tier) {
-        (,,,,,,,, tier,,,,) = bondEscalation.disputes(disputeId);
+        (,,,,,,,, tier,,,,,) = bondEscalation.disputes(disputeId);
     }
 
     function _currentBondOf(bytes32 disputeId) internal view returns (uint256 b) {
-        (,,, b,,,,,,,,,) = bondEscalation.disputes(disputeId);
+        (,,, b,,,,,,,,,,) = bondEscalation.disputes(disputeId);
     }
 
     function _splitBpsOf(bytes32 disputeId) internal view returns (uint16 s) {
-        (,, s,,,,,,,,,,) = bondEscalation.disputes(disputeId);
+        (,, s,,,,,,,,,,,) = bondEscalation.disputes(disputeId);
     }
 
     function _lastProposerOf(bytes32 disputeId) internal view returns (address p) {
-        (,,,,,,, p,,,,,) = bondEscalation.disputes(disputeId);
+        (,,,,,,, p,,,,,,) = bondEscalation.disputes(disputeId);
     }
 
     function _resolvedOf(bytes32 disputeId) internal view returns (bool r) {
-        (,,,,,,,,, r,,,) = bondEscalation.disputes(disputeId);
+        (,,,,,,,,, r,,,,) = bondEscalation.disputes(disputeId);
     }
 
     function _winnerPaidOf(bytes32 disputeId) internal view returns (bool w) {
-        (,,,,,,,,,, w,,) = bondEscalation.disputes(disputeId);
+        (,,,,,,,,,, w,,,) = bondEscalation.disputes(disputeId);
     }
 
     function _livenessEndOf(bytes32 disputeId) internal view returns (uint64 l) {
-        (,,,,, l,,,,,,,) = bondEscalation.disputes(disputeId);
+        (,,,,, l,,,,,,,,) = bondEscalation.disputes(disputeId);
     }
 
     function _disputedAtOf(bytes32 disputeId) internal view returns (uint64 d) {
-        (,,,,,, d,,,,,,) = bondEscalation.disputes(disputeId);
+        (,,,,,, d,,,,,,,) = bondEscalation.disputes(disputeId);
     }
 
     // =====================================================================
@@ -479,7 +479,7 @@ contract UMAIntegrationTest is DisputeTestBase {
     }
 
     function _currentBondOfFor(BondEscalation be, bytes32 disputeId) internal view returns (uint256 b) {
-        (,,, b,,,,,,,,,) = be.disputes(disputeId);
+        (,,, b,,,,,,,,,,) = be.disputes(disputeId);
     }
 
     function _escalateBondToCeilingFor(BondEscalation be, bytes32 disputeId) internal {

@@ -41,7 +41,7 @@ contract E2E_AIP14_Fork is Test {
         vm.prank(requester);
         txId = kernel.createTransaction(
             provider, requester, TX_AMOUNT,
-            block.timestamp + 30 days, 2 days, salt, bytes32(0), 0, 0
+            block.timestamp + 30 days, 1 hours, salt, bytes32(0), 0, 0
         );
 
         vm.prank(requester);
@@ -65,7 +65,7 @@ contract E2E_AIP14_Fork is Test {
         vm.prank(requester);
         bytes32 txId = kernel.createTransaction(
             provider, requester, TX_AMOUNT,
-            block.timestamp + 30 days, 2 days,
+            block.timestamp + 30 days, 1 hours,
             keccak256("e2e-agentid"), bytes32(0), 0, 42
         );
 
@@ -126,7 +126,7 @@ contract E2E_AIP14_Fork is Test {
         vm.prank(requester);
         bytes32 txId = kernel.createTransaction(
             provider, requester, smallAmount,
-            block.timestamp + 30 days, 2 days,
+            block.timestamp + 30 days, 1 hours,
             keccak256("e2e-test4"), bytes32(0), 0, 0
         );
 
@@ -152,7 +152,7 @@ contract E2E_AIP14_Fork is Test {
         vm.prank(requester);
         bytes32 txId = kernel.createTransaction(
             provider, requester, TX_AMOUNT,
-            block.timestamp + 30 days, 2 days,
+            block.timestamp + 30 days, 1 hours,
             keccak256("e2e-test5"), bytes32(0), 0, 0
         );
 
@@ -191,7 +191,7 @@ contract E2E_AIP14_Fork is Test {
         vm.prank(requester);
         bytes32 txId = kernel.createTransaction(
             provider, requester, TX_AMOUNT,
-            block.timestamp + 30 days, 2 days,
+            block.timestamp + 30 days, 1 hours,
             keccak256("e2e-test6"), bytes32(0), 0, 0
         );
         vm.prank(requester);

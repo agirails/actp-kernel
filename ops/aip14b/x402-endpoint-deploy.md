@@ -16,17 +16,21 @@
 
 **INV-3 — zero kernel calls.** The dispute-evaluator:
 
-- MUST NOT import an RPC signer, a `PRIVATE_KEY`, an ACTP SDK *write* client, or any
-  `kernel.*` / `bondEscalation.*` / `compositeMediator.*` write path.
+- MUST NOT import an ACTP SDK *write* client, a kernel-write / deployer key, or any
+  `kernel.*` / `bondEscalation.*` / `compositeMediator.*` write path. It DOES hold an
+  **evaluator EIP-712 signing key** (that is its whole job), but that key signs ONLY the
+  `AIRuling` digest and carries ZERO on-chain write authority (§4.7) — see `OPS.md` §0/§1.
 - MAY read chain state **read-only** (e.g. `kernel.getTransaction(txId)` over a public RPC) solely to
   validate that the dispute exists and is in `DISPUTED`, and to size the quote against `escrowAmount`.
   Read-only `eth_call` is not a "kernel call" in the INV-3 sense (it moves no funds, signs nothing).
 - Returns a **signed ruling bundle**; it NEVER submits it. `submitAIRuling` is a *different* actor's
   job (keeper/SDK), gated separately by the paymaster allowlist (`paymaster-allowlist-decision.md`).
 
-A boot-time assertion (below) greps the process env for a private key and **refuses to start** if one
-is present, so a copy-paste of a deploy `.env` into the evaluator service can never silently arm it
-with signing power. This is the operational enforcement of INV-3.
+The operational enforcement of INV-3 is **structural**, not an env-grep: the service imports **no** ACTP
+write SDK and its chain client is **read-only** (§3), so no code path can submit a kernel transaction
+regardless of which keys are present. The evaluator signing key it *does* load is custodied per
+`KEY_BACKEND` (`kms` / `keystore` / `raw` — see §2 and `OPS.md` §1); `raw` + `NODE_ENV=production` is
+itself a fail-closed boot error, so a plaintext signing key can never ship to production.
 
 ---
 
@@ -47,7 +51,8 @@ POST /v1/evaluate                        POST /v1/evaluate
   body: x402 quote                         body: { ruling: AIRuling, signatures: bytes[] }
     - maxAmountRequired (USDC, 6dp)          - EIP-712 AIRuling struct (disputeId, ruling,
     - payTo  = evaluator x402 receiver         confidence, splitBps, timestamp,
-    - asset  = USDC (chain-correct)            reasoningHash, bundleHash)
+    - asset  = USDC (chain-correct)            reasoningHash, bundleHash,
+                                               evidenceRefHash, reasoningRefHash) // 9 fields
     - resource = /v1/evaluate#<disputeId>    - 2-of-3 evaluator signatures over RULING_TYPEHASH
     - nonce, validUntil                      - X-PAYMENT-RESPONSE: settlement receipt
 ```
@@ -68,12 +73,14 @@ so the evaluator simply reports it — it is not a gate here either.
 
 ### `AIRuling` wire shape (must match the on-chain `RULING_TYPEHASH`)
 
-The bundle the evaluator signs MUST match, field-for-field and in order,
-`BondEscalation.RULING_TYPEHASH`:
+The bundle the evaluator signs MUST match, field-for-field and in order, all **9 signed fields** of
+`BondEscalation.RULING_TYPEHASH` (the legacy 7-field AIRuling is obsolete — the two trailing
+`*RefHash` fields were appended):
 
 ```
 AIRuling(bytes32 disputeId,uint8 ruling,uint16 confidence,uint16 splitBps,
-         uint64 timestamp,bytes32 reasoningHash,bytes32 bundleHash)
+         uint64 timestamp,bytes32 reasoningHash,bytes32 bundleHash,
+         bytes32 evidenceRefHash,bytes32 reasoningRefHash)
 ```
 
 and the EIP-712 domain MUST be the on-chain `DOMAIN_SEPARATOR`:
@@ -108,14 +115,20 @@ only persistence is the evaluator signing keys, which live in KMS/Railway secret
 | `X402_PAY_TO` | evaluator's x402 receiving address | the address that collects the AI fee; NOT a kernel address |
 | `READ_RPC_URL` | read-only RPC for `getTransaction` validation | public RPC is fine (`sepolia.base.org` / `mainnet.base.org`); read-only |
 | `X402_FACILITATOR_URL` | x402 settlement facilitator (optional) | if absent, settle `transferWithAuthorization` directly |
-| `EVALUATOR_KMS_KEY_REF` | KMS handle(s) for the 2-of-3 signers | **handles only** — raw keys never enter the process env |
+| `KEY_BACKEND` | selects the evaluator signing-key custody mode | `kms` / `keystore` (production) or `raw` (local + testnet). See `OPS.md` §1. |
+| `EVALUATOR_SIGNING_KEYREF` | KMS key handle (`KEY_BACKEND=kms`) | production; key never leaves KMS. Pair with `EVALUATOR_SLOT` + `EVALUATOR_EXPECTED_ADDRESS`. |
+| `EVALUATOR_SIGNING_KEYSTORE_PATH` + `_KEY_PASSWORD` | encrypted V3 keystore (`KEY_BACKEND=keystore`) | production alt; secret-mounted JSON, never in repo. |
+| `EVALUATOR_SIGNING_PRIVATE_KEY` (single) / `EVALUATOR_*_PRIVATE_KEY` (testnet slots) | raw signing key in env / Railway service var (`KEY_BACKEND=raw`) | **local dev + testnet ONLY**; `raw` + `NODE_ENV=production` is a fail-closed boot error (`boot.testnet.ts` loads these on testnet). |
 | `MAX_BUNDLE_TOKENS` | evidence cap | default `100000` (§5 evidence-inflation bound) |
 | `FEE_PER_50K_TOKENS_USDC` | §4.3 unit price | default `1000000` ($1, 6dp) |
 
-> **Forbidden env (boot-time refuse).** `PRIVATE_KEY`, `ACTP_PRIVATE_KEY`, `DEPLOYER_*`,
-> `MNEMONIC`, or any var that decodes to a 32-byte secp256k1 key. The signer for the *ruling* is a
-> KMS reference, not a raw env key, and even that signs **only** the EIP-712 ruling — it has no kernel
-> write authority. See the boot guard in §3.
+> **Forbidden env.** A **kernel-write / deployer** key — a funded `DEPLOYER_*`, a kernel `PRIVATE_KEY`,
+> or a `MNEMONIC` for a funded deployer — has no business here: the evaluator makes zero kernel calls
+> (INV-3). Note the distinction from the *evaluator* signing key: the service DOES load an evaluator
+> signing key (`raw` in local/testnet, `kms`/`keystore` in production, per the table above), and that
+> key signs **only** the EIP-712 `AIRuling` — it carries no kernel-write authority. There is **no**
+> blanket "reject any 32-byte key" boot grep (it would break the service's own signing key); INV-3 is
+> enforced structurally — no write SDK, read-only chain client (§3).
 
 ### `railway.json` / start
 
@@ -130,30 +143,29 @@ at a glance, the service is pointed at the right (and a *non-null*) deployment b
 
 ---
 
-## 3. INV-3 enforcement at the service boundary (boot guard)
+## 3. INV-3 enforcement at the service boundary
 
-The service MUST fail closed if it is mis-provisioned with signing power. Pseudo-guard run at boot,
-before the HTTP listener binds:
+INV-3 (zero kernel calls) is enforced **structurally**, not by an env-grep. The evaluator legitimately
+loads an evaluator signing key (§2), so a "reject any 32-byte key in env" guard would break its own
+boot — **that guard does not exist and must not be added.** What actually holds the line:
+
+- **No write SDK is imported.** The service pulls in no ACTP SDK *write* client and no
+  `kernel.transitionState` / `bondEscalation.*` / `compositeMediator.*` write path.
+- **The chain client is read-only.** The only chain access is `kernel.getTransaction(txId)` over a
+  public RPC (`READ_RPC_URL`), with no signer attached — it moves no funds and signs no transaction.
+- **The signing key is an evaluator key only.** It signs the EIP-712 `AIRuling` digest and nothing
+  else; its custody backends and the `raw`-in-production fail-closed rule live in `OPS.md` §1.
+- **Derived-address assertion (fail-closed).** At boot the address derived from the configured signing
+  key MUST equal the on-chain registry slot for this evaluator (`OPS.md` §1); a mismatch is fatal, and
+  the testnet loader (`boot.testnet.ts`) address-asserts every wallet it builds.
+
+The grep-able guarantee a security reviewer can run:
 
 ```
-// INV-3 boot guard — refuse to start with any kernel-write capability.
-for (const k of Object.keys(process.env)) {
-  const v = process.env[k] ?? "";
-  if (/^(PRIVATE_KEY|ACTP_PRIVATE_KEY|MNEMONIC|DEPLOYER_.*)$/.test(k)) {
-    throw new Error(`INV-3 violation: forbidden secret '${k}' present — dispute-evaluator must not hold kernel-write keys.`);
-  }
-  if (/^0x[0-9a-fA-F]{64}$/.test(v) && k !== "BOND_ESCALATION_ADDRESS" /* 20-byte, not 32 */) {
-    throw new Error(`INV-3 violation: env '${k}' looks like a 32-byte private key.`);
-  }
-}
-// Read client is read-only: assert no signer is attached.
-assert(readClient.signer === undefined, "INV-3: read RPC client must have no signer");
+grep -rE 'transitionState|openDispute|submitAIRuling|\.resolve\(|safeTransfer|sendTransaction' services/dispute-evaluator/src
 ```
 
-This is belt-and-suspenders to the architectural fact that the evaluator code imports **no** ACTP
-write SDK and **no** `kernel.transitionState` path. The grep-able guarantee: a security reviewer can
-`grep -rE 'transitionState|openDispute|submitAIRuling|\.resolve\(|safeTransfer|sendTransaction' services/dispute-evaluator/src`
-and find **only** the read-only `getTransaction` call and the local EIP-712 signing — never a write.
+finds **only** the read-only `getTransaction` call and the local EIP-712 signing — never a write.
 
 ---
 
@@ -171,8 +183,9 @@ and find **only** the read-only `getTransaction` call and the local EIP-712 sign
    service only needs the **fixed** signers + the rotating signer(s) it is responsible for; per
    Threat Model §3 residual, run rotating evaluators from **diverse vendors** so no single-vendor
    compromise reaches 2/3.
-3. **Set Railway secrets** per §2. Confirm **no** forbidden key var is present (the boot guard will
-   refuse otherwise — verify in deploy logs).
+3. **Set Railway secrets** per §2. Confirm no **kernel-write/deployer** key is present, `KEY_BACKEND`
+   is `kms`/`keystore` for production (never `raw`), and the derived signer address matches the
+   on-chain slot (`OPS.md` §1) — verify in deploy logs.
 4. **Deploy + smoke:**
    - `GET /health` → 200, `bondEscalation` matches `aip14b.json`, `chain` matches.
    - **Phase-1 smoke:** `POST /v1/evaluate` with a real `DISPUTED` `txId`, no `X-PAYMENT` → expect

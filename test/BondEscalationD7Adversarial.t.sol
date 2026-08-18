@@ -33,11 +33,11 @@ contract BondEscalationD7Adversarial is DisputeTestBase {
     // Local accessors over the disputes() 13-tuple.
     // ---------------------------------------------------------------------
     function _tierOf(bytes32 d) internal view returns (uint8 t) {
-        (,,,,,,,, t,,,,) = bondEscalation.disputes(d);
+        (,,,,,,,, t,,,,,) = bondEscalation.disputes(d);
     }
 
     function _currentBondOf(bytes32 d) internal view returns (uint256 b) {
-        (,,, b,,,,,,,,,) = bondEscalation.disputes(d);
+        (,,, b,,,,,,,,,,) = bondEscalation.disputes(d);
     }
 
     function _opened() internal returns (bytes32 disputeId) {

@@ -61,7 +61,7 @@ contract AdminPauseStrandProbe is Test {
 
     function _disputed() internal returns (bytes32 txId) {
         vm.prank(requester);
-        txId = kernel.createTransaction(provider, requester, AMT, block.timestamp + 30 days, 2 days, keccak256("svc"), bytes32(0), 0, 0);
+        txId = kernel.createTransaction(provider, requester, AMT, block.timestamp + 30 days, 1 hours, keccak256("svc"), bytes32(0), 0, 0);
         vm.startPrank(requester);
         usdc.approve(address(escrow), type(uint256).max);
         kernel.linkEscrow(txId, address(escrow), txId);

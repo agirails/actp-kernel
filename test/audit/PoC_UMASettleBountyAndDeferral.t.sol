@@ -322,23 +322,23 @@ contract PoC_UMASettleBountyAndDeferral is DisputeTestBase {
     //   disputedAt, lastProposer, tier, resolved, winnerPaid, originalPool, escrowAmount
     // =========================================================================================
     function _currentRulingOf(bytes32 d) internal view returns (uint8 r) {
-        (, r,,,,,,,,,,,) = bondEscalation.disputes(d);
+        (, r,,,,,,,,,,,,) = bondEscalation.disputes(d);
     }
 
     function _accumulatedBondsOf(bytes32 d) internal view returns (uint256 a) {
-        (,,,, a,,,,,,,,) = bondEscalation.disputes(d);
+        (,,,, a,,,,,,,,,) = bondEscalation.disputes(d);
     }
 
     function _resolvedOf(bytes32 d) internal view returns (bool res) {
-        (,,,,,,,,, res,,,) = bondEscalation.disputes(d);
+        (,,,,,,,,, res,,,,) = bondEscalation.disputes(d);
     }
 
     function _accumulatedBondsOfOn(BondEscalation be, bytes32 d) internal view returns (uint256 a) {
-        (,,,, a,,,,,,,,) = be.disputes(d);
+        (,,,, a,,,,,,,,,) = be.disputes(d);
     }
 
     function _resolvedOfOn(BondEscalation be, bytes32 d) internal view returns (bool res) {
-        (,,,,,,,,, res,,,) = be.disputes(d);
+        (,,,,,,,,, res,,,,) = be.disputes(d);
     }
 
     function _remainingFor(bytes32 txId) internal view returns (uint256) {

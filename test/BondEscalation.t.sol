@@ -65,7 +65,7 @@ contract BondEscalationTest is DisputeTestBase {
         // Create a tx but leave it pre-DISPUTED.
         vm.prank(requester);
         bytes32 txId = kernel.createTransaction(
-            provider, requester, TRANSACTION_AMOUNT, block.timestamp + 30 days, 2 days, keccak256("svc2"), bytes32(0), 0, 0
+            provider, requester, TRANSACTION_AMOUNT, block.timestamp + 30 days, 1 hours, keccak256("svc2"), bytes32(0), 0, 0
         );
         vm.expectRevert("Not in DISPUTED state");
         bondEscalation.openDispute(txId);
@@ -739,47 +739,47 @@ contract BondEscalationTest is DisputeTestBase {
     // Internal helpers — typed accessors over the `disputes` public getter (13-tuple).
     // =====================================================================
     function _txIdOf(bytes32 disputeId) internal view returns (bytes32 t) {
-        (t,,,,,,,,,,,,) = bondEscalation.disputes(disputeId);
+        (t,,,,,,,,,,,,,) = bondEscalation.disputes(disputeId);
     }
 
     function _tierOf(bytes32 disputeId) internal view returns (uint8 tier) {
-        (,,,,,,,, tier,,,,) = bondEscalation.disputes(disputeId);
+        (,,,,,,,, tier,,,,,) = bondEscalation.disputes(disputeId);
     }
 
     function _currentBondOf(bytes32 disputeId) internal view returns (uint256 b) {
-        (,,, b,,,,,,,,,) = bondEscalation.disputes(disputeId);
+        (,,, b,,,,,,,,,,) = bondEscalation.disputes(disputeId);
     }
 
     function _accumulatedOf(bytes32 disputeId) internal view returns (uint256 a) {
-        (,,,, a,,,,,,,,) = bondEscalation.disputes(disputeId);
+        (,,,, a,,,,,,,,,) = bondEscalation.disputes(disputeId);
     }
 
     function _splitBpsOf(bytes32 disputeId) internal view returns (uint16 s) {
-        (,, s,,,,,,,,,,) = bondEscalation.disputes(disputeId);
+        (,, s,,,,,,,,,,,) = bondEscalation.disputes(disputeId);
     }
 
     function _lastProposerOf(bytes32 disputeId) internal view returns (address p) {
-        (,,,,,,, p,,,,,) = bondEscalation.disputes(disputeId);
+        (,,,,,,, p,,,,,,) = bondEscalation.disputes(disputeId);
     }
 
     function _resolvedOf(bytes32 disputeId) internal view returns (bool r) {
-        (,,,,,,,,, r,,,) = bondEscalation.disputes(disputeId);
+        (,,,,,,,,, r,,,,) = bondEscalation.disputes(disputeId);
     }
 
     function _winnerPaidOf(bytes32 disputeId) internal view returns (bool w) {
-        (,,,,,,,,,, w,,) = bondEscalation.disputes(disputeId);
+        (,,,,,,,,,, w,,,) = bondEscalation.disputes(disputeId);
     }
 
     function _livenessEndOf(bytes32 disputeId) internal view returns (uint64 l) {
-        (,,,,, l,,,,,,,) = bondEscalation.disputes(disputeId);
+        (,,,,, l,,,,,,,,) = bondEscalation.disputes(disputeId);
     }
 
     function _disputedAtOf(bytes32 disputeId) internal view returns (uint64 d) {
-        (,,,,,, d,,,,,,) = bondEscalation.disputes(disputeId);
+        (,,,,,, d,,,,,,,) = bondEscalation.disputes(disputeId);
     }
 
     function _escrowAmountOf(bytes32 disputeId) internal view returns (uint256 e) {
-        (,,,,,,,,,,,, e) = bondEscalation.disputes(disputeId);
+        (,,,,,,,,,,,, e,) = bondEscalation.disputes(disputeId);
     }
 
     function _opened() internal returns (bytes32 disputeId) {
@@ -791,7 +791,7 @@ contract BondEscalationTest is DisputeTestBase {
     function _opened2() internal returns (bytes32 disputeId) {
         vm.prank(requester);
         bytes32 txId = kernel.createTransaction(
-            provider, requester, TRANSACTION_AMOUNT, block.timestamp + 30 days, 2 days, keccak256("service2"), bytes32(0), 0, 0
+            provider, requester, TRANSACTION_AMOUNT, block.timestamp + 30 days, 1 hours, keccak256("service2"), bytes32(0), 0, 0
         );
         vm.startPrank(requester);
         usdc.approve(address(escrow), TRANSACTION_AMOUNT);
