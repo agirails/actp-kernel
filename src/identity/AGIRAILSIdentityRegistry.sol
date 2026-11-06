@@ -85,6 +85,9 @@ contract AGIRAILSIdentityRegistry is IAGIRAILSIdentityRegistry {
      * @dev Direct call requires msg.sender to be current owner
      */
     function changeOwner(address identity, address newOwner) external override onlyOwner(identity) {
+        // Invalidate withheld authorizations from this ownership epoch, including A -> B -> A.
+        // The signed variant already consumes this nonce in _checkSignature.
+        nonce[identityOwner(identity)]++;
         _changeOwner(identity, newOwner);
     }
 

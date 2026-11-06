@@ -404,9 +404,9 @@ contract BondEscalationTest is DisputeTestBase {
     }
 
     /// @notice assertionResolvedCallback (FALSE → ruling 1 / requester wins). The escalator only set
-    ///         the winner for ruling 0, so ruling 1 has no proposer → graceful split fallback
-    ///         (CANCELLED). Proves the no-winner branch.
-    function test_UMA_ResolvedFalse_NoWinnerForDirection_SplitFallback() external {
+    ///         the winner for ruling 0, so ruling 1 has no proposer. Principal still follows UMA;
+    ///         only the independent Tier-1 pool becomes refundable.
+    function test_UMA_ResolvedFalse_NoWinnerForDirection_CleanWinWithRefunds() external {
         bytes32 disputeId = _opened();
         bytes32 txId = _txIdOf(disputeId);
         // counterRuling 2 → ruling 1 is NEVER proposed, so FALSE (ruling 1) has no tier-1 winner.
@@ -420,12 +420,14 @@ contract BondEscalationTest is DisputeTestBase {
         bytes32 assertionId = bondEscalation.disputeToAssertion(disputeId);
         oov3.mockResolve(assertionId, false); // ruling 1 → no lastProposerForRuling[1]
 
-        // Fallback to split → kernel CANCELLED.
-        assertEq(uint8(kernel.getTransaction(txId).state), uint8(IACTPKernel.State.CANCELLED), "kernel not CANCELLED");
+        assertEq(uint8(kernel.getTransaction(txId).state), uint8(IACTPKernel.State.SETTLED), "kernel not SETTLED");
 
         assertTrue(_resolvedOf(disputeId));
         assertFalse(_winnerPaidOf(disputeId), "no winner should have been paid");
-        assertEq(_splitBpsOf(disputeId), 5000, "split fallback should be 50/50");
+        (, uint8 finalRuling, , , , , , , , , , , ,) = bondEscalation.disputes(disputeId);
+        assertEq(finalRuling, 1, "UMA requester victory preserved");
+        assertEq(_splitBpsOf(disputeId), 0);
+        assertTrue(bondEscalation.tier1Refundable(disputeId));
     }
 
     /// @notice assertionResolvedCallback (FALSE → ruling 1 / requester wins) WITH a genuine ruling-1

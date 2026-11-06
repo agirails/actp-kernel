@@ -3,7 +3,6 @@ pragma solidity ^0.8.20;
 
 import {ICompositeMediator} from "./interfaces/ICompositeMediator.sol";
 import {IACTPKernel} from "./interfaces/IACTPKernel.sol";
-import {IEscrowValidator} from "./interfaces/IEscrowValidator.sol";
 
 /// @title CompositeMediator — thin ruling → kernel-state mapper (AIP-14b §6).
 /// @author AGIRAILS
@@ -23,7 +22,7 @@ import {IEscrowValidator} from "./interfaces/IEscrowValidator.sol";
 ///     The CompositeMediator MUST emit exactly these two encodings — they are the wire contract.
 ///   - INV-2: the mediator NEVER moves funds and NEVER touches an EscrowVault bond method
 ///       (depositBond / releaseBond / bondBalance). Its only EscrowVault contact is the read-only
-///       `remaining(escrowId)`. All value movement happens inside the kernel during
+///       kernel's `escrowPrincipal(txId)` view. All value movement happens inside the kernel during
 ///       `transitionState`; the entry bond return is handled there too.
 ///   - INV-22: on a split (ruling 2) the neutral `DisputeSplitRecorded` reputation trace is emitted
 ///       BEFORE `kernel.transitionState`, so the recorded event ordering is deterministic for
@@ -121,9 +120,8 @@ contract CompositeMediator is ICompositeMediator {
 
         IACTPKernel.TransactionView memory txn = kernel.getTransaction(txId);
 
-        // INV-2: read-only escrow inspection — never a bond method, never a transfer.
-        IEscrowValidator vault = IEscrowValidator(txn.escrowContract);
-        uint256 remaining = vault.remaining(txn.escrowId);
+        // INV-2: read-only principal inspection. Reserved fee debt is never part of an award.
+        uint256 remaining = kernel.escrowPrincipal(txId);
 
         if (ruling == 2) {
             // Split: apportion the remaining escrow by provider share (splitBps).

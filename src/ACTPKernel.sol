@@ -106,9 +106,7 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
     // internal (no public getter) — kept off the ABI to stay within the EIP-170 budget.
     mapping(bytes32 => uint256) internal grossPaidFor;
     mapping(bytes32 => uint256) internal platformFeePaidFor;
-    // [F17 FIX] Set once the provider has been paid via the SETTLED release path; a later
-    // releaseEscrow retry (only reachable if a fee failed to leave escrow) routes the residual to
-    // the fee sinks only — never re-charging a fee nor re-paying the provider.
+    // Reserved legacy storage slot; explicit fee-debt accounting supersedes this flag.
     mapping(bytes32 => bool) internal escrowProviderPaid;
 
     event MediatorApproved(address indexed mediator, bool approved);
@@ -138,6 +136,9 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
 
     PendingEconomicParams private pendingEconomicParams;
     PendingRegistryUpdate private pendingRegistryUpdate;
+
+    // Charged fees that have not yet left this transaction's escrow. Never participant principal.
+    mapping(bytes32 => uint256) internal pendingPlatformFeeFor;
 
     modifier onlyAdmin() {
         require(msg.sender == admin, "Not admin");
@@ -481,17 +482,9 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         require(txn.escrowContract != address(0), "Escrow missing");
 
         IEscrowValidator vault = IEscrowValidator(txn.escrowContract);
-        uint256 remaining = vault.remaining(txn.escrowId);
+        uint256 remaining = _escrowPrincipal(txn, vault);
         // Solvency invariant: guarantee before commitment
         require(amount <= remaining, "Insufficient escrow");
-
-        // NOTE (F59, Codex 2026-07-16): a malicious requester can fragment a payout into sub-floor
-        // milestones so each pays the MIN_FEE floor, draining the provider's aggregate net (the
-        // requester gains nothing and pays gas — self-funded griefing). The correct fix charges the
-        // floor once per transaction aggregate, which needs a per-tx fee accumulator (storage +
-        // accounting) that does not fit the current EIP-170 budget and must NOT reject legitimate
-        // sub-$5 micro-milestones (AGIRAILS targets $0.05-min payments). Deferred to the kernel
-        // size-reduction pass — see SECURITY/AUDIT-2026-07-16-ACTP-V2/REMEDIATION-DECISIONS.md.
 
         _payoutProviderAmount(txn, vault, amount);
         emit EscrowMilestoneReleased(transactionId, amount, block.timestamp);
@@ -508,6 +501,23 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         _releaseEscrow(txn);
     }
 
+    function escrowPrincipal(bytes32 transactionId) external view override returns (uint256) {
+        Transaction storage txn = _getTransaction(transactionId);
+        return _escrowPrincipal(txn, IEscrowValidator(txn.escrowContract));
+    }
+
+    /// @dev Available in any state and during pause. No state transition or reputation call.
+    function retryPlatformFee(bytes32 transactionId) external override nonReentrant {
+        Transaction storage txn = _getTransaction(transactionId);
+        require(approvedEscrowVaults[txn.escrowContract], "Vault not approved");
+        uint256 fee = pendingPlatformFeeFor[transactionId];
+        if (fee > 0) _distributeFee(txn, IEscrowValidator(txn.escrowContract), fee, false);
+    }
+
+    function _escrowPrincipal(Transaction storage txn, IEscrowValidator vault) internal view returns (uint256) {
+        return vault.remaining(txn.escrowId) - pendingPlatformFeeFor[txn.transactionId];
+    }
+
     /// @notice [F-6] Permissionless liveness backstop for a stalled IN_PROGRESS escrow.
     /// @dev Intentionally omits whenNotPaused — pause blocks state changes, not fund recovery
     ///      (same precedent as releaseEscrow / resolveDisputeWhilePaused). After deadline+recoveryGrace,
@@ -521,7 +531,7 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         require(txn.escrowContract != address(0), "Escrow missing");
 
         IEscrowValidator vault = IEscrowValidator(txn.escrowContract);
-        uint256 remaining = vault.remaining(txn.escrowId);
+        uint256 remaining = _escrowPrincipal(txn, vault);
 
         // Effects before interactions (CEI). CANCELLED is terminal — re-entry reverts on the state check.
         txn.state = State.CANCELLED;
@@ -532,21 +542,7 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         emit StalledInProgressRecovered(transactionId, txn.requester, remaining);
 
         // [C-2 FIX] Reputation mark — same guarded pattern as settlement. provider at fault (true): non-delivery.
-        if (address(agentRegistry) != address(0) && reputationProcessedBy[txn.transactionId] == address(0)) {
-            try agentRegistry.updateReputationOnSettlement{gas: 150000}(
-                txn.provider,
-                txn.transactionId,
-                txn.amount,
-                true
-            ) {
-                // [F24 FIX] Latch ONLY on success. Previously the processed-marker was written
-                // BEFORE the call and the revert was swallowed, permanently suppressing this
-                // transaction's reputation update if the registry reverted (e.g. the provider
-                // deregistered first). Marking on success keeps the C-2 once-per-txId invariant
-                // while allowing a later terminal path / re-registration to record it.
-                reputationProcessedBy[txn.transactionId] = address(agentRegistry);
-            } catch {}
-        }
+        _recordReputation(txn, true);
 
         if (remaining > 0) {
             _refundRequester(txn, vault, remaining);
@@ -986,44 +982,22 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
     function _releaseEscrow(Transaction storage txn) internal {
         require(txn.escrowContract != address(0), "Escrow missing");
         IEscrowValidator vault = IEscrowValidator(txn.escrowContract);
-        uint256 remaining = vault.remaining(txn.escrowId);
+        uint256 remaining = _escrowPrincipal(txn, vault);
+        _recordReputation(txn, txn.wasDisputed);
 
-        // [C-2 FIX] Update reputation only if not yet processed by current registry (prevents double-counting on registry upgrade)
+        // Retry only previously reserved fees; participant principal is independent of that debt.
+        uint256 fee = pendingPlatformFeeFor[txn.transactionId];
+        if (fee > 0) _distributeFee(txn, vault, fee, false);
+        if (remaining > 0) _payoutProviderAmount(txn, vault, remaining);
+    }
+
+    function _recordReputation(Transaction storage txn, bool providerAtFault) internal {
         if (address(agentRegistry) != address(0) && reputationProcessedBy[txn.transactionId] == address(0)) {
             try agentRegistry.updateReputationOnSettlement{gas: 150000}(
-                txn.provider,
-                txn.transactionId,
-                txn.amount,
-                txn.wasDisputed
+                txn.provider, txn.transactionId, txn.amount, providerAtFault
             ) {
-                // [F24 FIX] Latch ONLY on success (see stalled-recovery site) — a reverting
-                // registry no longer permanently suppresses this transaction's reputation row.
                 reputationProcessedBy[txn.transactionId] = address(agentRegistry);
             } catch {}
-        }
-
-        // If milestones already released all funds, settlement still succeeds
-        // (reputation was updated above, state transition was already validated).
-        if (remaining > 0) {
-            if (escrowProviderPaid[txn.transactionId]) {
-                // [F17 FIX] Already settled once; the only way `remaining > 0` is a platform fee that
-                // FAILED to leave escrow (e.g. a reverting feeRecipient). Route it to the fee sinks
-                // only — an idempotent fee-only retry, never repriced as fresh provider gross.
-                _distributeFee(txn, vault, remaining);
-            } else {
-                escrowProviderPaid[txn.transactionId] = true; // CEI: mark before the external payout
-                // [F17/BUG2 FIX] Pay ONLY the unprocessed principal to the provider; any fee that
-                // stranded during an earlier milestone (remaining above the unprocessed principal) is
-                // routed to the fee sinks, not repriced as provider gross. On the non-disputed path
-                // `txn.amount` is the escrow principal and `grossPaidFor` is what milestones already
-                // processed, so `txn.amount - grossPaidFor` is exactly the principal still owed.
-                uint256 unpaidPrincipal =
-                    txn.amount > grossPaidFor[txn.transactionId] ? txn.amount - grossPaidFor[txn.transactionId] : 0;
-                if (unpaidPrincipal > remaining) unpaidPrincipal = remaining;
-                if (unpaidPrincipal > 0) _payoutProviderAmount(txn, vault, unpaidPrincipal);
-                uint256 strandedFee = remaining - unpaidPrincipal;
-                if (strandedFee > 0) _distributeFee(txn, vault, strandedFee);
-            }
         }
     }
 
@@ -1034,7 +1008,7 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
     function _handleDisputeSettlement(Transaction storage txn, bytes calldata proof) internal {
         if (txn.escrowContract == address(0)) return;
         IEscrowValidator vault = IEscrowValidator(txn.escrowContract);
-        uint256 remaining = vault.remaining(txn.escrowId);
+        uint256 remaining = _escrowPrincipal(txn, vault);
 
         (uint256 requesterAmount, uint256 providerAmount, address mediator, uint256 mediatorAmount, bool hasResolution, bool providerAtFault) =
             _decodeResolutionProof(proof);
@@ -1047,18 +1021,7 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
 
         // [C-2 FIX] Update reputation only if not yet processed by current registry (prevents double-counting on registry upgrade)
         // AIP-14: Pass providerAtFault instead of txn.wasDisputed — only at-fault disputes affect reputation
-        if (address(agentRegistry) != address(0) && reputationProcessedBy[txn.transactionId] == address(0)) {
-            try agentRegistry.updateReputationOnSettlement{gas: 150000}(
-                txn.provider,
-                txn.transactionId,
-                txn.amount,
-                providerAtFault
-            ) {
-                // [F24 FIX] Latch ONLY on success (see stalled-recovery site) — a reverting
-                // registry no longer permanently suppresses this transaction's reputation row.
-                reputationProcessedBy[txn.transactionId] = address(agentRegistry);
-            } catch {}
-        }
+        _recordReputation(txn, providerAtFault);
 
         if (mediator != address(0)) {
             require(approvedMediators[mediator], "Mediator not approved");
@@ -1071,10 +1034,6 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
             require(totalDistributed == remaining, "Distribute all");
 
             if (providerAmount > 0) {
-                // [F17 FIX] Mark the provider paid on the DISPUTED settlement path too, so a later
-                // releaseEscrow retry over a stranded fee routes the residual to the fee sinks only
-                // (idempotent fee-only retry) instead of repricing it as a fresh provider gross.
-                escrowProviderPaid[txn.transactionId] = true;
                 _payoutProviderAmount(txn, vault, providerAmount);
             }
             if (requesterAmount > 0) {
@@ -1097,7 +1056,7 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
     ) internal {
         if (txn.escrowContract == address(0)) return;
         IEscrowValidator vault = IEscrowValidator(txn.escrowContract);
-        uint256 remaining = vault.remaining(txn.escrowId);
+        uint256 remaining = _escrowPrincipal(txn, vault);
 
         (uint256 requesterAmount, uint256 providerAmount, address mediator, uint256 mediatorAmount, bool hasResolution,) =
             _decodeResolutionProof(proof);
@@ -1174,7 +1133,7 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         require(grossAmount > 0, "Amount zero");
         require(approvedEscrowVaults[address(vault)], "Vault not approved");
 
-        uint256 available = vault.remaining(txn.escrowId);
+        uint256 available = _escrowPrincipal(txn, vault);
         require(available >= grossAmount, "Low escrow");
 
         // [F59 FIX] Charge the fee on the CUMULATIVE gross for this transaction so milestone
@@ -1193,6 +1152,7 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         if (fee > grossAmount) fee = grossAmount; // never take more than this fragment (solvency)
         grossPaidFor[txId] = newGross;
         platformFeePaidFor[txId] = prevFee + fee;
+        pendingPlatformFeeFor[txId] += fee;
         uint256 providerNet = grossAmount - fee;
 
         if (providerNet > 0) {
@@ -1201,7 +1161,7 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
             emit EscrowReleased(txn.transactionId, txn.provider, actualPayout, block.timestamp);
         }
         if (fee > 0) {
-            _distributeFee(txn, vault, fee);
+            _distributeFee(txn, vault, fee, true);
         }
     }
 
@@ -1218,7 +1178,7 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
      *      - Clears dangling approvals before fallback transfer
      *      - Emits forensic events for all failure scenarios
      */
-    function _distributeFee(Transaction storage txn, IEscrowValidator vault, uint256 totalFee) internal {
+    function _distributeFee(Transaction storage txn, IEscrowValidator vault, uint256 totalFee, bool freshCharge) internal {
         // Split fee: 0.1% to archive treasury, 99.9% to fee recipient
         uint256 archiveFee;
         // [AIP-14c] Amount of the archive portion ACTUALLY removed from escrow. Used below to size the
@@ -1226,7 +1186,10 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         // receiveFunds failed, the fee was redirected out of escrow AND still subtracted as if it stayed,
         // stranding ~archiveFee in the terminal escrow (recoverable by the provider via releaseEscrow).
         uint256 escrowedArchive;
-        if (archiveTreasury != address(0)) {
+        uint256 escrowedTreasury;
+        // A failed treasury payout is already allocated. Retrying it must never allocate
+        // another archive slice. Failed archive payments fall back to treasury in this same call.
+        if (freshCharge && archiveTreasury != address(0)) {
             archiveFee = (totalFee * ARCHIVE_ALLOCATION_BPS) / MAX_BPS;
             if (archiveFee > 0) {
                 // Payout archive fee to kernel first, then forward to treasury
@@ -1282,15 +1245,15 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
             // from DOSing all settlements. On failure, fee stays in vault (recoverable).
             try vault.payout(txn.escrowId, feeRecipient, treasuryFee) returns (uint256 feeResult) {
                 require(feeResult == treasuryFee, "Partial fee");
+                escrowedTreasury = treasuryFee;
                 emit PlatformFeeAccrued(txn.transactionId, feeRecipient, treasuryFee, block.timestamp);
             } catch {
-                // [Apex 2026-07-12 F-IV] Fee remains in the escrow vault for this escrowId. There is
-                // NO in-contract retry on a terminal transaction — recovery is operational: rotate
-                // `feeRecipient` for FUTURE settlements; this txn's stranded fee is surfaced via
-                // ArchivePayoutMismatch for accounting. Only platform fee is affected, never principal.
+                // The fee remains reserved in escrow. retryPlatformFee can re-drive it without
+                // repricing it as principal, including on CANCELLED transactions and during pause.
                 emit ArchivePayoutMismatch(txn.transactionId, treasuryFee, 0);
             }
         }
+        pendingPlatformFeeFor[txn.transactionId] -= escrowedArchive + escrowedTreasury;
     }
 
     function _refundRequester(Transaction storage txn, IEscrowValidator vault, uint256 amount) internal {

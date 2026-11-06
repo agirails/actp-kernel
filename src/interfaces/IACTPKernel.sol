@@ -2,6 +2,12 @@
 pragma solidity ^0.8.20;
 
 interface IACTPKernel {
+    /// @notice Unpaid escrow principal, excluding charged platform fees still held in the vault.
+    function escrowPrincipal(bytes32 transactionId) external view returns (uint256);
+
+    /// @notice Permissionless, pause-exempt retry of reserved platform fees; never pays participants.
+    function retryPlatformFee(bytes32 transactionId) external;
+
     enum State {
         INITIATED,
         QUOTED,

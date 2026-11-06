@@ -292,7 +292,7 @@ contract BondEscalationHandler is Test {
     function claimRefund(uint256 dSeed, uint256 aSeed) external {
         bytes32 disputeId = _pickDispute(dSeed);
         (uint8 ruling, , , , , bool resolved) = _state(disputeId);
-        if (!resolved || ruling != 2) return;
+        if (!resolved || (ruling != 2 && !bondEscalation.tier1Refundable(disputeId))) return;
 
         address who = _pickActor(aSeed);
         if (bondEscalation.deposits(disputeId, who) == 0) return;
@@ -492,7 +492,7 @@ contract BondEscalationInvariantTest is DisputeTestBase {
             if (!resolved) {
                 // Whole live pool is owed back to the game.
                 totalObligation += accumulated;
-            } else if (ruling == 2) {
+            } else if (ruling == 2 || bondEscalation.tier1Refundable(disputeId)) {
                 // SPLIT: owe the sum of every depositor's still-unclaimed proportional share.
                 if (originalPool == 0) continue; // nothing was ever deposited
                 address[] memory deps = handler.depositorsOf(disputeId);

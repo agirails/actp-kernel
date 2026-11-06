@@ -57,6 +57,8 @@ contract VerifyDeployGate is Script {
         // (1) LOGICAL IDENTITY — the constant, network-independent check.
         bytes32 kv = ACTPKernel(kernelAddr).kernelVersion();
         _assertBytes32("kernelVersion", kv, KERNEL_VERSION_V2);
+        _requireSelector(kernelAddr, ACTPKernel.escrowPrincipal.selector);
+        _requireSelector(kernelAddr, ACTPKernel.retryPlatformFee.selector);
 
         // (2) WIRING — the Bond must point at THIS kernel, and (when pinned) the right token/
         //     mediator/oracle. Catches a Bond wired to a stale kernel or wrong USDC.
@@ -116,6 +118,16 @@ contract VerifyDeployGate is Script {
         console2.log("NOTE  verify Safe policy + evaluator registry + constructor args off-chain (remediation #7)");
 
         console2.log("=== GATE PASSED ===");
+    }
+
+    /// @dev Additive fee-accounting ABI must be present even on a kernel sharing the REV2 identity.
+    ///      The audited codehash pins still establish the implementation, not this presence heuristic.
+    function _requireSelector(address target, bytes4 selector) internal view {
+        bytes memory code = target.code;
+        for (uint256 i = 0; i + 4 <= code.length; i++) {
+            if (bytes4(bytes.concat(code[i], code[i + 1], code[i + 2], code[i + 3])) == selector) return;
+        }
+        revert("GATE: kernel missing fee accounting ABI");
     }
 
     function _assertBytes32(string memory label, bytes32 got, bytes32 want) internal pure {

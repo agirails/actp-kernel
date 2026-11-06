@@ -162,6 +162,9 @@ contract DeployKernelV2 is Script {
             require(address(archive.USDC()) == usdc, "Archive USDC mismatch");
             require(address(archive.kernel()) == address(kernel), "Archive kernel mismatch");
             require(archive.uploader() == archiveUploader, "Archive uploader mismatch");
+            // Ownable authorizes the broadcaster/deployer, independently of the kernel admin.
+            if (archive.owner() != admin) archive.transferOwnership(admin);
+            require(archive.owner() == admin, "Archive owner mismatch");
             console.log("   Archive v2 configuration verified");
         }
 
@@ -181,11 +184,6 @@ contract DeployKernelV2 is Script {
             if (deployArchive) {
                 kernel.setArchiveTreasury(address(archive));
                 console.log("   setArchiveTreasury(newArchive) -> OK");
-                // Hand archive ownership to admin if deployer != admin (no-op when equal).
-                if (archive.owner() != admin) {
-                    archive.transferOwnership(admin);
-                    console.log("   archive.transferOwnership(admin) -> OK");
-                }
             }
 
             if (deployRegistry) {
@@ -235,14 +233,10 @@ contract DeployKernelV2 is Script {
                 console.log("  selector: setArchiveTreasury(address)");
                 console.log("  calldata: ", vm.toString(abi.encodeWithSelector(ACTPKernel.setArchiveTreasury.selector, address(archive))));
                 console.log("");
-                console.log("TX 3 (CRITICAL): transfer archive ownership to the Safe");
-                console.log("  to:       ", address(archive));
-                console.log("  selector: transferOwnership(address)");
-                console.log("  calldata: ", vm.toString(abi.encodeWithSignature("transferOwnership(address)", admin)));
-                console.log("");
+                console.log("Archive ownership already transferred to admin by the deployer.");
             }
             if (deployRegistry) {
-                console.log("TX 4: schedule the new AgentRegistry (2-day timelock)");
+                console.log("TX 3: schedule the new AgentRegistry (2-day timelock)");
                 console.log("  to:       ", address(kernel));
                 console.log("  selector: scheduleAgentRegistryUpdate(address)");
                 console.log("  calldata: ", vm.toString(abi.encodeWithSelector(ACTPKernel.scheduleAgentRegistryUpdate.selector, address(registry))));

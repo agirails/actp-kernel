@@ -4,6 +4,10 @@ pragma solidity ^0.8.20;
 import "./helpers/DisputeTestBase.sol";
 import {AIRuling} from "../src/interfaces/DisputeTypes.sol";
 import {IACTPKernel} from "../src/interfaces/IACTPKernel.sol";
+import {VmSafe} from "forge-std/Vm.sol";
+import {AgentRegistry} from "../src/registry/AgentRegistry.sol";
+import {IAgentRegistry} from "../src/interfaces/IAgentRegistry.sol";
+import {ArchiveTreasury} from "../src/treasury/ArchiveTreasury.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 // =========================================================================================
@@ -117,6 +121,11 @@ contract ReentrantUSDC {
 // Threat-model test suite.
 // =========================================================================================
 
+contract GasModeCounter {
+    uint256 public value;
+    function increment() external { value++; }
+}
+
 /// @title BondEscalationThreatModelTest — targeted adversarial tests (PRD P1-8, INV-16/19, App-B).
 /// @notice Complements the stateful invariant suite with deliberate attacks the random fuzzer is
 ///         unlikely to construct on its own:
@@ -135,27 +144,13 @@ contract BondEscalationThreatModelTest is DisputeTestBase {
     uint64 internal constant LIVENESS = 4 hours;
     uint256 internal constant MAX_BOND = 500_000_000;
 
-    // -------- forwarded-callback gas budget (App-B item 2) --------
-    // [F-4 AUDIT FIX] The real UMA OptimisticOracleV3 forwards 63/64 of the gas REMAINING at the
-    // settleAssertion call site to `callbackRecipient` (EIP-150 "all but one 64th"), NOT a fixed
-    // ~100k stipend (the earlier App-B "~100k" note was inaccurate and is corrected here and in the
-    // spec/App-B/PRD R13). Consequence: an honest settle caller who provides a normal keeper gas
-    // limit forwards FAR more than the heavy first-resolution callback needs (~158k no-registry,
-    // up to ~277k with reputation + paid-mediator legs). So the heavy path does NOT structurally
-    // OOG under honest provisioning — F-4 is a deliberate-griefing / caller-under-provisioning
-    // concern, recoverable via permissionless forceResolveStale at 30 days, hence MEDIUM not HIGH.
-    // We assert:
-    //   - measured < CALLBACK_GAS_BUDGET (regression ceiling — a future change that balloons it trips here)
-    //   - measured < UMA_FORWARD_ENVELOPE_63_64 (the callback FITS the 63/64-of-remaining envelope a
-    //     realistically-provisioned keeper forwards — pins that honest settlement does NOT OOG)
+    // Minimal configuration: preserve the 600k cold-call budget and 300k warm regression
+    // ceiling as distinct measurements. Instrumented coverage is not release gas bytecode.
     uint256 internal constant CALLBACK_GAS_BUDGET = 600_000;
-    // 63/64 of a conservative keeper settle-gas limit (1,000,000) = 984,375 — the floor an honest
-    // caller forwards. The heavy callback must fit comfortably under this (it measures ~158k).
+    // EIP-150 forwards at most 63/64 of gas REMAINING at the oracle callback callsite.
+    // This conditional envelope assumes 1M remains there; it is not a keeper transaction limit.
+    // Full configuration (registry + archive + fresh settler) is tested separately under it.
     uint256 internal constant UMA_FORWARD_ENVELOPE_63_64 = (1_000_000 * 63) / 64;
-    // TIGHT informational regression ceiling (review hardening): the base-stack heavy callback measures
-    // ~158k; the worst case with the reputation + paid-mediator legs is ~277k. 300k catches a ~2x
-    // regression in the callback while leaving headroom for compiler/gas drift — far tighter than the
-    // (directional-fact) 63/64 envelope above, which is intentionally loose.
     uint256 internal constant CALLBACK_GAS_TIGHT_CEILING = 300_000;
 
     function setUp() external {
@@ -441,55 +436,217 @@ contract BondEscalationThreatModelTest is DisputeTestBase {
     // 3. FIRST-RESOLUTION UMA CALLBACK GAS SNAPSHOT (App-B item 2, R13)
     // =====================================================================
 
-    /// @dev Measure the gas of the FIRST-resolution (NON early-return) UMA callback END-TO-END:
-    ///      assertionResolvedCallback → safeTransfer(winner) → compositeMediator.resolve →
-    ///      kernel.transitionState → escrow payout + reputation try/catch. This is the heavy path
-    ///      App-B item 2 warns about; the cheap already-resolved early-return is trivially cheaper.
-    ///      We assert it fits CALLBACK_GAS_BUDGET (a bounded forwarded-callback envelope) and document
-    ///      the recovery: if a real OOV3 ever forwards LESS than this and the callback OOGs, the dispute
-    ///      is NOT stuck — `forceResolveStale` (30-day) and `syncExternalResolution` (admin-resolved in
-    ///      kernel) both resolve it without the callback, and UMA's own bond settlement is independent.
-    function test_Gas_FirstResolutionUMACallback_FitsBudget() external {
-        (bytes32 disputeId, , bytes32 assertionId) = _escalatedToUMA();
+    struct CallbackState {
+        bytes32 disputeId;
+        bytes32 txId;
+        bytes32 assertionId;
+        uint256 pool;
+        uint256 entryBond;
+        address winner;
+        uint256 winnerBalance;
+        uint256 providerBalance;
+        uint256 requesterBalance;
+        uint256 feeBalance;
+    }
 
-        // Resolve via the mock, but measure the gas of the BondEscalation callback itself by invoking
-        // it directly AS the OOV3 (msg.sender == oov3) and snapshotting gasleft() across the call.
+    function _snapshotCallback(bool truth) internal returns (CallbackState memory s) {
+        (s.disputeId, s.txId, s.assertionId) = _escalatedToUMA();
+        (, , , , uint256 pool, , , , , , , , ,) = bondEscalation.disputes(s.disputeId);
+        s.pool = pool;
+        s.entryBond = kernel.getTransaction(s.txId).disputeBond;
+        s.winner = bondEscalation.lastProposerForRuling(s.disputeId, truth ? 0 : 1);
+        assertTrue(s.winner != address(0), "benchmark must exercise a winning Tier-1 proposer");
+        s.winnerBalance = usdc.balanceOf(s.winner);
+        s.providerBalance = usdc.balanceOf(provider);
+        s.requesterBalance = usdc.balanceOf(requester);
+        s.feeBalance = usdc.balanceOf(feeCollector);
+    }
+
+    function _assertCallbackComplete(CallbackState memory s, bool truth, uint256 bounty, address archive) internal view {
+        (, uint8 ruling, uint16 splitBps, , uint256 pool, , , , , bool resolved, bool winnerPaid, , ,) =
+            bondEscalation.disputes(s.disputeId);
+        assertTrue(resolved, "first callback must resolve");
+        assertEq(ruling, truth ? 0 : 1);
+        assertEq(splitBps, 0);
+        assertTrue(winnerPaid);
+        assertEq(pool, 0);
+        assertFalse(bondEscalation.mediatorRetryPending(s.disputeId), "callback deferred escrow resolution");
+        assertEq(bondEscalation.pendingSettler(s.disputeId), address(0));
+        assertEq(uint8(kernel.getTransaction(s.txId).state), uint8(IACTPKernel.State.SETTLED));
+        assertEq(kernel.getTransaction(s.txId).disputeBond, 0);
+        assertEq(escrow.remaining(s.txId), 0, "callback left escrow funds");
+        assertEq(kernel.escrowPrincipal(s.txId), 0);
+        assertEq(escrow.bondBalance(s.txId), 0);
+        uint256 fee = truth ? ESCROW / 100 : 0;
+        uint256 archiveFee = archive == address(0) ? 0 : fee * 10 / 10000;
+        assertEq(usdc.balanceOf(provider) - s.providerBalance, truth ? ESCROW - fee + s.entryBond : 0);
+        assertEq(usdc.balanceOf(requester) - s.requesterBalance, truth ? 0 : ESCROW + s.entryBond);
+        assertEq(usdc.balanceOf(s.winner) - s.winnerBalance, s.pool - bounty);
+        assertEq(usdc.balanceOf(feeCollector) - s.feeBalance, fee - archiveFee);
+        if (archive != address(0)) {
+            assertEq(usdc.balanceOf(archive), archiveFee);
+            assertEq(ArchiveTreasury(archive).totalReceived(), archiveFee);
+        }
+    }
+
+    /// @dev A runner-mode witness, independent of callback performance. A second SSTORE is dirty
+    ///      and warm within one test transaction, or clean in its own isolated transaction.
+    function _assertGasMode(bool isolated) internal {
+        GasModeCounter counter = new GasModeCounter();
+        counter.increment();
+        uint256 beforeGas = gasleft();
+        counter.increment();
+        uint256 used = beforeGas - gasleft();
+        assertEq(counter.value(), 2);
+        if (isolated) assertGt(used, 20_000, "cold benchmark lost isolated execution");
+        else assertLt(used, 10_000, "warm benchmark lost non-isolated execution");
+    }
+
+    function _measureMinimalCallback(bool isolated) internal {
+        _assertGasMode(isolated);
+        CallbackState memory s = _snapshotCallback(true);
         vm.prank(address(oov3));
-        uint256 gasBefore = gasleft();
-        bondEscalation.assertionResolvedCallback(assertionId, true);
-        uint256 gasUsed = gasBefore - gasleft();
+        uint256 beforeGas = gasleft();
+        bondEscalation.assertionResolvedCallback{gas: CALLBACK_GAS_BUDGET}(s.assertionId, true);
+        uint256 used = beforeGas - gasleft();
+        emit log_named_uint(isolated ? "minimal isolated tx accounting gas" : "minimal warm benchmark gas", used);
+        _assertCallbackComplete(s, true, 0, address(0));
+        assertLt(used, CALLBACK_GAS_BUDGET, "minimal callback exceeds 600k budget");
+        assertLt(used, UMA_FORWARD_ENVELOPE_63_64, "minimal callback exceeds conditional envelope");
+        // Coverage uses an instrumented --ir-minimum build, not release benchmark bytecode.
+        // The normal forge test CI gate always enforces 300k. Coverage retains the bounded
+        // call, runner-mode witness and every complete state/balance assertion above.
+        if (!isolated && !vm.isContext(VmSafe.ForgeContext.Coverage)) {
+            assertLt(used, CALLBACK_GAS_TIGHT_CEILING, "warm callback exceeds 300k regression ceiling");
+        }
+    }
 
-        emit log_named_uint("first-resolution UMA callback gas (end-to-end)", gasUsed);
+    /// @dev Historical warm benchmark. Only this test opts out of isolation.
+    /// forge-config: default.isolate = false
+    /// forge-config: base_mainnet_fork.isolate = false
+    function test_Gas_FirstResolutionUMACallback_FitsBudget() external {
+        _measureMinimalCallback(false);
+    }
 
-        // The dispute must have actually resolved on the heavy path (NOT the cheap early-return).
-        ( , uint8 ruling, , , uint256 accumulated, , , , , bool resolved, , , , ) =
-            bondEscalation.disputes(disputeId);
-        assertTrue(resolved, "callback took the first-resolution path");
-        assertEq(ruling, 0, "TRUE -> ruling 0");
-        assertEq(accumulated, 0, "Tier-1 pool pushed to winner");
+    /// @dev Minimal-config cold callback. The actual call remains capped at the original 600k.
+    /// forge-config: default.isolate = true
+    /// forge-config: base_mainnet_fork.isolate = true
+    function test_Gas_ColdFirstResolutionUMACallback_FitsBudget() external {
+        _measureMinimalCallback(true);
+    }
 
-        assertLt(gasUsed, CALLBACK_GAS_BUDGET, "first-resolution callback exceeds forwarded-callback budget");
-
-        // [F-4 AUDIT FIX] PIN the corrected fact (App-B item 2): the real OOV3 forwards 63/64 of the
-        // gas REMAINING at the settle site, so an honestly-provisioned keeper forwards FAR more than
-        // this heavy callback needs. We assert the callback FITS comfortably under that 63/64 envelope
-        // — i.e. honest settlement does NOT structurally OOG (the earlier "~100k fixed forward, so the
-        // heavy path always OOGs" premise was wrong). forceResolveStale stays the backstop for the
-        // griefing / under-provisioning case, but is NOT the expected primary route under honest gas.
-        assertLt(
-            gasUsed,
-            UMA_FORWARD_ENVELOPE_63_64,
-            "heavy callback must fit the 63/64-of-remaining UMA forward envelope under honest provisioning"
+    function _measureConfiguredCallback(bool truth) internal {
+        _assertGasMode(true);
+        AgentRegistry registry = new AgentRegistry(address(kernel));
+        kernel.scheduleAgentRegistryUpdate(address(registry));
+        vm.warp(vm.getBlockTimestamp() + 2 days + 1);
+        kernel.executeAgentRegistryUpdate();
+        IAgentRegistry.ServiceDescriptor[] memory services = new IAgentRegistry.ServiceDescriptor[](1);
+        services[0] = IAgentRegistry.ServiceDescriptor(
+            keccak256("text-generation"), "text-generation", "", 0, 0, 0, ""
         );
+        vm.prank(provider);
+        registry.registerAgent("https://gas-fixture.example", services);
+        ArchiveTreasury archive = new ArchiveTreasury(address(usdc), address(kernel), address(this));
+        kernel.setArchiveTreasury(address(archive));
+        CallbackState memory s = _snapshotCallback(truth);
+        address settler = address(0x7711);
+        assertEq(usdc.balanceOf(settler), 0, "settler must exercise a fresh balance write");
+        oov3.setCallbackGasLimit(UMA_FORWARD_ENVELOPE_63_64);
+        oov3.mockArmResult(s.assertionId, truth);
+        vm.prank(settler);
+        bondEscalation.settleUMAAssertion(s.disputeId);
+        emit log_named_uint(truth ? "full provider-win oracle CALL gas" : "full requester-win oracle CALL gas",
+            oov3.callbackGasUsed());
+        assertGt(oov3.callbackGasUsed(), 0, "bounded oracle callback was not measured");
+        assertEq(oov3.getAssertionResult(s.assertionId), truth);
+        uint256 bounty = s.pool / 10;
+        assertEq(usdc.balanceOf(settler), bounty);
+        _assertCallbackComplete(s, truth, bounty, address(archive));
+        assertEq(kernel.reputationProcessedBy(s.txId), address(registry), "150k reputation call failed");
+        IAgentRegistry.AgentProfile memory profile = registry.getAgent(provider);
+        assertEq(profile.totalTransactions, 1);
+        assertEq(profile.disputedTransactions, truth ? 0 : 1);
+        assertEq(profile.totalVolumeUSDC, ESCROW);
+        vm.prank(address(kernel));
+        vm.expectRevert("Transaction already processed");
+        registry.updateReputationOnSettlement(provider, s.txId, ESCROW, !truth);
+    }
 
-        // Review hardening: a TIGHT informational ceiling near the measured value so a ~2x gas
-        // regression in the callback is caught early (the 63/64 envelope above only catches a ~6x
-        // blowup). Kept above the ~158k base-stack measurement + the ~277k worst case headroom.
-        assertLt(
-            gasUsed,
-            CALLBACK_GAS_TIGHT_CEILING,
-            "heavy callback exceeded the tight 300k regression ceiling (investigate a gas regression)"
-        );
+    /// @dev Both production-shaped tests cap the *oracle's nested CALL* at the unchanged EIP-150
+    ///      envelope: 984375 if 1M remains at that callsite, not 1M total keeper transaction gas.
+    /// forge-config: default.isolate = true
+    /// forge-config: base_mainnet_fork.isolate = true
+    function test_Gas_ColdConfiguredProviderWin_FitsEnvelope() external {
+        _measureConfiguredCallback(true);
+    }
+
+    /// forge-config: default.isolate = true
+    /// forge-config: base_mainnet_fork.isolate = true
+    function test_Gas_ColdConfiguredRequesterWin_FitsEnvelope() external {
+        _measureConfiguredCallback(false);
+    }
+
+    function _assertCallbackRolledBack(CallbackState memory s) internal view {
+        (, , , , uint256 pool, , , , , bool resolved, , , ,) = bondEscalation.disputes(s.disputeId);
+        assertFalse(resolved);
+        assertEq(pool, s.pool);
+        assertFalse(bondEscalation.mediatorRetryPending(s.disputeId));
+        assertEq(uint8(kernel.getTransaction(s.txId).state), uint8(IACTPKernel.State.DISPUTED));
+        assertEq(kernel.getTransaction(s.txId).disputeBond, s.entryBond);
+        assertEq(escrow.remaining(s.txId), ESCROW);
+        assertEq(kernel.escrowPrincipal(s.txId), ESCROW);
+        assertEq(escrow.bondBalance(s.txId), s.entryBond);
+        assertEq(usdc.balanceOf(address(bondEscalation)), s.pool);
+        assertEq(usdc.balanceOf(s.winner), s.winnerBalance);
+        assertEq(usdc.balanceOf(provider), s.providerBalance);
+        assertEq(usdc.balanceOf(requester), s.requesterBalance);
+        assertEq(usdc.balanceOf(feeCollector), s.feeBalance);
+    }
+
+    /// @dev Underprovisioning can revert atomically or return a supported deferred/fee-debt state.
+    ///      Every non-reverted sample must recover to the exact same complete allocation.
+    /// forge-config: default.isolate = true
+    /// forge-config: base_mainnet_fork.isolate = true
+    function test_Gas_ColdCallbackSweep_PreservesRecovery() external {
+        _assertGasMode(true);
+        CallbackState memory s = _snapshotCallback(true);
+        uint256 snapshot = vm.snapshotState();
+        uint256 reverted;
+        uint256 deferred;
+        uint256 completed;
+        for (uint256 limit = 50_000; limit <= CALLBACK_GAS_BUDGET; limit += 50_000) {
+            assertTrue(vm.revertToState(snapshot));
+            vm.prank(address(oov3));
+            (bool ok,) = address(bondEscalation).call{gas: limit}(
+                abi.encodeWithSelector(bondEscalation.assertionResolvedCallback.selector, s.assertionId, true)
+            );
+            if (!ok) {
+                reverted++;
+                _assertCallbackRolledBack(s);
+                continue;
+            }
+            if (bondEscalation.mediatorRetryPending(s.disputeId)) {
+                deferred++;
+                assertEq(uint8(kernel.getTransaction(s.txId).state), uint8(IACTPKernel.State.DISPUTED));
+                assertEq(escrow.remaining(s.txId), ESCROW);
+                assertEq(escrow.bondBalance(s.txId), s.entryBond);
+                assertEq(usdc.balanceOf(provider), s.providerBalance);
+                assertEq(usdc.balanceOf(requester), s.requesterBalance);
+                assertEq(usdc.balanceOf(feeCollector), s.feeBalance);
+                bondEscalation.retryMediatorResolution(s.disputeId);
+            } else {
+                completed++;
+                assertEq(uint8(kernel.getTransaction(s.txId).state), uint8(IACTPKernel.State.SETTLED));
+            }
+            kernel.retryPlatformFee(s.txId);
+            _assertCallbackComplete(s, true, 0, address(0));
+        }
+        assertGt(reverted, 0, "sweep must exercise rollback");
+        assertGt(completed, 0, "sweep must exercise direct settlement");
+        emit log_named_uint("sweep reverted", reverted);
+        emit log_named_uint("sweep deferred then recovered", deferred);
+        emit log_named_uint("sweep settled", completed);
     }
 
     /// @dev Companion: the EARLY-RETURN callback (dispute already resolved locally) is the cheap path

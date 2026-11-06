@@ -677,10 +677,8 @@ contract BondEscalationUnitTest is DisputeTestBase {
         bondEscalation.forceResolveStale(disputeId);
     }
 
-    /// @notice Path 3 — UMA no-winner fallback split: a UMA resolution whose winning direction had NO
-    ///         Tier-1 proposer falls back to a 50/50 split, routing through
-    ///         compositeMediator.resolve(txId, 2, 5000) — the trace MUST fire on the UMA path too.
-    function test_Split_EmitsDisputeSplitRecorded_UMANoWinnerPath() external {
+    /// @notice UMA no-winner refunds do not turn the principal ruling into a split.
+    function test_UMA_NoWinnerEnablesRefundsWithoutSplit() external {
         bytes32 disputeId = _opened();
         bytes32 txId = _txIdOf(disputeId);
         // Drive to the $500 ceiling such that ruling 1 is NEVER proposed (only ruling 0 / ruling 2),
@@ -694,13 +692,12 @@ contract BondEscalationUnitTest is DisputeTestBase {
 
         bytes32 assertionId = bondEscalation.disputeToAssertion(disputeId);
 
-        vm.expectEmit(true, true, true, true, address(compositeMediator));
-        emit DisputeSplitRecorded(txId, requester, provider, 5000);
-
-        // FALSE → ruling 1 → no proposer for that direction → 50/50 split fallback.
         oov3.mockResolve(assertionId, false);
-        assertEq(_splitBpsOf(disputeId), 5000, "UMA no-winner fell back to 50/50");
-        assertFalse(_winnerPaidOf(disputeId), "no winner paid on the fallback");
+        assertEq(_currentRulingOf(disputeId), 1);
+        assertEq(_splitBpsOf(disputeId), 0);
+        assertTrue(bondEscalation.tier1Refundable(disputeId));
+        assertEq(uint8(kernel.getTransaction(txId).state), uint8(IACTPKernel.State.SETTLED));
+        assertFalse(_winnerPaidOf(disputeId));
     }
 
     // =====================================================================

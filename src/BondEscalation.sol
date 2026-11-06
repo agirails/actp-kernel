@@ -219,6 +219,11 @@ contract BondEscalation is IBondEscalation, IBondEscalationAdmin, ReentrancyGuar
     ///      from a supplied `reasoningCID` and forward the SIGNED reasoning to the UMA/DVM claim.
     mapping(bytes32 disputeId => bytes32) public reasoningHashOf;
 
+    /// @notice Tier-1 deposits are refundable when UMA has no proposer for its winning direction.
+    /// @dev Independent of the oracle ruling, which exclusively controls escrow principal.
+    mapping(bytes32 disputeId => bool) public tier1Refundable;
+    event Tier1RefundsEnabled(bytes32 indexed disputeId);
+
     // ---------------------------------------------------------------------
     // Modifiers
     // ---------------------------------------------------------------------
@@ -313,8 +318,7 @@ contract BondEscalation is IBondEscalation, IBondEscalationAdmin, ReentrancyGuar
         IACTPKernel.TransactionView memory txn = kernel.getTransaction(txId);
         require(txn.state == IACTPKernel.State.DISPUTED, "Not in DISPUTED state");
 
-        IEscrowValidator vault = IEscrowValidator(txn.escrowContract);
-        uint256 escrowAmount = vault.remaining(txn.escrowId);
+        uint256 escrowAmount = kernel.escrowPrincipal(txId);
 
         disputes[disputeId] = DisputeState({
             transactionId: txId,
@@ -564,7 +568,7 @@ contract BondEscalation is IBondEscalation, IBondEscalationAdmin, ReentrancyGuar
     function claimEscalationRefund(bytes32 disputeId) external override nonReentrant {
         DisputeState storage d = disputes[disputeId];
         require(d.resolved, "Not resolved");
-        require(d.currentRuling == 2, "Not a split - winner takes all");
+        require(d.currentRuling == 2 || tier1Refundable[disputeId], "Not a split - winner takes all");
 
         uint256 deposited = deposits[disputeId][msg.sender];
         require(deposited > 0, "Nothing to claim");
@@ -858,14 +862,10 @@ contract BondEscalation is IBondEscalation, IBondEscalationAdmin, ReentrancyGuar
             }
             emit UMAResolutionReceived(disputeId, assertionId, ruling, winner, payout);
         } else {
-            // Edge case: no one proposed the winning direction in Tier 1.
-            // Treat as split - depositors can claim proportionally. NO bounty is taken here: the split
-            // refund divisor (`originalPool`) is the FULL pool and every depositor's share is
-            // deposits[addr] * accumulatedBonds / originalPool; deducting a bounty would make Σ shares <
-            // accumulatedBonds and strand the bounty-sized remainder. The settle incentive is therefore
-            // only attached to the clean (winner-takes-all) UMA win, which is the F-6 degradation case.
-            d.currentRuling = 2;
-            d.splitBps = 5000;
+            // Refund the untouched Tier-1 pool without changing UMA's principal/entry-bond award.
+            // No bounty is deducted, so every depositor can reclaim its exact contribution.
+            tier1Refundable[disputeId] = true;
+            emit Tier1RefundsEnabled(disputeId);
             emit UMAResolutionReceived(disputeId, assertionId, ruling, address(0), 0);
         }
 
