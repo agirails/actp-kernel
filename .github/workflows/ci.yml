@@ -50,9 +50,9 @@ jobs:
           submodules: recursive
 
       - name: Install Foundry
-        uses: foundry-rs/foundry-toolchain@c7450ba673e133f5ee30098b3b54f444d3a2ca2d # v1
+        uses: foundry-rs/foundry-toolchain@dba66c27052e63476d886f22216e119ba7e615bf # v1
         with:
-          version: stable
+          version: v1.9.0
 
       - name: Show Forge version
         run: forge --version
@@ -283,9 +283,9 @@ jobs:
           submodules: recursive
 
       - name: Install Foundry (needed for forge build before Slither)
-        uses: foundry-rs/foundry-toolchain@c7450ba673e133f5ee30098b3b54f444d3a2ca2d # v1
+        uses: foundry-rs/foundry-toolchain@dba66c27052e63476d886f22216e119ba7e615bf # v1
         with:
-          version: stable
+          version: v1.9.0
 
       # Compile on the RUNNER (where foundry-toolchain put forge). The slither-action
       # runs in its own container WITHOUT forge, so it must NOT invoke the compiler:
