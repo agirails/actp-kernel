@@ -127,7 +127,7 @@ contract SmokeOnChainSuite is Script {
         usdc.mint(requester, ONE_USDC);
         bytes32 txId = kernel.createTransaction(
             provider, requester, ONE_USDC, block.timestamp + 7 days, 1 hours,
-            keccak256("smoke-penalty"), 0, 0
+            keccak256("smoke-penalty"), bytes32(0), 0, 0
         );
         vm.stopBroadcast();
 
@@ -153,7 +153,7 @@ contract SmokeOnChainSuite is Script {
         usdc.mint(requester, amount);
         bytes32 txId = kernel.createTransaction(
             provider, requester, amount, block.timestamp + 7 days, disputeWindow,
-            keccak256("smoke-milestone"), 0, 0
+            keccak256("smoke-milestone"), bytes32(0), 0, 0
         );
         vm.stopBroadcast();
 
@@ -179,7 +179,7 @@ contract SmokeOnChainSuite is Script {
         // Provider delivers + requester settles. Settle must succeed even
         // though vault.remaining(escrowId) == 0 now.
         vm.startBroadcast(provPk);
-        kernel.transitionState(txId, IACTPKernel.State.DELIVERED, abi.encode(disputeWindow));
+        kernel.transitionState(txId, IACTPKernel.State.DELIVERED, abi.encode(disputeWindow, keccak256("result")));
         vm.stopBroadcast();
 
         vm.startBroadcast(reqPk);

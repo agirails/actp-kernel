@@ -392,7 +392,9 @@ contract AgentRegistry is IAgentRegistry, ReentrancyGuard {
     ) external override onlyKernel {
         require(agentAddress != address(0), "Zero address");
         AgentProfile storage profile = agents[agentAddress];
-        require(profile.registeredAt > 0, "Agent not registered");
+        // Deregistration removes discovery/profile data, not accountability for prior work.
+        // agentAddress is retained on deregistration; never-registered addresses remain rejected.
+        require(profile.agentAddress != address(0), "Agent not registered");
 
         require(!processedTransactions[txId], "Transaction already processed");
         processedTransactions[txId] = true;

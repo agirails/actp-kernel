@@ -85,6 +85,9 @@ contract AGIRAILSIdentityRegistry is IAGIRAILSIdentityRegistry {
      * @dev Direct call requires msg.sender to be current owner
      */
     function changeOwner(address identity, address newOwner) external override onlyOwner(identity) {
+        // Invalidate withheld authorizations from this ownership epoch, including A -> B -> A.
+        // The signed variant already consumes this nonce in _checkSignature.
+        nonce[identityOwner(identity)]++;
         _changeOwner(identity, newOwner);
     }
 
@@ -140,6 +143,11 @@ contract AGIRAILSIdentityRegistry is IAGIRAILSIdentityRegistry {
         address delegate,
         uint256 validity
     ) external override onlyOwner(identity) {
+        // [F21 FIX] A direct owner mutation advances the owner's signing nonce, invalidating any
+        // outstanding meta-tx signature. Without this, a withheld *Signed op (signed against the
+        // old nonce) could be replayed later to re-apply this exact change after the owner had
+        // directly revoked it, while ownership is unchanged (stale signed authorization).
+        nonce[identityOwner(identity)]++;
         _addDelegate(identity, delegateType, delegate, validity);
     }
 
@@ -207,6 +215,9 @@ contract AGIRAILSIdentityRegistry is IAGIRAILSIdentityRegistry {
         bytes32 delegateType,
         address delegate
     ) external override onlyOwner(identity) {
+        // [F21 FIX] Advance the owner nonce so an outstanding *Signed op cannot be replayed to
+        // undo this revocation (see addDelegate).
+        nonce[identityOwner(identity)]++;
         _revokeDelegate(identity, delegateType, delegate);
     }
 
@@ -283,6 +294,9 @@ contract AGIRAILSIdentityRegistry is IAGIRAILSIdentityRegistry {
         bytes calldata value,
         uint256 validity
     ) external override onlyOwner(identity) {
+        // [F21 FIX] Advance the owner nonce so an outstanding *Signed op cannot be replayed to
+        // re-apply/undo this attribute change (see addDelegate).
+        nonce[identityOwner(identity)]++;
         _setAttribute(identity, name, value, validity);
     }
 
@@ -351,6 +365,9 @@ contract AGIRAILSIdentityRegistry is IAGIRAILSIdentityRegistry {
         bytes32 name,
         bytes calldata value
     ) external override onlyOwner(identity) {
+        // [F21 FIX] Advance the owner nonce so an outstanding *Signed op cannot be replayed to
+        // undo this revocation (see addDelegate).
+        nonce[identityOwner(identity)]++;
         _revokeAttribute(identity, name, value);
     }
 

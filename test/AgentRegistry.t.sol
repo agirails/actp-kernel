@@ -35,7 +35,7 @@ contract AgentRegistryTest is Test {
     function setUp() external {
         // Deploy kernel first (registry needs kernel address)
         usdc = new MockUSDC();
-        kernel = new ACTPKernel(admin, admin, feeCollector, address(0), address(usdc));
+        kernel = new ACTPKernel(admin, admin, feeCollector, address(0), address(usdc), 1 hours);
         registry = new AgentRegistry(address(kernel));
     }
 

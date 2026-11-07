@@ -60,7 +60,8 @@ contract DeployBaseSepolia is Script {
             admin,         // pauser (same as admin)
             treasury,      // fee recipient (separate treasury wallet)
             address(0),    // agentRegistry (deploy later)
-            address(usdc)  // USDC token
+            address(usdc), // USDC token
+            1 hours        // recoveryGrace (F-6)
         );
         console.log("ACTPKernel deployed at:", address(kernel));
 

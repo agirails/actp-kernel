@@ -290,6 +290,39 @@ contract AGIRAILSIdentityRegistryTest is Test {
         assertEq(registry.nonce(alice), currentNonce + 1);
     }
 
+    /// [F21 REGRESSION] A direct owner mutation must invalidate any withheld meta-tx signature by
+    /// advancing the owner nonce — otherwise a pre-signed op could be replayed to re-apply a change
+    /// the owner already superseded (stale signed authorization).
+    function test_F21_DirectMutationInvalidatesWithheldSignature() public {
+        uint256 validity = 1 days;
+        uint256 nonce0 = registry.nonce(alice);
+
+        // (1) Alice signs an addDelegate op (a withheld meta-tx), bound to her CURRENT nonce.
+        bytes32 hash = keccak256(
+            abi.encodePacked(
+                bytes1(0x19),
+                bytes1(0x00),
+                address(registry),
+                nonce0,
+                alice,
+                "addDelegate",
+                DELEGATE_TYPE_VERIKEY,
+                delegate,
+                validity
+            )
+        );
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(aliceKey, hash);
+
+        // (2) Before the meta-tx is relayed, Alice makes a DIRECT owner mutation (F21 bumps nonce).
+        vm.prank(alice);
+        registry.addDelegate(alice, DELEGATE_TYPE_SIGAUTH, bob, validity);
+        assertEq(registry.nonce(alice), nonce0 + 1, "F21: direct mutation advanced the owner nonce");
+
+        // (3) The withheld signature (bound to nonce0) is now REJECTED — no stale replay.
+        vm.expectRevert("Invalid signature");
+        registry.addDelegateSigned(alice, v, r, s, DELEGATE_TYPE_VERIKEY, delegate, validity);
+    }
+
     function test_RevokeDelegateSigned_Success() public {
         // Add delegate first
         vm.prank(alice);

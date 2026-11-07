@@ -37,7 +37,7 @@ contract AIP14_DisputeBondLockedTest is Test {
 
     function setUp() external {
         usdc = new MockUSDC();
-        kernel = new ACTPKernel(admin, pauser, feeCollector, address(0), address(usdc));
+        kernel = new ACTPKernel(admin, pauser, feeCollector, address(0), address(usdc), 1 hours);
         escrow = new EscrowVault(address(usdc), address(kernel));
         kernel.approveEscrowVault(address(escrow), true);
 
@@ -186,8 +186,8 @@ contract AIP14_DisputeBondLockedTest is Test {
         vm.prank(requester);
         txId = kernel.createTransaction(
             provider, requester, TRANSACTION_AMOUNT,
-            block.timestamp + 30 days, 2 days,
-            keccak256("service"), 0, 0
+            block.timestamp + 30 days, 1 hours,
+            keccak256("service"), bytes32(0), 0, 0
         );
 
         // Provider posts a quote (proof.length == 32 to store hash)
@@ -205,7 +205,7 @@ contract AIP14_DisputeBondLockedTest is Test {
         vm.prank(provider);
         kernel.transitionState(txId, IACTPKernel.State.IN_PROGRESS, "");
         vm.prank(provider);
-        kernel.transitionState(txId, IACTPKernel.State.DELIVERED, abi.encode(10 days));
+        kernel.transitionState(txId, IACTPKernel.State.DELIVERED, abi.encode(10 days, keccak256("result")));
     }
 
     function _createDeliveredTransaction() internal returns (bytes32 txId) {
@@ -216,8 +216,8 @@ contract AIP14_DisputeBondLockedTest is Test {
         vm.prank(requester);
         txId = kernel.createTransaction(
             provider, requester, amount,
-            block.timestamp + 30 days, 2 days,
-            keccak256("service"), 0, 0
+            block.timestamp + 30 days, 1 hours,
+            keccak256("service"), bytes32(0), 0, 0
         );
 
         vm.startPrank(requester);
@@ -228,6 +228,6 @@ contract AIP14_DisputeBondLockedTest is Test {
         vm.prank(provider);
         kernel.transitionState(txId, IACTPKernel.State.IN_PROGRESS, "");
         vm.prank(provider);
-        kernel.transitionState(txId, IACTPKernel.State.DELIVERED, abi.encode(10 days));
+        kernel.transitionState(txId, IACTPKernel.State.DELIVERED, abi.encode(10 days, keccak256("result")));
     }
 }
