@@ -1,3 +1,5 @@
+> 2026-11-09 follow-up: see SECURITY-REMEDIATION-2026-11-09.md for final-fault retry and permanent verification. This historical evidence predates that candidate.
+
 # Security remediation: October source review
 
 Base: `3d8d1311340bb1c4ad3e55e97041aa25f2d4f8cf`. Local, uncommitted remediation;

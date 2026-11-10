@@ -107,6 +107,9 @@ jobs:
       # map (forge prints nothing for a fully-cached build). The build itself
       # still gates on compile errors (set -e); the parser additionally fails the
       # job if ANY contract's runtime bytecode exceeds MAX_CONTRACT_BYTES.
+      - name: Escrow verification presence and drift
+        run: python3 .agents/skills/verify-actp-escrow/doctor.py
+
       - name: Build + EIP-170 contract-size gate
         run: |
           set -euo pipefail

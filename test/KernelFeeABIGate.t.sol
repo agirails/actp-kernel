@@ -19,10 +19,15 @@ contract MissingFeeRetryKernel {
     }
 }
 
+contract PreviousFeeKernel {
+    function resolveDisputeWhilePaused(bytes32, IACTPKernel.State, bytes calldata) external {}
+    function escrowPrincipal(bytes32) external pure returns (uint256) { return 0; }
+    function retryPlatformFee(bytes32) external {}
+}
+
 contract FeeDeployGateHarness is VerifyDeployGate {
     function checkFeeABI(address kernel) external view {
-        _requireSelector(kernel, ACTPKernel.escrowPrincipal.selector);
-        _requireSelector(kernel, ACTPKernel.retryPlatformFee.selector);
+        _requireRecoveryABI(kernel);
     }
 }
 
@@ -58,5 +63,17 @@ contract KernelFeeABIGateTest is Test {
             address(this), address(this), address(this), address(0), address(1), 1 hours
         );
         gate.checkFeeABI(address(kernel));
+    }
+
+    function test_PreflightRejectsMissingReputationRetry() external {
+        address old = address(new PreviousFeeKernel());
+        vm.expectRevert("kernel missing retryReputation");
+        preflight.preflightWithKernel(old);
+    }
+
+    function test_DeployGateRejectsMissingReputationRetry() external {
+        address old = address(new PreviousFeeKernel());
+        vm.expectRevert("GATE: kernel missing fee accounting ABI");
+        gate.checkFeeABI(old);
     }
 }
