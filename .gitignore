@@ -33,7 +33,10 @@ safe-transactions/
 
 # Local files
 CLAUDE.md
-.claude/
+.claude/*
+!.claude/skills/
+.claude/skills/*
+!.claude/skills/verify-actp-escrow
 .ralph/
 docs/
 .sepolia-autosettle-armed.txt

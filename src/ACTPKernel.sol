@@ -514,6 +514,16 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         if (fee > 0) _distributeFee(txn, IEscrowValidator(txn.escrowContract), fee, false);
     }
 
+    function retryReputation(bytes32 transactionId) external override nonReentrant {
+        Transaction storage txn = _getTransaction(transactionId);
+        require(
+            txn.state == State.SETTLED ||
+                (txn.state == State.CANCELLED && txn.wasDisputed && txn.resultHash == bytes32(0)),
+            "No reputation outcome"
+        );
+        _recordReputation(txn, txn.wasDisputed);
+    }
+
     function _escrowPrincipal(Transaction storage txn, IEscrowValidator vault) internal view returns (uint256) {
         return vault.remaining(txn.escrowId) - pendingPlatformFeeFor[txn.transactionId];
     }
@@ -973,12 +983,7 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         return (requesterAmount, providerAmount, mediator, mediatorAmount, true, providerAtFault);
     }
 
-    /**
-     * @notice Release escrow to provider after successful delivery
-     * @dev [C-2 SECURITY FIX] Prevents reputation double-counting if AgentRegistry is upgraded
-     *      - Only updates reputation if current registry hasn't processed this transaction yet
-     *      - Tracks which registry version processed the update (prevents replay across registry upgrades)
-     */
+    /// @notice Release escrow to provider after successful delivery
     function _releaseEscrow(Transaction storage txn) internal {
         require(txn.escrowContract != address(0), "Escrow missing");
         IEscrowValidator vault = IEscrowValidator(txn.escrowContract);
@@ -992,7 +997,7 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
     }
 
     function _recordReputation(Transaction storage txn, bool providerAtFault) internal {
-        if (address(agentRegistry) != address(0) && reputationProcessedBy[txn.transactionId] == address(0)) {
+        if (address(agentRegistry).code.length > 0 && reputationProcessedBy[txn.transactionId] == address(0)) {
             try agentRegistry.updateReputationOnSettlement{gas: 150000}(
                 txn.provider, txn.transactionId, txn.amount, providerAtFault
             ) {
@@ -1013,14 +1018,9 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         (uint256 requesterAmount, uint256 providerAmount, address mediator, uint256 mediatorAmount, bool hasResolution, bool providerAtFault) =
             _decodeResolutionProof(proof);
 
-        // [M-2 AUDIT FIX] Require explicit resolution proof for dispute settlement.
-        // Previously, empty proof defaulted to full payout to provider — this allowed
-        // a compromised admin to resolve disputes without evidence. Now reverts.
-        // Must be checked BEFORE any state changes (CEI pattern).
         require(hasResolution, "Explicit resolution required");
 
-        // [C-2 FIX] Update reputation only if not yet processed by current registry (prevents double-counting on registry upgrade)
-        // AIP-14: Pass providerAtFault instead of txn.wasDisputed — only at-fault disputes affect reputation
+        txn.wasDisputed = providerAtFault;
         _recordReputation(txn, providerAtFault);
 
         if (mediator != address(0)) {

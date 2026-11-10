@@ -190,6 +190,8 @@ interface IACTPKernel {
 
     function releaseEscrow(bytes32 transactionId) external;
 
+    function retryReputation(bytes32 transactionId) external;
+
     /// @notice F-6: Permissionless liveness backstop. After deadline+recoveryGrace, anyone may move a stalled
     ///         IN_PROGRESS txn to CANCELLED with a full refund of remaining escrow to the requester.
     function recoverStalledInProgress(bytes32 transactionId) external;

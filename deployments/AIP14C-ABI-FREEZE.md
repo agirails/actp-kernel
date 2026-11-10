@@ -99,3 +99,7 @@ Golden vector fixtures (from `test/EncodingCanonical.t.sol`): `GOLDEN_EVIDENCE_R
 `test/AIP14cKernelGate.t.sol` (14 tests): 64-byte proof (empty/32-byte rejection, window {0,MIN-1,MIN,MAX,MAX+1},
 zero-resultHash), resultHash + agreementHash storage/view/event parity, `kernelVersion`, old-selector rejection,
 and SETTLED escrow-conservation (vault.remaining == 0). Treasury double-fee conservation: `test/audit/DisputeMoneyPathCoverage.t.sol`.
+
+## 2026-11-09 recovery ABI addendum
+
+Added permissionless retryReputation(bytes32), with terminal eligibility and no economic side effects. Fee recovery selectors from the prior remediation remain required. Both deploy preflight and VerifyDeployGate now require this selector as well. The original frozen selectors, TransactionCreated topic, TransactionView tuple, AIRuling type/digests, logical kernelVersion and D1 proof encoding are preserved. Consumers deploying this candidate must pin its actual runtime codehash; a matching logical version alone does not establish recovery ABI compatibility. Historical byte sizes and counts above describe their dated artifacts.

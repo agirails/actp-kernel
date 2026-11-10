@@ -317,6 +317,7 @@ contract DeployDisputeSystem is Script {
         );
         require(_hasSelector(c.kernel, IACTPKernel.escrowPrincipal.selector), "kernel missing escrowPrincipal");
         require(_hasSelector(c.kernel, IACTPKernel.retryPlatformFee.selector), "kernel missing retryPlatformFee");
+        require(_hasSelector(c.kernel, IACTPKernel.retryReputation.selector), "kernel missing retryReputation");
 
         // Settlement-token agreement: the dispute contracts and the kernel MUST denominate in the SAME
         // USDC, or bond/escrow accounting diverges.

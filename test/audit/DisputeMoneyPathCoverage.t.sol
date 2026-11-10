@@ -155,7 +155,6 @@ contract DisputeMoneyPathCoverage is Test {
     }
 
     /// providerAtFault = FALSE (provider wins) → totalTransactions++ but NOT disputedTransactions.
-    /// Proves the dispute path passes `providerAtFault`, NOT `wasDisputed` (which is always true here).
     function test_F7_ReputationLeg_ProviderNotAtFault_NoDisputedIncrement() external {
         _deployWithRealRegistry();
         _registerProvider();
