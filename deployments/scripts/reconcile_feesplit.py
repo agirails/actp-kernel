@@ -268,6 +268,7 @@ class Reconciler:
         self.credit = defaultdict(int)        # integrator -> outstanding credit by this accounting
         self.protocol_credit = 0
         self.withdrawals = []
+        self.ambiguous = []                   # withdrawals either credit pool could have paid
         self.dedicated = set()                # requesters dedicated to the scripts, named with --requester
         for address in args.requester:
             if not re.fullmatch(r"0x[0-9a-fA-F]{40}", address):
@@ -323,7 +324,9 @@ class Reconciler:
             pad = "0x" + arg(vault)
             outgoing = self.rpc.logs(self.token, [[T_TRANSFER], [pad]], self.start, self.end)
             incoming = self.rpc.logs(self.token, [[T_TRANSFER], None, [pad]], self.start, self.end)
-            self.transfers[vault] = sorted(outgoing + incoming, key=order)
+            # A transfer from the vault to itself matches both queries: keep one copy of each log.
+            unique = {order(log): log for log in outgoing + incoming}
+            self.transfers[vault] = [unique[position] for position in sorted(unique)]
 
     def kernel_view(self, tx_id):
         try:
@@ -485,7 +488,9 @@ class Reconciler:
                 continue
             if sender == vault:
                 outgoing.append([order(log), recipient, value])
-            else:
+            if recipient == vault:
+                # Includes a payment the vault made to itself (anyone may name the vault as provider):
+                # the tokens stay, and once the payment is explained they are surplus.
                 incoming[(sender, value)] += 1
 
         def take(recipient, amount, before, after=None):
@@ -608,12 +613,19 @@ class Reconciler:
         # What is left must be a credit withdrawal covered by the outstanding credit, counting the
         # credits this transaction accrued. Only then is a leftover an unexplained transfer; and only
         # then does a fee that found no transfer of its own amount count as paid in a wrong amount.
-        position = min((order(l) for l in transfers), default=None)
-        for _, recipient, amount in sorted(outgoing):
-            if self.credit.get(recipient, 0) >= amount:
+        for position, recipient, amount in sorted(outgoing):
+            integrator_pool = self.credit.get(recipient, 0) >= amount
+            protocol_pool = self.protocol_credit >= amount and recipient == self.fee_recipient_at(position)
+            if integrator_pool and protocol_pool:
+                # The integrator is also the fee recipient and both pools cover the transfer: which
+                # one was withdrawn is settled against the end-block credits in finish().
+                withdrawal = {"tx": tx_hash, "kind": "ambiguous", "to": recipient, "amount": amount}
+                self.withdrawals.append(withdrawal)
+                self.ambiguous.append(withdrawal)
+            elif integrator_pool:
                 self.credit[recipient] -= amount
                 self.withdrawals.append({"tx": tx_hash, "kind": "integrator", "to": recipient, "amount": amount})
-            elif self.protocol_credit >= amount and recipient == self.fee_recipient_at(position):
+            elif protocol_pool:
                 self.protocol_credit -= amount
                 self.withdrawals.append({"tx": tx_hash, "kind": "protocol", "to": recipient, "amount": amount})
             else:
@@ -657,6 +669,18 @@ class Reconciler:
             escrow.remaining = remaining
             self.check_terms(escrow)
         self.check_vault_events()
+
+        # A withdrawal both pools covered came from the integrator pool exactly when that pool, by
+        # this accounting, is above its on-chain value by at least the amount; else from the protocol.
+        for withdrawal in self.ambiguous:
+            recipient, amount = withdrawal["to"], withdrawal["amount"]
+            on_chain = self.uint_view(self.vault, "integratorCredit(address)", recipient)
+            if self.credit.get(recipient, 0) - on_chain >= amount:
+                self.credit[recipient] -= amount
+                withdrawal["kind"] = "integrator"
+            else:
+                self.protocol_credit -= amount
+                withdrawal["kind"] = "protocol"
 
         for integrator in sorted(integrators):
             on_chain = self.uint_view(self.vault, "integratorCredit(address)", integrator)

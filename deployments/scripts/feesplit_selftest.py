@@ -23,6 +23,9 @@ an honest run and catches seeded defects (plan step 12, Phase A gate):
     D4 a run file that names a plain-vault control never linked        -> C6
     D5 a vault that pays the integrator twice, after a donation        -> C2
     D6 an escrow of a manifest actor deleted from its run file         -> C6
+    R1-R3 valid transactions with overlapping roles, replayed from hand-built logs: the vault as a
+       provider, an integrator that is also the fee recipient, and a fee-recipient change before a
+       protocol withdrawal in one transaction
     D7 every entry of one requester deleted, that requester named
        with --requester                                                 -> C6
 
@@ -42,6 +45,7 @@ every fixture and every seeded defect behaves as listed.
 Usage: python3 deployments/scripts/feesplit_selftest.py [--stage selftest|rehearsal|all] [--work DIR] [--keep]
 """
 import argparse
+import runpy
 import json
 import os
 import pathlib
@@ -280,6 +284,76 @@ class SelfTest:
                     [e["status"] for e in foreign if e["state"] == "COMMITTED"] == ["pending"])
         return pattern
 
+    def replay_fixtures(self):
+        """Valid transactions with overlapping roles, replayed from hand-built logs (no chain)."""
+        from types import SimpleNamespace
+        module = runpy.run_path(str(RECONCILE))
+        kernel, vault, plain, token, a5, a6, a7 = ["0x" + f"{n:040x}" for n in range(1, 8)]
+        word = lambda x: format(int(x, 16) if isinstance(x, str) else x, "064x")
+        pad = lambda x: "0x" + word(x)
+
+        def log(index, emitter, topics, *data):
+            return dict(address=emitter, topics=topics, data="0x" + "".join(map(word, data)), blockNumber="0x2",
+                        transactionIndex="0x0", logIndex=hex(index), transactionHash="0x" + "22" * 32)
+
+        def transfer(index, sender, recipient, amount):
+            return log(index, token, [module["T_TRANSFER"], pad(sender), pad(recipient)], amount)
+
+        def reconciler(rpc=None):
+            args = SimpleNamespace(kernel=kernel, vault=vault, plain_vault=plain, token=token, from_block=0,
+                                   to_block=2, requester=[])
+            return module["Reconciler"](rpc, args)
+
+        # R1: the vault is the provider of a foreign escrow; the requester cancels after the deadline.
+        escrow_id, requester, recipient = "0x" + "11" * 32, a5, a6
+        logs = [transfer(0, vault, requester, 950_000_000),
+                log(1, kernel, [module["K_REFUNDED"], escrow_id], requester, 950_000_000, 7200),
+                transfer(2, vault, vault, 49_500_000),
+                log(3, kernel, [module["K_RELEASED"], escrow_id], vault, 49_500_000, 7200),
+                transfer(4, vault, kernel, 500), transfer(6, vault, recipient, 499_500),
+                log(7, kernel, [module["K_FEE"], escrow_id, pad(recipient)], 499_500, 7200)]
+
+        class Rpc:
+            def logs(self, address, topics, start, end):
+                return [l for l in logs if l["address"] == address
+                        and all(q is None or l["topics"][i] in q for i, q in enumerate(topics))]
+
+        r = reconciler(Rpc())
+        escrow = module["Escrow"](escrow_id, vault, escrow_id, 1_000_000_000)
+        escrow.view = dict(requester=requester, provider=vault, state="CANCELLED")
+        r.escrows[escrow_id] = escrow
+        r.fee_recipient_start, r.fee_changes = recipient, []
+        r.fetch()
+        r.replay_tx("0x" + "22" * 32, vault, {"kernel": r.kernel_logs, "transfers": r.transfers})
+        r.uint_view = lambda to, signature, *params: 49_500_000 if signature == "balanceOf(address)" else 0
+        r.finish()
+        self.expect("R1", "the vault as provider: one copy of the self-transfer, the retained payment is surplus, no failure",
+                    sum(l["topics"][1] == l["topics"][2] for l in r.transfers[vault]) == 1
+                    and not r.global_failures and not escrow.failures and sum(s["amount"] for s in r.surplus) == 49_500_000)
+
+        # R2: the integrator is also the fee recipient, both pools hold 10; only the protocol credit is withdrawn.
+        r = reconciler()
+        amount, both = 10_000_000, a5
+        r.credit[both], r.protocol_credit = amount, amount
+        r.fee_recipient_start, r.fee_changes, r.vault_logs = both, [], []
+        r.replay_tx("withdraw-protocol", vault, {"kernel": [], "transfers": {vault: [transfer(0, vault, both, amount)]}})
+        r.uint_view = lambda to, signature, *params: amount if signature in (
+            "integratorCredit(address)", "totalIntegratorCredit()", "balanceOf(address)") else 0
+        r.finish()
+        self.expect("R2", "integrator equal to the fee recipient: the withdrawal is taken from the protocol pool",
+                    (r.credit[both], r.protocol_credit, r.withdrawals[0]["kind"], r.global_failures) == (amount, 0, "protocol", []))
+
+        # R3: one transaction donates, changes the fee recipient and withdraws the protocol credit.
+        r = reconciler()
+        old, new, donor = a5, a6, a7
+        r.protocol_credit, r.fee_recipient_start = amount, old
+        r.fee_changes = [((2, 0, 1), old, new)]
+        change = log(1, kernel, [module["K_FEE_RECIPIENT"], pad(old), pad(new)])
+        r.replay_tx("admin-batch", vault, {"kernel": [change], "transfers": {vault: [transfer(0, donor, vault, 1),
+                                                                                  transfer(2, vault, new, amount)]}})
+        self.expect("R3", "fee recipient changed before the withdrawal in the same transaction: paid to the new one",
+                    (r.protocol_credit, len(r.withdrawals), r.global_failures) == (0, 1, []))
+
     def missing_manifest(self):
         vault = self.stack["feeSplitVault"]
         code, report = self.reconcile("missing-pattern", vault, 0,
@@ -468,6 +542,7 @@ class SelfTest:
             self.build_defective_vaults()
             self.start_anvil()
             self.deploy()
+            self.replay_fixtures()
             self.honest()
             self.missing_manifest()
             self.defect_run_files()
