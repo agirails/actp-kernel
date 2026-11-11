@@ -13,6 +13,20 @@ from pathlib import Path
 sys.dont_write_bytecode = True
 from doctor import REPO, SKILL, check
 
+CONTRACTS = "Escrow(Oracle|Fee|Split)Verification"
+# Tests in the matched contracts. Forge reports a contract's invariants as one test:
+# EscrowOracleVerification 4, EscrowFeeVerification 2, EscrowSplitVerification 5.
+CONFORMANCE_TESTS = 11
+# Model, config and the invariants of that config.
+MODELS = [
+    ("OracleRefund", "OracleRefund", ["OracleAward"]),
+    ("FeeDebt", "FeeDebt", ["FeeDebtProtected"]),
+    ("FeeSplit", "FeeSplitDefault", ["SplitConserved", "FeeNeutral", "RefundFeeOnlyAfterDispute",
+                                     "RefundFeesMatchRule", "RefundSideCap", "RefundConserved"]),
+    ("FeeSplit", "FeeSplitBoth", ["SplitConserved", "FeeNeutral", "RefundFeeOnlyAfterDispute",
+                                  "RefundFeesMatchRule", "RefundSideCap", "RefundConserved"]),
+]
+
 
 def invoke(command, cwd, log, expected=0):
     result = subprocess.run(command, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
@@ -62,14 +76,17 @@ def forge_run(source, build, log, forge, solc, match_test=None, expected=0):
     }
     for key, value in env.items():
         args.extend(["--setenv", key, value])
-    args.extend(["/forge", "test", "--offline", "--root", "/repo", "-j", "2", "-vv",
-                 "--match-contract", "Escrow(Oracle|Fee)Verification"])
+    # The process limit is set inside the sandbox, where it counts only the sandbox's own user
+    # namespace. As a limit on the caller it counted every process of the host user, and the sandbox
+    # could not start on a machine with more than 512 of them.
+    args.extend(["/usr/bin/prlimit", "--nproc=512", "/forge", "test", "--offline", "--root", "/repo",
+                 "-j", "2", "-vv", "--match-contract", CONTRACTS])
     if match_test:
         args.extend(["--match-test", match_test])
 
     def limits():
         for limit, value in [(resource.RLIMIT_AS, 16 * 1024**3), (resource.RLIMIT_CPU, 600),
-                             (resource.RLIMIT_NPROC, 512), (resource.RLIMIT_FSIZE, 128 * 1024**2),
+                             (resource.RLIMIT_FSIZE, 128 * 1024**2),
                              (resource.RLIMIT_NOFILE, 1024)]:
             resource.setrlimit(limit, (value, value))
         os.sched_setaffinity(0, set(sorted(os.sched_getaffinity(0))[:2]))
@@ -80,25 +97,104 @@ def forge_run(source, build, log, forge, solc, match_test=None, expected=0):
     text = result.stdout.decode("utf-8", errors="replace")
     if result.returncode != expected or "Compiler run failed" in text:
         raise RuntimeError(f"Forge exit {result.returncode}, expected {expected}: {log}")
-    if not match_test and not re.search(r"6 tests passed, 0 failed, 0 skipped", text):
+    if not match_test and not re.search(rf"{CONFORMANCE_TESTS} tests passed, 0 failed, 0 skipped", text):
         raise RuntimeError("Conformance test discovery changed: " + str(log))
     return text
 
 
-def model(harness, source, module, destination, log, expected=0):
+def model(harness, source, module, config, destination, log, invariant=None):
+    """Run one model. With `invariant`, the run must fail and name that invariant as violated."""
     wrapper = harness / "bin/statechart"
     text = invoke([str(wrapper), str(source / (module + ".tla")), "--config",
-                   str(source / (module + ".cfg")), "--out", str(destination)],
-                  log.parent, log, expected)
-    if expected == 1:
-        invariant = "OracleAward" if module == "OracleRefund" else "FeeDebtProtected"
+                   str(source / (config + ".cfg")), "--out", str(destination)],
+                  log.parent, log, 1 if invariant else 0)
+    if invariant:
         raw = (destination / "tlc.out").read_text()
         if f"Invariant {invariant} is violated" not in raw:
             raise RuntimeError("Model failed without the expected counterexample: " + str(log))
     return text
 
 
-def controls(out, harness, forge, solc):
+def discovered_tests(text):
+    """Names of the tests and invariants a conformance run selected and ran."""
+    return set(re.findall(r"^\[PASS\] ([A-Za-z0-9_]+)", text, re.MULTILINE))
+
+
+SPLIT = "l.profile == FeeProfile.BOTH_AFTER_DISPUTE && l.disputed && l.bps > 0"
+SPLIT_TEST = "test_DeterministicSplitPathsAndCounters"
+# name, config, [(old, new)], invariant that must be reported as violated
+SPLIT_MODEL_CONTROLS = [
+    ("model-split-negative", "FeeSplitDefault",
+     [("provider' = [provider EXCEPT ![t] = @ + net - cut]", "provider' = [provider EXCEPT ![t] = @ + net]"),
+      ("feesOut' = [feesOut EXCEPT ![t] = @ + removed]", "feesOut' = [feesOut EXCEPT ![t] = @ + removed - cut]")],
+     "FeeNeutral"),
+    ("model-refundfee-negative", "FeeSplitBoth",
+     [('charge == Profile = "Both" /\\ disputed[t]', 'charge == Profile = "Both"')],
+     "RefundFeeOnlyAfterDispute"),
+    ("model-refundfee-zero-negative", "FeeSplitBoth",
+     [('charge == Profile = "Both" /\\ disputed[t]', "charge == FALSE")],
+     "RefundFeesMatchRule"),
+    ("model-refundfee-wrongrate-negative", "FeeSplitBoth",
+     [("pf == IF charge THEN (refunded[t] + r) \\div ProtDiv - refunded[t] \\div ProtDiv ELSE 0",
+       "pf == IF charge THEN (refunded[t] + r) \\div (2 * ProtDiv) - refunded[t] \\div (2 * ProtDiv) ELSE 0")],
+     "RefundFeesMatchRule"),
+]
+# name, old, new, target, kind, marker. The target is a test or an invariant of a contract matched by
+# CONTRACTS; the control passes only if the log names it as the failure with this marker.
+SPLIT_REAL_CONTROLS = [
+    ("real-split-default-refund-negative", SPLIT, "l.disputed && l.bps > 0",
+     "invariant_DefaultProfileIdentical", "invariant", "INV-33"),
+    ("real-refund-nodispute-negative", SPLIT, "l.profile == FeeProfile.BOTH_AFTER_DISPUTE && l.bps > 0",
+     "test_RefundFeeOnlyAfterDispute", "test", "provider cancel refunds everything"),
+    ("real-split-gross-negative", "target = (providerSide * bps) / (MAX_BPS - protocolBps);",
+     "target = (providerSide * bps) / MAX_BPS;", SPLIT_TEST, "test", "A3 provider"),
+    ("real-split-liveness-negative", "if (token.trySafeTransfer(integrator, amount)) {",
+     "token.safeTransfer(integrator, amount);\n        if (true) {",
+     SPLIT_TEST, "test", "settlement succeeds with a blocked integrator"),
+    ("real-protocolfee-liveness-negative", "if (ok && token.trySafeTransfer(recipient, amount)) {",
+     "token.safeTransfer(recipient, amount);\n        if (ok) {",
+     SPLIT_TEST, "test", "finalization succeeds with a blocked fee recipient"),
+    ("real-split-consent-negative",
+     'require(t.bps <= integratorMaxBps[provider][t.integrator], "Integrator not approved");', "",
+     "test_ConsentRejections", "test", "next call did not revert as expected"),
+    ("real-refundfee-zero-negative", SPLIT, "false", SPLIT_TEST, "test", "A9 B requester"),
+    ("real-refund-cap-negative", "uint256 refundBps = bps < protocolBps ? bps : protocolBps;",
+     "uint256 refundBps = bps;", "test_RefundSideCap", "test", "requester"),
+]
+
+
+def split_controls(out, harness, forge, solc, discovered):
+    results = []
+    for name, config, edits, invariant in SPLIT_MODEL_CONTROLS:
+        folder = out / name
+        folder.mkdir()
+        for filename in ["FeeSplit.tla", config + ".cfg"]:
+            shutil.copyfile(SKILL / filename, folder / filename)
+        for old, new in edits:
+            replace_once(folder / "FeeSplit.tla", old, new)
+        model(harness, folder, "FeeSplit", config, folder / "result", folder / "run.log", invariant)
+        results.append({"control": name, "expected_violation": invariant})
+    for name, old, new, target, kind, marker in SPLIT_REAL_CONTROLS:
+        if target not in discovered:
+            raise RuntimeError(f"Control target is not a selected test: {name} -> {target}")
+        snapshot = out / name
+        copy_source(snapshot)
+        replace_once(snapshot / "src/escrow/FeeSplitVault.sol", old, new)
+        text = forge_run(snapshot, out / "build", out / (name + ".log"), forge, solc, target, 1)
+        if kind == "invariant":
+            event = json.loads(next((line for line in text.splitlines()
+                                     if line.startswith("{") and target in line), "{}"))
+            if (event.get("event") != "failure" or event.get("invariant") != target
+                    or not str(event.get("reason", "")).startswith(marker)):
+                raise RuntimeError("Stateful mutation did not fail its property: " + name)
+        elif not re.search(r"^\[FAIL: " + re.escape(marker) + r"[^\]]*\] " + re.escape(target) + r"\(",
+                           text, re.MULTILINE):
+            raise RuntimeError("Mutation did not fail at its named assertion: " + name)
+        results.append({"control": name, "expected_violation": marker, "target": target})
+    return results
+
+
+def controls(out, harness, forge, solc, discovered):
     results = []
     for name, module, old, new in [
         ("model-oracle-negative", "OracleRefund",
@@ -112,7 +208,8 @@ def controls(out, harness, forge, solc):
         for suffix in [".tla", ".cfg"]:
             shutil.copyfile(SKILL / (module + suffix), folder / (module + suffix))
         replace_once(folder / (module + ".tla"), old, new)
-        model(harness, folder, module, folder / "result", folder / "run.log", 1)
+        model(harness, folder, module, module, folder / "result", folder / "run.log",
+              "OracleAward" if module == "OracleRefund" else "FeeDebtProtected")
         results.append({"control": name, "expected_violation": True})
     oracle = "invariant_OracleAwardUnaffected"
     fee = "invariant_FeeDebtCannotFundParticipants"
@@ -184,6 +281,9 @@ def controls(out, harness, forge, solc):
     if json.loads(text)["status"] != "drift":
         raise RuntimeError("Doctor did not distinguish source drift")
     results.append({"control": "doctor-negative", "expected_status": "drift, not a property violation"})
+    results.extend(split_controls(out, harness, forge, solc, discovered))
+    if len(results) != 22:
+        raise RuntimeError(f"Expected 22 negative controls, ran {len(results)}")
     return results
 
 
@@ -215,16 +315,17 @@ def main():
     version = invoke([str(solc), "--version"], out, out / "solc-version.log")
     if "Version: 0.8.34" not in version:
         raise ValueError("Expected solc 0.8.34")
-    for module in ["OracleRefund", "FeeDebt"]:
-        model(args.harness, SKILL, module, out / module, out / (module + ".log"))
+    for module, config, _ in MODELS:
+        model(args.harness, SKILL, module, config, out / config, out / (config + ".log"))
     snapshot = out / "positive"
     copy_source(snapshot)
     text = forge_run(snapshot, out / "build", out / "conformance.log", forge, solc)
-    print("\n".join(line for line in text.splitlines() if "P1." in line or "P2." in line))
-    result = {"status": "pass", "doctor": status, "models": ["OracleAward", "FeeDebtProtected"],
-              "conformance_tests": 6, "negative_controls": []}
+    print("\n".join(line for line in text.splitlines() if "P1." in line or "P2." in line or "P3." in line))
+    result = {"status": "pass", "doctor": status,
+              "models": {config: invariants for _, config, invariants in MODELS},
+              "conformance_tests": CONFORMANCE_TESTS, "negative_controls": []}
     if args.negative_controls:
-        result["negative_controls"] = controls(out, args.harness, forge, solc)
+        result["negative_controls"] = controls(out, args.harness, forge, solc, discovered_tests(text))
     final_status, final_code = check()
     if final_code:
         raise RuntimeError("Source changed during verification: " + json.dumps(final_status))

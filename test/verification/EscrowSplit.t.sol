@@ -580,29 +580,9 @@ contract EscrowSplitVerification is Test {
 
     /// @dev Every path runs in every stack with exact per-path counters; A3, A7, A9 and A16 amounts
     ///      are exact; settlement and finalization succeed with a blocked integrator and a blocked
-    ///      fee recipient.
+    ///      fee recipient. The exact-amount sections come first: the negative controls of
+    ///      verify.py name their assertions as the expected failure.
     function test_DeterministicSplitPathsAndCounters() external {
-        // Every exit kind, after a milestone and a fee retry, plus the penalty cancel and the toggles.
-        for (uint256 mode; mode < 8; mode++) {
-            EscrowSplitHandler h = new EscrowSplitHandler();
-            h.milestone(0, 250 * ONE - 1);
-            h.retryFee(0);
-            h.toggleArchiveBlock(mode % 2 == 0);
-            h.exit(0, mode, 2);
-            h.requesterCancelFromCommitted();
-            h.toggleIntegratorBlock(false);
-            h.toggleFeeRecipientBlock(false);
-            _each(h, 0, 1, "milestone ran once in every stack");
-            _each(h, 1, 1, "retryFee ran once in every stack");
-            _each(h, 2 + mode, 1, "exit ran once in every stack");
-            _each(h, 10, 1, "requester cancel ran once in every stack");
-            _each(h, 11, 1, "integrator toggle");
-            _each(h, 12, 1, "fee recipient toggle");
-            _each(h, 13, 1, "archive toggle");
-            h.assertAll();
-            emit log_named_uint("P3.exit-mode", mode);
-        }
-
         // A3: settle 1,000 at 100 bps.
         EscrowSplitHandler a3 = new EscrowSplitHandler();
         a3.exit(0, 2, 0);
@@ -617,20 +597,6 @@ contract EscrowSplitVerification is Test {
             assertEq(a3.requesterBalance(s, 0), START, "A3 requester");
         }
         a3.assertAll();
-
-        // A7: dispute split, requester 600 / provider 400.
-        EscrowSplitHandler a7 = new EscrowSplitHandler();
-        a7.exit(0, 5, 2);
-        assertEq(a7.requesterBalance(A, 0), START + 600 * ONE, "A7 plain requester");
-        assertEq(a7.providerBalance(A, 0), 396 * ONE, "A7 plain provider");
-        assertEq(a7.requesterBalance(D, 0), START + 600 * ONE, "A7 D requester");
-        assertEq(a7.integratorBalance(D), 4 * ONE, "A7 D platform");
-        assertEq(a7.feesBalance(D), 3_996_000, "A7 D fee recipient");
-        assertEq(a7.requesterBalance(B, 0), START + 588 * ONE, "A7 B requester");
-        assertEq(a7.integratorBalance(B), 10 * ONE, "A7 B platform");
-        assertEq(a7.feesBalance(B), 3_996_000 + 6 * ONE, "A7 B kernel fee plus vault protocol fee");
-        for (uint256 s = D; s <= B; s++) assertEq(a7.providerBalance(s, 0), 392 * ONE, "A7 provider");
-        a7.assertAll();
 
         // A9: requester wins. Then liveness with blocked recipients, and the withdrawals.
         EscrowSplitHandler h3 = new EscrowSplitHandler();
@@ -687,6 +653,42 @@ contract EscrowSplitVerification is Test {
         assertEq(h4.withdrawalCount(D, 0, 2), 1, "inapplicable in D");
         assertEq(h4.integratorBalance(B), 10 * ONE);
         h4.assertAll();
+
+        // A7: dispute split, requester 600 / provider 400.
+        EscrowSplitHandler a7 = new EscrowSplitHandler();
+        a7.exit(0, 5, 2);
+        assertEq(a7.requesterBalance(A, 0), START + 600 * ONE, "A7 plain requester");
+        assertEq(a7.providerBalance(A, 0), 396 * ONE, "A7 plain provider");
+        assertEq(a7.requesterBalance(D, 0), START + 600 * ONE, "A7 D requester");
+        assertEq(a7.integratorBalance(D), 4 * ONE, "A7 D platform");
+        assertEq(a7.feesBalance(D), 3_996_000, "A7 D fee recipient");
+        assertEq(a7.requesterBalance(B, 0), START + 588 * ONE, "A7 B requester");
+        assertEq(a7.integratorBalance(B), 10 * ONE, "A7 B platform");
+        assertEq(a7.feesBalance(B), 3_996_000 + 6 * ONE, "A7 B kernel fee plus vault protocol fee");
+        for (uint256 s = D; s <= B; s++) assertEq(a7.providerBalance(s, 0), 392 * ONE, "A7 provider");
+        a7.assertAll();
+
+
+        // Every exit kind, after a milestone and a fee retry, plus the penalty cancel and the toggles.
+        for (uint256 mode; mode < 8; mode++) {
+            EscrowSplitHandler h = new EscrowSplitHandler();
+            h.milestone(0, 250 * ONE - 1);
+            h.retryFee(0);
+            h.toggleArchiveBlock(mode % 2 == 0);
+            h.exit(0, mode, 2);
+            h.requesterCancelFromCommitted();
+            h.toggleIntegratorBlock(false);
+            h.toggleFeeRecipientBlock(false);
+            _each(h, 0, 1, "milestone ran once in every stack");
+            _each(h, 1, 1, "retryFee ran once in every stack");
+            _each(h, 2 + mode, 1, "exit ran once in every stack");
+            _each(h, 10, 1, "requester cancel ran once in every stack");
+            _each(h, 11, 1, "integrator toggle");
+            _each(h, 12, 1, "fee recipient toggle");
+            _each(h, 13, 1, "archive toggle");
+            h.assertAll();
+            emit log_named_uint("P3.exit-mode", mode);
+        }
     }
 
     /// @dev INV-37: an unapproved integrator and an over-limit rate revert at linkEscrow with

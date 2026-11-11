@@ -5,7 +5,8 @@ name: CI
 # REQUIRED-to-pass on every PR and push to main; none is advisory any more:
 #   - Forge unit + invariant + dispute suites
 #   - the 23 audit PoCs (clean rebuild)
-#   - per-contract coverage floors for BondEscalation + CompositeMediator
+#   - per-contract coverage floors for BondEscalation + CompositeMediator + FeeSplitVault
+#   - the FeeSplitVault suites (non-empty match set)
 #   - EIP-170 contract-size ceiling (24576 B)
 #   - the canonical ruling-encoding lint (INV-1)
 #   - Slither (intent: gate on HIGH; TEMPORARILY advisory — crytic-compile/forge build-info skew, see the slither job)
@@ -33,6 +34,8 @@ env:
   # regression fails the gate. Raise (never silently lower) as the suites grow.
   COV_FLOOR_BOND_ESCALATION: "90"
   COV_FLOOR_COMPOSITE_MEDIATOR: "90"
+  # FeeSplitVault: measured baseline 98.16% lines (267/272) with the same command.
+  COV_FLOOR_FEE_SPLIT_VAULT: "95"
 
 jobs:
   # ── Forge build + test (REQUIRED) ───────────────────────────────
@@ -173,6 +176,23 @@ jobs:
           fi
           forge test -vvv --match-contract "$PATTERN"
 
+      # ── FeeSplitVault suites (REQUIRED, explicit) ───────────────────
+      # Same structure as the dispute-suite step: the full `forge test` above already
+      # runs these; this step fails closed if the match set collapses to zero. The fork
+      # contracts in the match set skip without an RPC; a skip is not a pass, and the
+      # fork evidence is produced separately with BASE_MAINNET_RPC / BASE_SEPOLIA_RPC.
+      - name: FeeSplit suites (required)
+        run: |
+          set -euo pipefail
+          PATTERN='FeeSplit|EscrowSplit'
+          N=$(forge test --list --match-contract "$PATTERN" --json | python3 -c 'import json,sys; d=json.load(sys.stdin); print(sum(len(v) for f in d.values() for v in f.values()))')
+          echo "FeeSplit suite test count: $N"
+          if [ "$N" -lt 1 ]; then
+            echo "::error::FeeSplit-suite match set is empty — suites renamed or dropped."
+            exit 1
+          fi
+          forge test -vvv --match-contract "$PATTERN"
+
       # ── Audit-PoC gate against a CLEAN artifact (REQUIRED) ──────────
       # The 23 audit PoCs assert FIXED behaviour. Run them against a freshly
       # compiled tree (no cached build) so a PoC can never go green/red against
@@ -225,7 +245,7 @@ jobs:
       #   imported nowhere else, so excluding it cannot affect the dispute contracts
       #   we gate on, and the full `forge test` step above still exercises the
       #   treasury suite normally in the production profile.
-      - name: Coverage gate (BondEscalation + CompositeMediator floors)
+      - name: Coverage gate (BondEscalation + CompositeMediator + FeeSplitVault floors)
         run: |
           set -euo pipefail
           COVTREE="$RUNNER_TEMP/covtree"
@@ -237,10 +257,10 @@ jobs:
           ( cd "$COVTREE" && forge coverage --ir-minimum \
               --report lcov --report-file lcov.info \
               --report summary )
-          python3 - "$COVTREE/lcov.info" "$COV_FLOOR_BOND_ESCALATION" "$COV_FLOOR_COMPOSITE_MEDIATOR" <<'PY'
+          python3 - "$COVTREE/lcov.info" "$COV_FLOOR_BOND_ESCALATION" "$COV_FLOOR_COMPOSITE_MEDIATOR" "$COV_FLOOR_FEE_SPLIT_VAULT" <<'PY'
           import sys
-          lcov, fbe, fcm = sys.argv[1], float(sys.argv[2]), float(sys.argv[3])
-          floors = {"BondEscalation.sol": fbe, "CompositeMediator.sol": fcm}
+          lcov, fbe, fcm, ffs = sys.argv[1], float(sys.argv[2]), float(sys.argv[3]), float(sys.argv[4])
+          floors = {"BondEscalation.sol": fbe, "CompositeMediator.sol": fcm, "FeeSplitVault.sol": ffs}
           stats, cur = {}, None
           for line in open(lcov):
               line = line.rstrip()

@@ -17,6 +17,11 @@ REQUIRED = {
     "test/helpers/DisputeTestBase.sol", "test/mocks/MockOOV3.sol",
     "test/audit/F17F59_FeeAccounting.t.sol",
     "test/verification/EscrowOracle.t.sol", "test/verification/EscrowFees.t.sol",
+    "src/escrow/FeeSplitVault.sol", "src/interfaces/IFeeSplitVault.sol",
+    "test/verification/EscrowSplit.t.sol",
+    ".agents/skills/verify-actp-escrow/FeeSplit.tla",
+    ".agents/skills/verify-actp-escrow/FeeSplitDefault.cfg",
+    ".agents/skills/verify-actp-escrow/FeeSplitBoth.cfg",
     ".agents/skills/verify-actp-escrow/OracleRefund.tla",
     ".agents/skills/verify-actp-escrow/OracleRefund.cfg",
     ".agents/skills/verify-actp-escrow/FeeDebt.tla",
@@ -54,8 +59,9 @@ def check():
         text = (REPO / "docs/INVARIANT-COVERAGE.md").read_text()
         sources = "\n".join(p.read_text() for p in (REPO / "test").rglob("*.sol"))
         for line in text.splitlines():
-            if line.startswith(("INV-12 ", "INV-22 ")):
-                for test in re.findall(r"::(test_[A-Za-z0-9_]+)", line):
+            if line.startswith(("INV-12 ", "INV-22 ", "INV-32 ", "INV-33 ", "INV-34 ", "INV-35 ",
+                                "INV-36 ", "INV-37 ", "INV-38 ", "INV-39 ")):
+                for test in re.findall(r"::((?:test|testFuzz|invariant)_[A-Za-z0-9_]+)", line):
                     if not re.search(r"function\s+" + re.escape(test) + r"\s*\(", sources):
                         errors.append("Missing cited Solidity test: " + test)
     except OSError as exc:

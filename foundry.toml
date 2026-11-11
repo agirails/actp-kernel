@@ -11,7 +11,12 @@ ffi = false
 # AIP-14b P4-1 (DeployDisputeSystem.s.sol): scoped read+write to the single dispute deploy-config
 # file so the opt-in address write-back (WRITE_DEPLOYMENTS_JSON=true) can persist the deployed
 # CompositeMediator / BondEscalation addresses. Narrowly scoped — NOT a broad fs grant.
-fs_permissions = [{ access = "read-write", path = "./deployments/aip14b.json" }]
+# FeeSplitVault testnet acceptance (AcceptFeeSplitArm / AcceptFeeSplitExec): run files, one per row
+# set, are written when the escrows are created and read back by the time-gated half.
+fs_permissions = [
+    { access = "read-write", path = "./deployments/aip14b.json" },
+    { access = "read-write", path = "./deployments/feesplit-acceptance" },
+]
 
 # PRD P1-8: stateful invariant suite must run >= 256 randomized sequences.
 # Default depth (500) is reduced to 100 — each handler step opens kernel txs / warps time,
