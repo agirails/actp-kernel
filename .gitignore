@@ -44,3 +44,6 @@ docs/
 # Internal operational playbooks — never commit
 deployments/*PLAN*.md
 deployments/internal/
+
+# FeeSplitVault acceptance: run files of the local anvil self-test are transient
+deployments/feesplit-acceptance/local-*.json
