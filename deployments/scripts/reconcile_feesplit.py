@@ -25,9 +25,11 @@ read only as the right-hand side of the end-block equations.
 How transfers are attributed: per transaction, the payments the kernel's events call for are
 matched against the vault's outgoing transfers as a multiset of (recipient, amount). A fee that
 has no matching transfer was credited. Whatever is left must be a credit withdrawal that the
-outstanding credit covers; anything else is an unexplained transfer. The result therefore does
-not depend on what else a transaction holds, on equal amounts going to one recipient for
-different reasons, or on the order of the vault's own events. An incoming transfer that is
+outstanding credit covers; anything else is an unexplained transfer. A vault fee is pushed in
+the vault call that pays the party, so its transfer lies between that payment and the kernel
+event; an equal transfer to the same recipient elsewhere in the transaction is a withdrawal.
+The result therefore does not depend on what else a transaction holds, on equal amounts going
+to one recipient for different reasons, or on the order of the vault's own events. An incoming transfer that is
 neither a deposit nor a bond is surplus: reported, never attributed, never a failure.
 
 Python 3 standard library only; JSON-RPC reads only.
@@ -35,6 +37,7 @@ Python 3 standard library only; JSON-RPC reads only.
 import argparse
 import glob
 import json
+import re
 import sys
 import urllib.request
 from collections import Counter, defaultdict
@@ -265,6 +268,11 @@ class Reconciler:
         self.credit = defaultdict(int)        # integrator -> outstanding credit by this accounting
         self.protocol_credit = 0
         self.withdrawals = []
+        self.dedicated = set()                # requesters dedicated to the scripts, named with --requester
+        for address in args.requester:
+            if not re.fullmatch(r"0x[0-9a-fA-F]{40}", address):
+                raise SystemExit(f"--requester is not an address: {address}")
+            self.dedicated.add(address.lower())
         self.manifest = []
         self.evidence_files = []
         self.plain_other = 0
@@ -364,7 +372,7 @@ class Reconciler:
                 escrow.fail("C6", f"linked to {escrow.vault}, the run file names {entry['vault']}")
 
         # Vault EscrowCreated, both directions, and the actor rule.
-        actors = {e["requester"] for e in self.manifest}
+        actors = {e["requester"] for e in self.manifest} | self.dedicated
         created = [(self.vault, log) for log in self.vault_logs if log["topics"][0] == V_CREATED]
         created += [(self.plain, log) for log in self.plain_created]
         for vault, log in created:
@@ -376,7 +384,7 @@ class Reconciler:
             elif vault == self.vault:
                 self.fail("C6", f"vault EscrowCreated {escrow_id} belongs to no kernel EscrowLinked")
             if requester in actors and (escrow is None or escrow.entry is None):
-                self.fail("C6", f"escrow {escrow_id} of manifest actor {requester} in {vault} is named by no run file")
+                self.fail("C6", f"escrow {escrow_id} of script requester {requester} in {vault} is named by no run file")
         for escrow in self.escrows.values():
             if not escrow.created:
                 escrow.fail("C6", "the vault logged no EscrowCreated for this escrow")
@@ -480,15 +488,24 @@ class Reconciler:
             else:
                 incoming[(sender, value)] += 1
 
-        def take(recipient, amount, before):
-            """Remove one transfer of `amount` to `recipient`: the last one before the kernel event that
-            declares it, else any. Equal transfers are interchangeable, so the choice changes no total."""
+        def take(recipient, amount, before, after=None):
+            """Remove one transfer of `amount` to `recipient` and return its position, else None.
+            A kernel-declared payment takes the last such transfer before the kernel event that
+            declares it, else any: equal transfers are interchangeable, so the choice changes no
+            total. A vault fee whose payout moved money (`after` = that transfer) is pushed inside
+            the same vault call, so only a transfer between the payout and the kernel event is its
+            push; an equal transfer elsewhere in the transaction is a credit withdrawal."""
             matches = [t for t in outgoing if t[1] == recipient and t[2] == amount]
-            if not matches:
-                return False
-            earlier = [t for t in matches if t[0] < before]
-            outgoing.remove(max(earlier) if earlier else min(matches))
-            return True
+            if after is not None:
+                matches = [t for t in matches if after < t[0] < before]
+                chosen = min(matches) if matches else None
+            else:
+                earlier = [t for t in matches if t[0] < before]
+                chosen = max(earlier) if earlier else (min(matches) if matches else None)
+            if chosen is None:
+                return None
+            outgoing.remove(chosen)
+            return chosen[0]
 
         definite = []      # (escrow, check, recipient, amount, description, position of the kernel event)
         soft = []          # (escrow, column, recipient, amount, position): pushed, or credited when unmatched
@@ -551,12 +568,16 @@ class Reconciler:
                     recipient = escrow.view["requester"] if word(data, 0) else escrow.view["provider"]
                 definite.append((escrow, "C2", recipient, bond, "bond release", order(log)))
 
+        paid_at = {}       # position of a kernel event -> position of the transfer it declared
         for escrow, check, recipient, amount, what, position in definite:
-            if amount and not take(recipient, amount, position):
+            if not amount:
+                continue
+            paid_at[position] = take(recipient, amount, position)
+            if paid_at[position] is None:
                 escrow.fail(check, f"{what}: no transfer of {amount} to {recipient} in {tx_hash}")
         credited = []      # fees with no matching transfer: (escrow, column, recipient, amount)
         for escrow, column, recipient, amount, position in soft:
-            if take(recipient, amount, position):
+            if take(recipient, amount, position, paid_at.get(position)) is not None:
                 continue
             credited.append((escrow, column, recipient, amount))
             escrow.credited[column] += amount
@@ -747,6 +768,7 @@ class Reconciler:
             "credits": {"integrators": {k: v for k, v in self.credit.items() if v}, "protocol": self.protocol_credit},
             "globalFailures": self.global_failures, "incompleteManifestEntries": incomplete,
             "requireComplete": bool(self.args.require_complete), "allowPending": sorted(allowed),
+            "dedicatedRequesters": sorted(self.dedicated),
             "entries": entries,
             "result": "fail" if failed else ("incomplete" if complete_failed else "pass"),
         }
@@ -769,6 +791,9 @@ def print_table(report):
     n = report["counts"]
     print(f"pass {n['pass']}  pending {n['pending']}  fail {n['fail']}  foreign {n['foreign']}  "
           f"surplus {report['surplus']['total']}  result {report['result'].upper()}")
+    if not report["dedicatedRequesters"]:
+        print("note: no --requester given; an escrow of a script address is only missed here if a run file "
+              "names that address")
     if report["incompleteManifestEntries"] and report["requireComplete"]:
         print("incomplete manifest entries: " + ", ".join(report["incompleteManifestEntries"]))
 
@@ -783,6 +808,11 @@ def main():
     parser.add_argument("--from-block", type=int, required=True)
     parser.add_argument("--to-block", type=int)
     parser.add_argument("--runs", action="append", required=True, help="glob of run files; repeatable")
+    parser.add_argument("--requester", action="append", default=[], metavar="ADDRESS",
+                        help="a requester address dedicated to the acceptance scripts or the soak; repeatable. "
+                             "An escrow of such an address that no run file names fails with C6. Without it "
+                             "the dedicated addresses are only those the run files themselves name, so a "
+                             "requester whose every entry is missing goes unnoticed")
     parser.add_argument("--require-complete", action="store_true",
                         help="also fail when a manifest entry is still open")
     parser.add_argument("--allow-pending", action="append", metavar="LABEL",

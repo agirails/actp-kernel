@@ -23,6 +23,8 @@ an honest run and catches seeded defects (plan step 12, Phase A gate):
     D4 a run file that names a plain-vault control never linked        -> C6
     D5 a vault that pays the integrator twice, after a donation        -> C2
     D6 an escrow of a manifest actor deleted from its run file         -> C6
+    D7 every entry of one requester deleted, that requester named
+       with --requester                                                 -> C6
 
 It starts its own anvil, deploys the stack with a blockable token, drives the Arm and Exec
 scripts, advances time with evm_increaseTime, and runs deployments/scripts/reconcile_feesplit.py.
@@ -233,7 +235,12 @@ class SelfTest:
         self.expect("H5", "credited settlement, unblock and withdrawal of both credits in one transaction: pass",
                     entries["H5-credit-unblock-withdraw"]["status"] == "pass"
                     and entries["H5-credit-unblock-withdraw"]["credited"].get("platform") == 10_000_000
-                    and [w["amount"] for w in report["withdrawals"]] == [10_000_000, 20_000_000])
+                    and [w["amount"] for w in report["withdrawals"]][:2] == [10_000_000, 20_000_000])
+        self.expect("H5", "withdrawal, then a credited settlement of the same amount, then a second withdrawal, "
+                    "in one transaction: the fee is credited and both withdrawals are reported",
+                    entries["H5-withdraw-then-credit"]["status"] == "pass"
+                    and entries["H5-withdraw-then-credit"]["credited"].get("platform") == 10_000_000
+                    and [w["amount"] for w in report["withdrawals"]] == [10_000_000, 20_000_000, 10_000_000, 10_000_000])
         self.expect("H6", "A25 pending at the first report", entries["H6-A25"]["status"] == "pending")
         self.expect("H7", "both donations reported as surplus, escrows unaffected",
                     report["surplus"]["total"] == 5_000_001 and len(report["surplus"]["transfers"]) == 2
@@ -264,7 +271,7 @@ class SelfTest:
         self.expect("honest", "second report: exit 0 with --require-complete", code == 0
                     and report["counts"]["fail"] == 0 and not report["globalFailures"])
         self.expect("H4", "credit withdrawn at the second report", not report["credits"]["integrators"]
-                    and sorted(w["amount"] for w in report["withdrawals"]) == [10_000_000, 20_000_000, 44_000_000])
+                    and sorted(w["amount"] for w in report["withdrawals"]) == [10_000_000, 10_000_000, 10_000_000, 20_000_000, 44_000_000])
         self.expect("H6", "A25 pass with the columns of row A25", entries["H6-A25"]["status"] == "pass"
                     and entries["H6-A25"]["columns"] == {"requester": 490_000_000, "provider": 445_000_000,
                                                          "platform": 55_000_000, "kernelFee": 5_000_000,
@@ -314,6 +321,17 @@ class SelfTest:
 
         def delete_entry(data):
             data["entries"] = [e for e in data["entries"] if e["label"] != "H2-A7-D"]
+
+        requester = next(e for e in json.loads(self.selftest_run.read_text())["entries"] if e["label"] == "H3-A1")["requester"]
+
+        def delete_requester(data):
+            data["entries"] = [e for e in data["entries"] if e["requester"].lower() != requester.lower()]
+
+        code, report = self.reconcile("honest-dedicated", vault, 0, [self.selftest_run, self.a25_run], ["--requester", requester])
+        self.expect("D7", "the honest run passes with its requester named as dedicated", code == 0
+                    and report["dedicatedRequesters"] == [requester.lower()])
+        code, report = self.reconcile("defect-D7", vault, 0, self.tampered("D7", delete_requester), ["--requester", requester])
+        self.expect("D7", "exit nonzero and C6 reported", code == 1 and "C6" in self.checks(report))
 
         for defect, check, mutate in (("D3", "C7a", claim_200_bps), ("D4", "C6", name_unlinked_control),
                                       ("D6", "C6", delete_entry)):

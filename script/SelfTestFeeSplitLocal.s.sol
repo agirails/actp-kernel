@@ -23,7 +23,8 @@ interface IBlockableToken {
  *           H4 a credit retained at one report and withdrawn at the next (A15, then A17)
  *           H5 one transaction that settles an escrow and withdraws a credit of the same integrator;
  *              and one that settles with the integrator blocked, unblocks it and withdraws the old
- *              and the new credit together
+ *              and the new credit together; and one that withdraws a credit, then settles with the
+ *              integrator blocked, then withdraws the new credit
  *           H6 a stale dispute, pending first and force-resolved later (A25, armLongRunning)
  *           H7 a donation on its own, and a donation inside the transaction that links an escrow
  *           H8 an escrow linked by an address outside the manifest and left in COMMITTED; and one
@@ -130,6 +131,26 @@ contract SelfTestFeeSplitLocal is FeeSplitRows {
         vm.broadcast(requesterKey);
         wallet.execute(three);
         _entry("H5-credit-unblock-withdraw", "A15", "settle", D, 100, creditedTx, "SETTLED", "none", 0, false);
+
+        // H5, third shape: a credit exists; one transaction withdraws it, blocks the integrator, settles
+        // an escrow whose 10.000000 is therefore credited, unblocks and withdraws again. The withdrawal
+        // that precedes the settlement has the fee's amount and recipient, and is not the fee's push.
+        vm.broadcast(keeperKey);
+        blockable.setBlocked(integrator, true);
+        _armSettle("H5-third-credit-A15", "A15", "settle", D, K, 100, false);
+        bytes32 afterWithdrawalTx = _walletOpen(wallet, K, D, 0);
+        _start(afterWithdrawalTx);
+        _deliver(afterWithdrawalTx);
+        BatchWallet.Call[] memory six = new BatchWallet.Call[](6);
+        six[0] = _call(address(token), abi.encodeWithSelector(blockable.setBlocked.selector, integrator, false));
+        six[1] = _call(address(vault), abi.encodeWithSelector(vault.withdrawIntegratorCredit.selector, integrator));
+        six[2] = _call(address(token), abi.encodeWithSelector(blockable.setBlocked.selector, integrator, true));
+        six[3] = _call(address(kernel), abi.encodeWithSelector(kernel.transitionState.selector, afterWithdrawalTx, IACTPKernel.State.SETTLED, ""));
+        six[4] = _call(address(token), abi.encodeWithSelector(blockable.setBlocked.selector, integrator, false));
+        six[5] = _call(address(vault), abi.encodeWithSelector(vault.withdrawIntegratorCredit.selector, integrator));
+        vm.broadcast(requesterKey);
+        wallet.execute(six);
+        _entry("H5-withdraw-then-credit", "A15", "settle", D, 100, afterWithdrawalTx, "SETTLED", "none", 0, false);
 
         // H4: a second credit, retained until after the first report.
         vm.broadcast(keeperKey);
