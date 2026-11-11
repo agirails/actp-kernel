@@ -9,10 +9,12 @@ an honest run and catches seeded defects (plan step 12, Phase A gate):
     H2 a split exit with the bond returned to the initiator (A7)
     H3 a plain-vault control (A1)
     H4 a credit retained at one report and withdrawn at the next (A15, then A17)
-    H5 one transaction that settles an escrow and withdraws a credit of the same integrator
+    H5 one transaction that settles an escrow and withdraws a credit of the same integrator; and
+       one that settles with the integrator blocked, unblocks it and withdraws both credits at once
     H6 a stale dispute: pending at the first report, force-resolved and passing at the second
     H7 a donation on its own, and one inside the transaction that links an escrow: surplus
-    H8 an escrow of an address outside the manifest, left in COMMITTED: foreign and pending
+    H8 an escrow of an address outside the manifest, left in COMMITTED: foreign and pending; and
+       one whose provider is the kernel, cancelled by its requester: foreign and passing
 
   Seeded defects, each of which must make the reconciler exit nonzero and report the named check:
     D1 a vault built with a net basis                                  -> C1
@@ -194,7 +196,9 @@ class SelfTest:
 
     def honest(self):
         env = dict(self.env(), WALLET=self.wallet)
-        self.script("arm-honest", "SelfTestFeeSplitLocal", "armHonest()", env)
+        out = self.script("arm-honest", "SelfTestFeeSplitLocal", "armHonest()", env)
+        kernel_provider_tx = next(line.split()[-1] for line in out.splitlines()
+                                  if line.strip().startswith("FOREIGN_KERNEL_PROVIDER_TX"))
         self.script("arm-a25", "SelfTestFeeSplitLocal", "armLongRunning()", env)
         self.selftest_run = self.run_file("selftest")
         self.a25_run = self.run_file("a25")
@@ -202,6 +206,7 @@ class SelfTest:
 
         self.advance(9 * 3600)         # past the liveness of the proposed rulings
         self.script("exec-rulings", "AcceptFeeSplitExec", "run()", dict(env, RUN_FILE=str(self.selftest_run)))
+        self.script("foreign-cancel", "SelfTestFeeSplitLocal", "foreignCancel()", dict(env, FOREIGN_TX=kernel_provider_tx))
 
         # First report.
         vault = self.stack["feeSplitVault"]
@@ -224,14 +229,24 @@ class SelfTest:
                     and entries["H4-credit-A15"]["credited"].get("platform") == 10_000_000)
         self.expect("H5", "settle and withdraw in one transaction: pass, one withdrawal of 10.000000",
                     entries["H5-settle-and-withdraw"]["status"] == "pass"
-                    and [w["amount"] for w in report["withdrawals"]] == [10_000_000])
+                    and report["withdrawals"][0]["amount"] == 10_000_000)
+        self.expect("H5", "credited settlement, unblock and withdrawal of both credits in one transaction: pass",
+                    entries["H5-credit-unblock-withdraw"]["status"] == "pass"
+                    and entries["H5-credit-unblock-withdraw"]["credited"].get("platform") == 10_000_000
+                    and [w["amount"] for w in report["withdrawals"]] == [10_000_000, 20_000_000])
         self.expect("H6", "A25 pending at the first report", entries["H6-A25"]["status"] == "pending")
         self.expect("H7", "both donations reported as surplus, escrows unaffected",
                     report["surplus"]["total"] == 5_000_001 and len(report["surplus"]["transfers"]) == 2
                     and entries["H7-donation-in-link"]["status"] == "pass"
                     and report["solvency"]["balance"] == report["solvency"]["owed"] + 5_000_001)
-        self.expect("H8", "foreign escrow reported foreign and pending", len(foreign) == 1
-                    and foreign[0]["status"] == "pending" and foreign[0]["state"] == "COMMITTED")
+        open_foreign = [e for e in foreign if e["state"] == "COMMITTED"]
+        kernel_provider = [e for e in foreign if e["txId"] == kernel_provider_tx.lower()]
+        self.expect("H8", "foreign escrow reported foreign and pending", len(foreign) == 2
+                    and len(open_foreign) == 1 and open_foreign[0]["status"] == "pending")
+        self.expect("H8", "foreign escrow with the kernel as provider: pass, penalty is a provider payment",
+                    len(kernel_provider) == 1 and kernel_provider[0]["status"] == "pass"
+                    and kernel_provider[0]["columns"]["provider"] == 49_500_000
+                    and kernel_provider[0]["columns"]["kernelFee"] == 500_000)
         code, _ = self.reconcile("report-1-complete", vault, 0, pattern, ["--require-complete"])
         self.expect("H6", "--require-complete fails while A25 is open", code == 1)
         code, _ = self.reconcile("report-1-allowed", vault, 0, pattern,
@@ -249,14 +264,25 @@ class SelfTest:
         self.expect("honest", "second report: exit 0 with --require-complete", code == 0
                     and report["counts"]["fail"] == 0 and not report["globalFailures"])
         self.expect("H4", "credit withdrawn at the second report", not report["credits"]["integrators"]
-                    and sorted(w["amount"] for w in report["withdrawals"]) == [10_000_000, 44_000_000])
+                    and sorted(w["amount"] for w in report["withdrawals"]) == [10_000_000, 20_000_000, 44_000_000])
         self.expect("H6", "A25 pass with the columns of row A25", entries["H6-A25"]["status"] == "pass"
                     and entries["H6-A25"]["columns"] == {"requester": 490_000_000, "provider": 445_000_000,
                                                          "platform": 55_000_000, "kernelFee": 5_000_000,
                                                          "vaultProtocolFee": 5_000_000, "mediator": 0})
-        self.expect("H8", "foreign escrow still pending and does not block completion",
-                    len(foreign) == 1 and foreign[0]["status"] == "pending")
+        self.expect("H8", "open foreign escrow still pending and does not block completion",
+                    [e["status"] for e in foreign if e["state"] == "COMMITTED"] == ["pending"])
         return pattern
+
+    def missing_manifest(self):
+        vault = self.stack["feeSplitVault"]
+        code, report = self.reconcile("missing-pattern", vault, 0,
+                                      [self.selftest_run, self.a25_run, self.work / "no-such-run-*.json"],
+                                      ["--require-complete"])
+        self.expect("runs", "a --runs pattern that matches no file fails with C6",
+                    code == 1 and "C6" in self.checks(report))
+        code, report = self.reconcile("empty-manifest", vault, 0, [self.work / "no-such-run-*.json"],
+                                      ["--require-complete"])
+        self.expect("runs", "an empty manifest fails with C6", code == 1 and "C6" in self.checks(report))
 
     def tampered(self, name, mutate):
         """A copy of the honest run files with one of them changed."""
@@ -425,6 +451,7 @@ class SelfTest:
             self.start_anvil()
             self.deploy()
             self.honest()
+            self.missing_manifest()
             self.defect_run_files()
             self.defect_vaults()
             self.stop_anvil()

@@ -21,10 +21,13 @@ interface IBlockableToken {
  *           H2 a split exit with the bond returned to the initiator (A7)
  *           H3 a plain-vault control (A1)
  *           H4 a credit retained at one report and withdrawn at the next (A15, then A17)
- *           H5 one transaction that settles an escrow and withdraws a credit of the same integrator
+ *           H5 one transaction that settles an escrow and withdraws a credit of the same integrator;
+ *              and one that settles with the integrator blocked, unblocks it and withdraws the old
+ *              and the new credit together
  *           H6 a stale dispute, pending first and force-resolved later (A25, armLongRunning)
  *           H7 a donation on its own, and a donation inside the transaction that links an escrow
- *           H8 an escrow linked by an address outside the manifest and left in COMMITTED
+ *           H8 an escrow linked by an address outside the manifest and left in COMMITTED; and one
+ *              whose provider is the kernel itself, cancelled by its requester after the deadline
  *         and the escrows of the seeded defects D1, D2 and D5 against a defective vault build.
  *
  * Extra env: FOREIGN_KEY (H8), WALLET (after deployWallet), DEFECT (armDefect).
@@ -112,6 +115,22 @@ contract SelfTestFeeSplitLocal is FeeSplitRows {
         wallet.execute(both);
         _entry("H5-settle-and-withdraw", "A3", "", D, 100, walletTx, "SETTLED", "none", 0, false);
 
+        // H5, second shape: a credit exists, the next settlement is credited as well, and the same
+        // transaction unblocks the integrator and withdraws both credits as one transfer.
+        vm.broadcast(keeperKey);
+        blockable.setBlocked(integrator, true);
+        _armSettle("H5-second-credit-A15", "A15", "settle", D, K, 100, false);
+        bytes32 creditedTx = _walletOpen(wallet, K, D, 0);
+        _start(creditedTx);
+        _deliver(creditedTx);
+        BatchWallet.Call[] memory three = new BatchWallet.Call[](3);
+        three[0] = _call(address(kernel), abi.encodeWithSelector(kernel.transitionState.selector, creditedTx, IACTPKernel.State.SETTLED, ""));
+        three[1] = _call(address(token), abi.encodeWithSelector(blockable.setBlocked.selector, integrator, false));
+        three[2] = _call(address(vault), abi.encodeWithSelector(vault.withdrawIntegratorCredit.selector, integrator));
+        vm.broadcast(requesterKey);
+        wallet.execute(three);
+        _entry("H5-credit-unblock-withdraw", "A15", "settle", D, 100, creditedTx, "SETTLED", "none", 0, false);
+
         // H4: a second credit, retained until after the first report.
         vm.broadcast(keeperKey);
         blockable.setBlocked(integrator, true);
@@ -144,6 +163,18 @@ contract SelfTestFeeSplitLocal is FeeSplitRows {
         vm.stopBroadcast();
         console2.log("FOREIGN_TX", vm.toString(foreignTx));
 
+        // H8, second shape: anyone may name the kernel as provider. Its requester cancels after the
+        // deadline, and the 5% penalty is then a provider payment to the kernel, not an archive share.
+        vm.startBroadcast(foreignKey);
+        _mint(foreign, K);
+        bytes32 kernelProviderTx = kernel.createTransaction(
+            address(kernel), foreign, K, block.timestamp + 70 minutes, 1 hours, SERVICE, bytes32(0), 0, 0
+        );
+        token.approve(address(vault), K);
+        kernel.linkEscrow(kernelProviderTx, address(vault), kernelProviderTx);
+        vm.stopBroadcast();
+        console2.log("FOREIGN_KERNEL_PROVIDER_TX", vm.toString(kernelProviderTx));
+
         _writeRunFile("selftest");
     }
 
@@ -161,6 +192,13 @@ contract SelfTestFeeSplitLocal is FeeSplitRows {
         IBlockableToken(address(token)).setBlocked(integrator, false);
         vault.withdrawIntegratorCredit(integrator);
         vm.stopBroadcast();
+    }
+
+    /// @dev H8, second shape, after the deadline: the foreign requester cancels (FOREIGN_TX names it).
+    function foreignCancel() external {
+        _local();
+        vm.broadcast(vm.envUint("FOREIGN_KEY"));
+        kernel.transitionState(vm.envBytes32("FOREIGN_TX"), IACTPKernel.State.CANCELLED, "");
     }
 
     /// @dev One escrow against a defective vault build (FEE_SPLIT_VAULT names it).

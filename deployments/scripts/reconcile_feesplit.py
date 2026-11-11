@@ -275,7 +275,13 @@ class Reconciler:
     # ----- inputs -----
 
     def load_runs(self):
-        paths = sorted({p for pattern in self.args.runs for p in glob.glob(pattern)})
+        paths = set()
+        for pattern in self.args.runs:
+            matched = glob.glob(pattern)
+            if not matched:
+                self.fail("C6", f"--runs pattern matches no file: {pattern}")
+            paths.update(matched)
+        paths = sorted(paths)
         seen = {}
         for path in paths:
             data = json.load(open(path))
@@ -297,6 +303,8 @@ class Reconciler:
                 seen[entry["txId"]] = entry["label"]
                 self.manifest.append(entry)
         self.run_files = [p for p in paths if p not in {e["file"] for e in self.evidence_files}]
+        if not self.manifest:
+            self.fail("C6", "the run files name no escrow: there is no manifest to reconcile against")
 
     def fetch(self):
         self.kernel_logs = sorted(self.rpc.logs(self.kernel, [], self.start, self.end), key=order)
@@ -461,22 +469,29 @@ class Reconciler:
     def replay_tx(self, tx_hash, vault, group):
         strict = vault == self.vault          # every transfer of the FeeSplitVault must be explained
         transfers = group["transfers"][vault]
-        outgoing = Counter()
+        outgoing = []                         # [position, recipient, amount], removed when explained
         incoming = Counter()
-        archive_legs = []
         for log in transfers:
             sender, recipient, value = address_of(log["topics"][1]), address_of(log["topics"][2]), int(log["data"], 16)
             if value == 0:
                 continue
-            if sender == vault and recipient == self.kernel:
-                archive_legs.append((order(log), value))
-            elif sender == vault:
-                outgoing[(recipient, value)] += 1
+            if sender == vault:
+                outgoing.append([order(log), recipient, value])
             else:
                 incoming[(sender, value)] += 1
 
-        definite = []      # (escrow, check, column, recipient, amount, description)
-        soft = []          # (escrow, column, recipient, amount): pushed, or credited when no transfer matches
+        def take(recipient, amount, before):
+            """Remove one transfer of `amount` to `recipient`: the last one before the kernel event that
+            declares it, else any. Equal transfers are interchangeable, so the choice changes no total."""
+            matches = [t for t in outgoing if t[1] == recipient and t[2] == amount]
+            if not matches:
+                return False
+            earlier = [t for t in matches if t[0] < before]
+            outgoing.remove(max(earlier) if earlier else min(matches))
+            return True
+
+        definite = []      # (escrow, check, recipient, amount, description, position of the kernel event)
+        soft = []          # (escrow, column, recipient, amount, position): pushed, or credited when unmatched
         deposits = []      # (escrow, sender, amount, description)
         touched = []
         for log in group["kernel"]:
@@ -501,9 +516,9 @@ class Reconciler:
                 escrow.released += amount
                 escrow.columns["provider"] += amount - cut
                 escrow.columns["platform"] += cut
-                definite.append((escrow, "C1", address_of(data[2:66]), amount - cut, "provider payout"))
+                definite.append((escrow, "C1", address_of(data[2:66]), amount - cut, "provider payout", order(log)))
                 if cut:
-                    soft.append((escrow, "platform", escrow.terms[0], cut))
+                    soft.append((escrow, "platform", escrow.terms[0], cut, order(log)))
             elif kind == K_REFUNDED:
                 amount = word(data, 1)
                 protocol, integrator = self.refund_fees(escrow, amount)
@@ -512,19 +527,19 @@ class Reconciler:
                 escrow.columns["vaultProtocolFee"] += protocol
                 escrow.columns["platform"] += integrator
                 check = "C1" if protocol + integrator else "C3"     # a fee-free refund must arrive whole
-                definite.append((escrow, check, address_of(data[2:66]), amount - protocol - integrator, "refund"))
+                definite.append((escrow, check, address_of(data[2:66]), amount - protocol - integrator, "refund", order(log)))
                 if protocol:
-                    soft.append((escrow, "vaultProtocolFee", self.fee_recipient_at(order(log)), protocol))
+                    soft.append((escrow, "vaultProtocolFee", self.fee_recipient_at(order(log)), protocol, order(log)))
                 if integrator:
-                    soft.append((escrow, "platform", escrow.terms[0], integrator))
+                    soft.append((escrow, "platform", escrow.terms[0], integrator, order(log)))
             elif kind == K_FEE:
                 amount = word(data, 0)
                 escrow.columns["kernelFee"] += amount
-                definite.append((escrow, "C1", address_of(log["topics"][2]), amount, "kernel fee"))
+                definite.append((escrow, "C1", address_of(log["topics"][2]), amount, "kernel fee", order(log)))
             elif kind == K_MEDIATOR:
                 amount = word(data, 0)
                 escrow.columns["mediator"] += amount
-                definite.append((escrow, "C1", address_of(log["topics"][2]), amount, "mediator payout"))
+                definite.append((escrow, "C1", address_of(log["topics"][2]), amount, "mediator payout", order(log)))
             elif kind == K_DISPUTE_RESOLVED:
                 bond = word(data, 1)
                 escrow.bond_out += bond
@@ -534,38 +549,32 @@ class Reconciler:
                     recipient = address_of(log["topics"][3])
                 else:
                     recipient = escrow.view["requester"] if word(data, 0) else escrow.view["provider"]
-                definite.append((escrow, "C2", recipient, bond, "bond release"))
+                definite.append((escrow, "C2", recipient, bond, "bond release", order(log)))
 
-        # The archive share of a kernel fee has no event of its own: it is the vault's transfer to
-        # the kernel, and belongs to the transaction the kernel's next fee event names.
-        fee_ends = [(order(l), l["topics"][1].lower()) for l in group["kernel"] if l["topics"][0] in K_FEE_LEG_END]
-        for at, value in archive_legs:
-            owner = next((self.escrows.get(tx_id) for position, tx_id in fee_ends if position > at), None)
-            if owner is not None and owner.vault == vault:
-                owner.columns["kernelFee"] += value
-            elif strict:
-                self.fail("C2", f"unexplained transfer of {value} to the kernel in {tx_hash}")
-
-        unmatched = []
-        for escrow, check, recipient, amount, what in definite:
-            if amount == 0:
-                continue
-            if outgoing[(recipient, amount)] > 0:
-                outgoing[(recipient, amount)] -= 1
-            else:
-                unmatched.append(recipient)
+        for escrow, check, recipient, amount, what, position in definite:
+            if amount and not take(recipient, amount, position):
                 escrow.fail(check, f"{what}: no transfer of {amount} to {recipient} in {tx_hash}")
-        for escrow, column, recipient, amount in soft:
-            if outgoing[(recipient, amount)] > 0:
-                outgoing[(recipient, amount)] -= 1
+        credited = []      # fees with no matching transfer: (escrow, column, recipient, amount)
+        for escrow, column, recipient, amount, position in soft:
+            if take(recipient, amount, position):
                 continue
+            credited.append((escrow, column, recipient, amount))
             escrow.credited[column] += amount
             if column == "platform":
                 self.credit[recipient] += amount
             else:
                 self.protocol_credit += amount
-            if any(to == recipient for (to, _), n in outgoing.items() if n > 0):
-                escrow.fail("C1", f"{column}: expected {amount} to {recipient}, another amount was transferred in {tx_hash}")
+
+        # The archive share of a kernel fee has no event of its own: it is a transfer to the kernel
+        # that no kernel-declared payment claimed, and it belongs to the transaction the kernel's next
+        # fee event names. (The kernel can also be a provider; that payment was matched above.)
+        fee_ends = [(order(l), l["topics"][1].lower()) for l in group["kernel"] if l["topics"][0] in K_FEE_LEG_END]
+        for transfer in [t for t in outgoing if t[1] == self.kernel]:
+            at, _, value = transfer
+            owner = next((self.escrows.get(tx_id) for position, tx_id in fee_ends if position > at), None)
+            if owner is not None and owner.vault == vault:
+                owner.columns["kernelFee"] += value
+                outgoing.remove(transfer)
 
         for escrow, sender, amount, what in deposits:
             if incoming[(sender, amount)] > 0:
@@ -575,20 +584,24 @@ class Reconciler:
 
         if not strict:
             return
-        # What is left must be a credit withdrawal covered by the outstanding credit.
+        # What is left must be a credit withdrawal covered by the outstanding credit, counting the
+        # credits this transaction accrued. Only then is a leftover an unexplained transfer; and only
+        # then does a fee that found no transfer of its own amount count as paid in a wrong amount.
         position = min((order(l) for l in transfers), default=None)
-        for (recipient, amount), n in sorted(outgoing.items()):
-            for _ in range(n):
-                if self.credit.get(recipient, 0) >= amount:
-                    self.credit[recipient] -= amount
-                    self.withdrawals.append({"tx": tx_hash, "kind": "integrator", "to": recipient, "amount": amount})
-                elif self.protocol_credit >= amount and recipient == self.fee_recipient_at(position):
-                    self.protocol_credit -= amount
-                    self.withdrawals.append({"tx": tx_hash, "kind": "protocol", "to": recipient, "amount": amount})
-                else:
-                    self.fail("C2", f"unexplained transfer of {amount} to {recipient} in {tx_hash}")
-                    for escrow in touched:
-                        escrow.fail("C2", f"unexplained transfer of {amount} to {recipient} in {tx_hash}")
+        for _, recipient, amount in sorted(outgoing):
+            if self.credit.get(recipient, 0) >= amount:
+                self.credit[recipient] -= amount
+                self.withdrawals.append({"tx": tx_hash, "kind": "integrator", "to": recipient, "amount": amount})
+            elif self.protocol_credit >= amount and recipient == self.fee_recipient_at(position):
+                self.protocol_credit -= amount
+                self.withdrawals.append({"tx": tx_hash, "kind": "protocol", "to": recipient, "amount": amount})
+            else:
+                self.fail("C2", f"unexplained transfer of {amount} to {recipient} in {tx_hash}")
+                for escrow in touched:
+                    escrow.fail("C2", f"unexplained transfer of {amount} to {recipient} in {tx_hash}")
+                for escrow, column, to, expected in credited:
+                    if to == recipient:
+                        escrow.fail("C1", f"{column}: expected {expected} to {recipient}, {amount} was transferred in {tx_hash}")
         for (sender, amount), n in sorted(incoming.items()):
             for _ in range(n):
                 self.surplus.append({"tx": tx_hash, "from": sender, "amount": amount})
