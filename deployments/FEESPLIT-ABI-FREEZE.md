@@ -104,7 +104,7 @@ vault's `RefundFeeSplit` precedes the kernel's `EscrowRefunded`; join on the esc
 | `"Bps zero"`, `"Invalid escrow ID"`, `"Escrow ID used"` | `setEscrowTerms` |
 | `"No terms"` | `clearEscrowTerms` |
 | `"Integrator not approved"` | `createEscrow`: no approval, or a rate above the provider's maximum |
-| `"Terms need txId escrowId"` | `createEscrow`: terms registered and the escrow id is not the id of the transaction being linked |
+| `"Escrow ID needs matching tx"` | `createEscrow`, every escrow: the escrow id does not name an unlinked kernel transaction with the same requester, provider and amount (plan v14, DM-26) |
 | `"Escrow exists"`, `"Escrow ID used"`, `"Zero address"`, `"Amount zero"` | `createEscrow` |
 | `"Escrow missing"`, `"Escrow inactive"`, `"Amount zero"`, `"Insufficient escrow"`, `"Zero recipient"` | disbursements |
 | `"Insufficient bond"` | `releaseBond` |

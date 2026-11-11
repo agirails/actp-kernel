@@ -15,7 +15,7 @@ import {IFeeSplitVault} from "../src/interfaces/IFeeSplitVault.sol";
  *
  *         run()            the matrix (ACCEPT_ROWS=label,label selects a subset; ACCEPT_SET names it)
  *         armLongRunning() A25: a forced 50/50 needs 30 days; it gets its own run file
- *         probeNegatives() A23 and the consent negatives: not broadcast. Each is a call against live
+ *         probeNegatives() A23, A26 and the consent negatives: not broadcast. Each is a call against live
  *                          state at the recorded block that must revert with the expected reason.
  *
  * Run: forge script script/AcceptFeeSplitArm.s.sol --rpc-url $RPC --broadcast --slow
@@ -126,7 +126,17 @@ contract AcceptFeeSplitArm is FeeSplitRows {
         uint256 vaultBalance = token.balanceOf(address(vault));
 
         bytes memory k = abi.encodeWithSelector(kernel.linkEscrow.selector, ids[0], address(vault), notATx);
-        _negative("A23 terms registered, escrowId is not the transaction id", address(kernel), k, requester, "Terms need txId escrowId");
+        _negative("A23 terms registered, escrowId is not a transaction id", address(kernel), k, requester, "Escrow ID needs matching tx");
+        k = abi.encodeWithSelector(kernel.linkEscrow.selector, ids[0], address(vault), keccak256("no terms, not a transaction id"));
+        _negative("A23 no terms, escrowId is not a transaction id", address(kernel), k, requester, "Escrow ID needs matching tx");
+        // A26: the stranger's own transaction, linked under the requester's transaction id.
+        vm.startPrank(stranger);
+        _mint(stranger, K);
+        token.approve(address(vault), K);
+        bytes32 strangerTx = kernel.createTransaction(provider, stranger, K, block.timestamp + 1 days, 1 hours, SERVICE, bytes32(0), 0, 0);
+        vm.stopPrank();
+        k = abi.encodeWithSelector(kernel.linkEscrow.selector, strangerTx, address(vault), ids[0]);
+        _negative("A26 another requester's transaction id as escrowId", address(kernel), k, stranger, "Escrow ID needs matching tx");
         k = abi.encodeWithSelector(kernel.linkEscrow.selector, ids[1], address(vault), ids[1]);
         _negative("integrator the provider did not approve", address(kernel), k, requester, "Integrator not approved");
         k = abi.encodeWithSelector(kernel.linkEscrow.selector, ids[2], address(vault), ids[2]);

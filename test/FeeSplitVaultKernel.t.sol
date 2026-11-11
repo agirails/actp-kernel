@@ -424,18 +424,25 @@ contract FeeSplitVaultKernelTest is FeeSplitTestBase {
         assertEq(uint8(_state(txId)), uint8(IFeeSplitVault.TermsState.PENDING_CONFIRM));
     }
 
-    function test_A23_TermsNeedTxIdEscrowId() public {
+    function test_A23_EscrowIdNeedsMatchingTx() public {
         bytes32 txId = _create(K);
         bytes32 notATx = keccak256("not a transaction id");
         uint256 balance = usdc.balanceOf(requester);
         vm.startPrank(requester);
-        vault.setEscrowTerms(notATx, integrator, 100, PAYOUT_ONLY);
         usdc.approve(address(vault), K);
-        vm.expectRevert("Terms need txId escrowId");
+        // Without terms.
+        vm.expectRevert("Escrow ID needs matching tx");
         kernel.linkEscrow(txId, address(vault), notATx);
+        // With terms.
+        vault.setEscrowTerms(notATx, integrator, 100, PAYOUT_ONLY);
+        vm.expectRevert("Escrow ID needs matching tx");
+        kernel.linkEscrow(txId, address(vault), notATx);
+        vault.clearEscrowTerms(notATx);
         vm.stopPrank();
         assertEq(usdc.balanceOf(requester), balance);
         assertEq(vault.totalLocked(), 0);
+        (,,,,,, bool used) = vault.lockedTerms(notATx);
+        assertFalse(used, "a refused id is not consumed in the vault");
 
         // Twin-id variant: behaves exactly as A1.
         Bal memory b = _snap();
@@ -447,6 +454,62 @@ contract FeeSplitVaultKernelTest is FeeSplitTestBase {
         x.archive = 10_000;
         _assertOutcome(b, x, "A23 twin");
         assertEq(uint8(_state(escrowId)), uint8(IFeeSplitVault.TermsState.VOID));
+    }
+
+    /// @dev DM-26: another requester cannot take a transaction id, existing or predicted, as the escrow
+    ///      id of its own transaction; the owner then funds with terms as if nothing happened (A3).
+    function test_A26_EscrowIdSquatRejected() public {
+        address squatter = address(0x5A77);
+        address squatterProvider = address(0x5A78);
+        _mint(squatter, ONE);
+
+        // The victim's next id is computable from public data before the transaction exists.
+        bytes32 predicted =
+            keccak256(abi.encodePacked(requester, provider, K, keccak256("svc"), kernel.requesterNonces(requester)));
+        vm.startPrank(squatter);
+        bytes32 own = kernel.createTransaction(
+            squatterProvider, squatter, 50_000, block.timestamp + 30 days, 1 hours, keccak256("x"), bytes32(0), 0, 0
+        );
+        usdc.approve(address(vault), 50_000);
+        vm.expectRevert("Escrow ID needs matching tx");
+        kernel.linkEscrow(own, address(vault), predicted); // the named transaction does not exist yet
+        vm.stopPrank();
+
+        Bal memory b = _snap();
+        bytes32 txId = _create(K);
+        assertEq(txId, predicted, "the id was predictable");
+        _terms(txId, 100, PAYOUT_ONLY);
+
+        vm.prank(squatter);
+        vm.expectRevert("Escrow ID needs matching tx");
+        kernel.linkEscrow(own, address(vault), txId); // it exists now, with another requester
+        (,,,,,, bool used) = vault.lockedTerms(txId);
+        assertFalse(used, "vault flag clear");
+        assertEq(usdc.balanceOf(squatter), ONE, "the squatter moved nothing");
+
+        // The owner funds with terms (the kernel's used flag for the id was rolled back with the
+        // squatter's revert, or this link would fail) and the escrow settles as A3.
+        _link(txId, address(vault));
+        _deliverAndSettle(txId);
+        Exp memory x = _exp(K);
+        x.provider = 980 * ONE;
+        x.platform = 10 * ONE;
+        x.kernelFee = 10 * ONE;
+        x.archive = 10_000;
+        _assertOutcome(b, x, "A26");
+
+        // Baseline: EscrowVault accepts the foreign id, and there any other id serves the owner as well.
+        bytes32 plainTx = _create(K);
+        vm.startPrank(squatter);
+        usdc.approve(address(plain), 50_000);
+        kernel.linkEscrow(own, address(plain), plainTx);
+        vm.stopPrank();
+        vm.startPrank(requester);
+        usdc.approve(address(plain), K);
+        vm.expectRevert("Escrow ID already used");
+        kernel.linkEscrow(plainTx, address(plain), plainTx);
+        kernel.linkEscrow(plainTx, address(plain), keccak256("any other id"));
+        vm.stopPrank();
     }
 
     /// @dev Links `txId` under the id of a second, unlinked transaction with the same parties and

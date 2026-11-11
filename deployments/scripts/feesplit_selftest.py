@@ -514,7 +514,7 @@ class SelfTest:
                                              "--sig", "probeNegatives()"], env)
         evidence = json.loads(next(RUN_DIR.glob("local-negatives-*.json")).read_text())
         self.expect("negatives", "A23 and the consent negatives revert with the expected reasons, nothing broadcast",
-                    negatives.returncode == 0 and evidence["count"] == 16 and evidence["balancesUnchanged"])
+                    negatives.returncode == 0 and evidence["count"] == 18 and evidence["balancesUnchanged"])
 
         code, report = self.reconcile("r-report-matrix", vault, 0, pattern,
                                       ["--require-complete", "--allow-pending", "A25"])

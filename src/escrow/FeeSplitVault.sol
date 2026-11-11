@@ -156,19 +156,23 @@ contract FeeSplitVault is IFeeSplitVault, ReentrancyGuard {
         // The escrow record is deleted on completion; this flag is not, so an id is used once.
         require(!_locked[escrowId].used, "Escrow ID used");
 
+        // Every escrow id names an unlinked kernel transaction of this requester with the same provider
+        // and amount, with or without terms: the kernel accepts any unused id, so without this an
+        // unrelated requester could take the id another requester's terms depend on. The kernel writes
+        // escrowContract after this call, so it must still be zero. This proves ownership and matching
+        // fields, not that escrowId is the transaction being linked; _bound settles that later.
+        (bool ok, KernelTx memory k) = _readTx(escrowId);
+        require(
+            ok && k.requester == requester && k.provider == provider && k.amount == amount
+                && k.escrowContract == address(0),
+            "Escrow ID needs matching tx"
+        );
+
         Terms memory t = _pending[requester][escrowId];
         TermsState state = TermsState.NONE;
         if (t.integrator != address(0)) {
             require(t.integrator != provider, "Invalid integrator");
             require(t.bps <= integratorMaxBps[provider][t.integrator], "Integrator not approved");
-            // Early check: terms are only meaningful when escrowId is the id of the transaction being
-            // linked. The kernel writes escrowContract after this call, so it must still be zero.
-            (bool ok, KernelTx memory k) = _readTx(escrowId);
-            require(
-                ok && k.requester == requester && k.provider == provider && k.amount == amount
-                    && k.escrowContract == address(0),
-                "Terms need txId escrowId"
-            );
             delete _pending[requester][escrowId];
             state = TermsState.PENDING_CONFIRM;
         }

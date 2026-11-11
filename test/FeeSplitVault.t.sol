@@ -238,13 +238,13 @@ contract FeeSplitVaultTest is Test {
         assertEq(uint8(_state(id)), uint8(IFeeSplitVault.TermsState.VOID));
         fake.setMode(FakeKernel.Mode.OK);
 
-        // createEscrow with terms needs a readable transaction.
+        // createEscrow needs a readable transaction, with terms and without.
         id = _id();
         vm.prank(requester);
         vault.setEscrowTerms(id, integrator, 100, PAYOUT_ONLY);
         fake.setTx(id, requester, provider, ONE, address(0), id, 100);
         fake.setMode(FakeKernel.Mode.REVERT);
-        vm.expectRevert("Terms need txId escrowId");
+        vm.expectRevert("Escrow ID needs matching tx");
         fake.createEscrow(vault, id, requester, provider, ONE);
     }
 
@@ -464,14 +464,27 @@ contract FeeSplitVaultTest is Test {
         vm.prank(requester);
         vault.setEscrowTerms(bad, integrator, 100, PAYOUT_ONLY);
         fake.setTx(bad, requester, provider, 2 * ONE, address(0), bad, 100);
-        vm.expectRevert("Terms need txId escrowId");
+        vm.expectRevert("Escrow ID needs matching tx");
         fake.createEscrow(vault, bad, requester, provider, ONE); // amount differs
         fake.setTx(bad, requester, provider, ONE, address(plain), bad, 100);
-        vm.expectRevert("Terms need txId escrowId");
+        vm.expectRevert("Escrow ID needs matching tx");
         fake.createEscrow(vault, bad, requester, provider, ONE); // already linked elsewhere
         fake.setTx(bad, stranger, provider, ONE, address(0), bad, 100);
-        vm.expectRevert("Terms need txId escrowId");
+        vm.expectRevert("Escrow ID needs matching tx");
         fake.createEscrow(vault, bad, requester, provider, ONE); // another requester's transaction
+
+        // The same holds without terms: an id that names no matching unlinked transaction is refused.
+        bytes32 plainId = _id();
+        fake.setTx(plainId, stranger, provider, ONE, address(0), plainId, 100);
+        vm.expectRevert("Escrow ID needs matching tx");
+        fake.createEscrow(vault, plainId, requester, provider, ONE);
+        fake.setTx(plainId, requester, provider, ONE, address(0), plainId, 100);
+        fake.setMode(FakeKernel.Mode.SHORT);
+        vm.expectRevert("Escrow ID needs matching tx");
+        fake.createEscrow(vault, plainId, requester, provider, ONE);
+        fake.setMode(FakeKernel.Mode.OK);
+        (,,,,,, bool usedBefore) = vault.lockedTerms(plainId);
+        assertFalse(usedBefore, "a refused id is not consumed");
     }
 
     function test_EscrowIdReplay_Reverts() public {
