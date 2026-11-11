@@ -21,23 +21,6 @@ contract FeeSplitVaultKernelTest is FeeSplitTestBase {
         _setUpStack();
     }
 
-    function _exp(uint256 deposit) internal pure returns (Exp memory x) {
-        x.deposit = deposit;
-    }
-
-    /// @dev 1,000 settled at 100 bps: the row shared by A3, A4, A8 and A15.
-    function _settled1000() internal pure returns (Exp memory x) {
-        x.deposit = K;
-        x.provider = 980 * ONE;
-        x.platform = 10 * ONE;
-        x.kernelFee = 10 * ONE;
-        x.archive = 10_000;
-    }
-
-    function _name(string memory row, IFeeSplitVault.FeeProfile profile) internal pure returns (string memory) {
-        return string.concat(row, profile == BOTH ? " (B)" : " (D)");
-    }
-
     // =====================================================================
     // Acceptance rows
     // =====================================================================
@@ -72,13 +55,6 @@ contract FeeSplitVaultKernelTest is FeeSplitTestBase {
     function test_A3_Settle() public {
         _a3(PAYOUT_ONLY);
         _a3(BOTH);
-    }
-
-    function _a3(IFeeSplitVault.FeeProfile profile) internal {
-        Bal memory b = _snap();
-        bytes32 txId = _open(K, 100, profile);
-        _deliverAndSettle(txId);
-        _assertOutcome(b, _settled1000(), _name("A3", profile));
     }
 
     function test_A4_Milestones_250_250_500() public {
@@ -159,29 +135,6 @@ contract FeeSplitVaultKernelTest is FeeSplitTestBase {
         _a7(BOTH);
     }
 
-    function _a7(IFeeSplitVault.FeeProfile profile) internal {
-        Bal memory b = _snap();
-        bytes32 txId = _open(K, 100, profile);
-        _deliverAndDispute(txId, requester);
-        _rule(txId, 2, 4000);
-        _assertOutcome(b, _a7Row(profile), _name("A7", profile));
-    }
-
-    function _a7Row(IFeeSplitVault.FeeProfile profile) internal pure returns (Exp memory x) {
-        x.deposit = K;
-        x.provider = 392 * ONE;
-        x.kernelFee = 4 * ONE;
-        x.archive = 4_000;
-        if (profile == BOTH) {
-            x.requester = 588 * ONE;
-            x.platform = 10 * ONE;
-            x.vaultProtocolFee = 6 * ONE;
-        } else {
-            x.requester = 600 * ONE;
-            x.platform = 4 * ONE;
-        }
-    }
-
     function test_A8_ProviderWins() public {
         _a8(PAYOUT_ONLY);
         _a8(BOTH);
@@ -204,25 +157,6 @@ contract FeeSplitVaultKernelTest is FeeSplitTestBase {
 
     function test_A9_RequesterWins_Both() public {
         _a9(BOTH, 100);
-    }
-
-    function _a9(IFeeSplitVault.FeeProfile profile, uint16 bps) internal returns (bytes32 txId) {
-        Bal memory b = _snap();
-        txId = _open(K, bps, profile);
-        _deliverAndDispute(txId, requester);
-        _rule(txId, 1, 0);
-        _assertOutcome(b, _a9Row(profile), _name("A9", profile));
-    }
-
-    function _a9Row(IFeeSplitVault.FeeProfile profile) internal pure returns (Exp memory x) {
-        x.deposit = K;
-        if (profile == BOTH) {
-            x.requester = 980 * ONE;
-            x.platform = 10 * ONE;
-            x.vaultProtocolFee = 10 * ONE;
-        } else {
-            x.requester = K;
-        }
     }
 
     function test_A10_RoundingUnit_Default() public {
@@ -276,21 +210,6 @@ contract FeeSplitVaultKernelTest is FeeSplitTestBase {
         _a12(BOTH);
     }
 
-    function _a12(IFeeSplitVault.FeeProfile profile) internal {
-        Bal memory b = _snap();
-        bytes32 txId = _open(K, 100, profile);
-        vm.warp(block.timestamp + 30 days);
-        vm.prank(requester);
-        kernel.transitionState(txId, IACTPKernel.State.CANCELLED, "");
-        Exp memory x = _exp(K);
-        x.requester = 950 * ONE;
-        x.provider = 49 * ONE;
-        x.platform = 500_000;
-        x.kernelFee = 500_000;
-        x.archive = 500;
-        _assertOutcome(b, x, _name("A12", profile));
-    }
-
     function test_A13_StalledRecovery() public {
         _a13(PAYOUT_ONLY);
         _a13(BOTH);
@@ -336,7 +255,7 @@ contract FeeSplitVaultKernelTest is FeeSplitTestBase {
     }
 
     function test_A15_IntegratorBlocked_Credited() public {
-        usdc.setBlocked(integrator, true);
+        _setBlocked(integrator, true);
 
         Bal memory b = _snap();
         bytes32 txId = _open(K, 100, PAYOUT_ONLY);
@@ -359,7 +278,7 @@ contract FeeSplitVaultKernelTest is FeeSplitTestBase {
     }
 
     function test_A16_FeeRecipientBlocked_FinalizationSucceeds_Credits() public {
-        usdc.setBlocked(feeRecipient, true);
+        _setBlocked(feeRecipient, true);
         Bal memory b = _snap();
         bytes32 txId = _open(K, 100, BOTH);
         _deliverAndDispute(txId, requester);
@@ -372,16 +291,16 @@ contract FeeSplitVaultKernelTest is FeeSplitTestBase {
     }
 
     function test_A17_Withdrawals_FixedRecipients() public {
-        usdc.setBlocked(integrator, true);
-        usdc.setBlocked(feeRecipient, true);
+        _setBlocked(integrator, true);
+        _setBlocked(feeRecipient, true);
         bytes32 txId = _open(K, 100, BOTH);
         _deliverAndDispute(txId, requester);
         _rule(txId, 1, 0);
         assertEq(vault.integratorCredit(integrator), 10 * ONE);
         assertEq(vault.protocolCredit(), 10 * ONE);
 
-        usdc.setBlocked(integrator, false);
-        usdc.setBlocked(feeRecipient, false);
+        _setBlocked(integrator, false);
+        _setBlocked(feeRecipient, false);
         // The protocol credit follows the kernel's CURRENT fee recipient.
         address newRecipient = address(0xFEE2);
         kernel.updateFeeRecipient(newRecipient);
@@ -564,13 +483,7 @@ contract FeeSplitVaultKernelTest is FeeSplitTestBase {
         _deliverAndDispute(txId, requester);
         _forceStale(txId);
         assertEq(uint8(kernel.getTransaction(txId).state), uint8(IACTPKernel.State.CANCELLED));
-        Exp memory x = _exp(K);
-        x.requester = 490 * ONE;
-        x.provider = 445 * ONE;
-        x.platform = 55 * ONE; // 50 provider side + 5 refund side
-        x.kernelFee = 5 * ONE;
-        x.archive = 5_000;
-        x.vaultProtocolFee = 5 * ONE;
+        Exp memory x = _a25Row();
         _assertOutcome(b, x, "A25"); // bond net zero: returned to the disputer
     }
 
@@ -718,7 +631,7 @@ contract FeeSplitVaultKernelTest is FeeSplitTestBase {
     }
 
     function test_ReleaseEscrowRetry_NoDoubleCharge() public {
-        usdc.setBlocked(feeRecipient, true);
+        _setBlocked(feeRecipient, true);
         Bal memory b = _snap();
         bytes32 txId = _open(K, 100, PAYOUT_ONLY);
         _deliverAndSettle(txId);
@@ -731,13 +644,13 @@ contract FeeSplitVaultKernelTest is FeeSplitTestBase {
         assertEq(usdc.balanceOf(provider) - b.provider, 980 * ONE);
         assertEq(usdc.balanceOf(integrator) - b.integrator, 10 * ONE);
 
-        usdc.setBlocked(feeRecipient, false);
+        _setBlocked(feeRecipient, false);
         kernel.releaseEscrow(txId);
         _assertOutcome(b, _settled1000(), "after retry");
     }
 
     function test_RetryPlatformFee_Unaffected() public {
-        usdc.setBlocked(feeRecipient, true);
+        _setBlocked(feeRecipient, true);
         Bal memory b = _snap();
         bytes32 txId = _open(K, 100, BOTH);
         _deliverAndSettle(txId);
@@ -746,7 +659,7 @@ contract FeeSplitVaultKernelTest is FeeSplitTestBase {
         assertEq(providerSide, 990 * ONE);
         assertEq(integratorSide, 10 * ONE);
 
-        usdc.setBlocked(feeRecipient, false);
+        _setBlocked(feeRecipient, false);
         vm.prank(stranger);
         kernel.retryPlatformFee(txId);
         _assertOutcome(b, _settled1000(), "after retryPlatformFee");
@@ -976,8 +889,8 @@ contract FeeSplitVaultKernelTest is FeeSplitTestBase {
         assertEq(vault.bondBalance(txId), 50 * ONE);
         _assertSolvent("disputed");
 
-        usdc.setBlocked(integrator, true);
-        usdc.setBlocked(feeRecipient, true);
+        _setBlocked(integrator, true);
+        _setBlocked(feeRecipient, true);
         _rule(txId, 1, 0);
         assertEq(vault.totalBonds(), 0);
         assertEq(vault.totalLocked(), 400 * ONE);
@@ -992,8 +905,8 @@ contract FeeSplitVaultKernelTest is FeeSplitTestBase {
     }
 
     function test_WithdrawCredits_CountersAfterSuccessAndAfterRevert() public {
-        usdc.setBlocked(integrator, true);
-        usdc.setBlocked(feeRecipient, true);
+        _setBlocked(integrator, true);
+        _setBlocked(feeRecipient, true);
         bytes32 txId = _open(K, 100, BOTH);
         _deliverAndDispute(txId, requester);
         _rule(txId, 1, 0);
@@ -1008,14 +921,14 @@ contract FeeSplitVaultKernelTest is FeeSplitTestBase {
         assertEq(vault.protocolCredit(), 10 * ONE);
         _assertSolvent("after reverted withdrawals");
 
-        usdc.setBlocked(integrator, false);
+        _setBlocked(integrator, false);
         vault.withdrawIntegratorCredit(integrator);
         assertEq(vault.integratorCredit(integrator), 0);
         assertEq(vault.totalIntegratorCredit(), 0);
         assertEq(vault.protocolCredit(), 10 * ONE);
         _assertSolvent("after integrator withdrawal");
 
-        usdc.setBlocked(feeRecipient, false);
+        _setBlocked(feeRecipient, false);
         vault.withdrawProtocolCredit();
         assertEq(vault.protocolCredit(), 0);
         assertEq(usdc.balanceOf(address(vault)), 0);

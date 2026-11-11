@@ -24,7 +24,7 @@ abstract contract FeeSplitTestBase is Test {
     IFeeSplitVault.FeeProfile internal constant PAYOUT_ONLY = IFeeSplitVault.FeeProfile.PAYOUT_ONLY;
     IFeeSplitVault.FeeProfile internal constant BOTH = IFeeSplitVault.FeeProfile.BOTH_AFTER_DISPUTE;
 
-    BlacklistUSDC internal usdc;
+    IERC20 internal usdc;
     ACTPKernel internal kernel;
     EscrowVault internal plain;
     FeeSplitVault internal vault;
@@ -68,8 +68,22 @@ abstract contract FeeSplitTestBase is Test {
         uint256 protocolCredit;
     }
 
+    // ----- token hooks: a blockable test token here, real USDC on a mainnet fork -----
+
+    function _token() internal virtual returns (address) {
+        return address(new BlacklistUSDC());
+    }
+
+    function _mint(address to, uint256 amount) internal virtual {
+        BlacklistUSDC(address(usdc)).mint(to, amount);
+    }
+
+    function _setBlocked(address who, bool blocked) internal virtual {
+        BlacklistUSDC(address(usdc)).setBlocked(who, blocked);
+    }
+
     function _setUpStack() internal {
-        usdc = new BlacklistUSDC();
+        usdc = IERC20(_token());
         kernel = new ACTPKernel(address(this), address(this), feeRecipient, address(0), address(usdc), 1 hours);
         plain = new EscrowVault(address(usdc), address(kernel));
         vault = new FeeSplitVault(address(usdc), address(kernel));
@@ -96,13 +110,17 @@ abstract contract FeeSplitTestBase is Test {
         kernel.approveMediator(paidMediator, true);
         vm.warp(block.timestamp + 2 days + 1);
 
-        usdc.mint(requester, 10_000_000 * ONE);
-        usdc.mint(provider, 1_000_000 * ONE);
-        usdc.mint(keeper, 1_000_000 * ONE);
+        _fundActors();
         vm.prank(keeper);
         usdc.approve(address(bondEscalation), type(uint256).max);
 
         _approveIntegrator(100);
+    }
+
+    function _fundActors() internal {
+        _mint(requester, 10_000_000 * ONE);
+        _mint(provider, 1_000_000 * ONE);
+        _mint(keeper, 1_000_000 * ONE);
     }
 
     // ----- consent and funding -----
@@ -172,11 +190,6 @@ abstract contract FeeSplitTestBase is Test {
         kernel.releaseMilestone(txId, amount);
     }
 
-    function _bondFor(uint256 amount) internal pure returns (uint256 bond) {
-        bond = (amount * 500) / 10_000;
-        if (bond < ONE) bond = ONE;
-    }
-
     /// @dev Delivers and opens the dispute as `who`, paying the kernel's entry bond.
     function _deliverAndDispute(bytes32 txId, address who) internal {
         _deliver(txId);
@@ -185,8 +198,10 @@ abstract contract FeeSplitTestBase is Test {
 
     function _dispute(bytes32 txId, address who) internal {
         IACTPKernel.TransactionView memory t = kernel.getTransaction(txId);
+        uint256 bond = (t.amount * t.disputeBondBpsLocked) / 10_000;
+        if (bond < ONE) bond = ONE;
         vm.startPrank(who);
-        usdc.approve(t.escrowContract, _bondFor(t.amount));
+        usdc.approve(t.escrowContract, bond);
         kernel.transitionState(txId, IACTPKernel.State.DISPUTED, "");
         vm.stopPrank();
     }
@@ -217,7 +232,7 @@ abstract contract FeeSplitTestBase is Test {
         b.provider = usdc.balanceOf(provider);
         b.integrator = usdc.balanceOf(integrator);
         b.feeRecipient = usdc.balanceOf(feeRecipient);
-        b.archive = usdc.balanceOf(address(archive));
+        b.archive = address(archive) == address(0) ? 0 : usdc.balanceOf(address(archive));
         b.mediator = usdc.balanceOf(paidMediator);
         b.integratorCredit = vault.integratorCredit(integrator);
         b.protocolCredit = vault.protocolCredit();
@@ -241,10 +256,12 @@ abstract contract FeeSplitTestBase is Test {
         assertEq(
             a.integratorCredit - before.integratorCredit, x.platformCredited, string.concat(label, ": platform credited")
         );
-        assertEq(a.archive - before.archive, x.archive, string.concat(label, ": archive"));
+        // Without an archive treasury the kernel pays its whole fee to the fee recipient.
+        uint256 archiveShare = address(archive) == address(0) ? 0 : x.archive;
+        assertEq(a.archive - before.archive, archiveShare, string.concat(label, ": archive"));
         assertEq(
             a.feeRecipient - before.feeRecipient,
-            x.kernelFee - x.archive + x.vaultProtocolFee - x.protocolCredited,
+            x.kernelFee - archiveShare + x.vaultProtocolFee - x.protocolCredited,
             string.concat(label, ": fee recipient")
         );
         assertEq(a.protocolCredit - before.protocolCredit, x.protocolCredited, string.concat(label, ": protocol credited"));
@@ -265,6 +282,99 @@ abstract contract FeeSplitTestBase is Test {
             vault.totalLocked() + vault.totalBonds() + vault.totalIntegratorCredit() + vault.protocolCredit(),
             string.concat(label, ": vault solvency")
         );
+    }
+
+    // ----- rows shared by the kernel, fork and acceptance suites -----
+
+    function _exp(uint256 deposit) internal pure returns (Exp memory x) {
+        x.deposit = deposit;
+    }
+
+    function _name(string memory row, IFeeSplitVault.FeeProfile profile) internal pure returns (string memory) {
+        return string.concat(row, profile == BOTH ? " (B)" : " (D)");
+    }
+
+    /// @dev 1,000 settled at 100 bps: the row shared by A3, A4, A8 and A15.
+    function _settled1000() internal pure returns (Exp memory x) {
+        x.deposit = 1000 * ONE;
+        x.provider = 980 * ONE;
+        x.platform = 10 * ONE;
+        x.kernelFee = 10 * ONE;
+        x.archive = 10_000;
+    }
+
+    function _a7Row(IFeeSplitVault.FeeProfile profile) internal pure returns (Exp memory x) {
+        x.deposit = 1000 * ONE;
+        x.provider = 392 * ONE;
+        x.kernelFee = 4 * ONE;
+        x.archive = 4_000;
+        if (profile == BOTH) {
+            x.requester = 588 * ONE;
+            x.platform = 10 * ONE;
+            x.vaultProtocolFee = 6 * ONE;
+        } else {
+            x.requester = 600 * ONE;
+            x.platform = 4 * ONE;
+        }
+    }
+
+    function _a9Row(IFeeSplitVault.FeeProfile profile) internal pure returns (Exp memory x) {
+        x.deposit = 1000 * ONE;
+        if (profile == BOTH) {
+            x.requester = 980 * ONE;
+            x.platform = 10 * ONE;
+            x.vaultProtocolFee = 10 * ONE;
+        } else {
+            x.requester = 1000 * ONE;
+        }
+    }
+
+    function _a25Row() internal pure returns (Exp memory x) {
+        x.deposit = 1000 * ONE;
+        x.requester = 490 * ONE;
+        x.provider = 445 * ONE;
+        x.platform = 55 * ONE; // 50 provider side + 5 refund side
+        x.kernelFee = 5 * ONE;
+        x.archive = 5_000;
+        x.vaultProtocolFee = 5 * ONE;
+    }
+
+    function _a3(IFeeSplitVault.FeeProfile profile) internal {
+        Bal memory b = _snap();
+        bytes32 txId = _open(1000 * ONE, 100, profile);
+        _deliverAndSettle(txId);
+        _assertOutcome(b, _settled1000(), _name("A3", profile));
+    }
+
+    function _a7(IFeeSplitVault.FeeProfile profile) internal {
+        Bal memory b = _snap();
+        bytes32 txId = _open(1000 * ONE, 100, profile);
+        _deliverAndDispute(txId, requester);
+        _rule(txId, 2, 4000);
+        _assertOutcome(b, _a7Row(profile), _name("A7", profile));
+    }
+
+    function _a9(IFeeSplitVault.FeeProfile profile, uint16 bps) internal returns (bytes32 txId) {
+        Bal memory b = _snap();
+        txId = _open(1000 * ONE, bps, profile);
+        _deliverAndDispute(txId, requester);
+        _rule(txId, 1, 0);
+        _assertOutcome(b, _a9Row(profile), _name("A9", profile));
+    }
+
+    function _a12(IFeeSplitVault.FeeProfile profile) internal {
+        Bal memory b = _snap();
+        bytes32 txId = _open(1000 * ONE, 100, profile);
+        vm.warp(block.timestamp + 30 days);
+        vm.prank(requester);
+        kernel.transitionState(txId, IACTPKernel.State.CANCELLED, "");
+        Exp memory x = _exp(1000 * ONE);
+        x.requester = 950 * ONE;
+        x.provider = 49 * ONE;
+        x.platform = 500_000;
+        x.kernelFee = 500_000;
+        x.archive = 500;
+        _assertOutcome(b, x, _name("A12", profile));
     }
 
     function _state(bytes32 escrowId) internal view returns (IFeeSplitVault.TermsState state) {
