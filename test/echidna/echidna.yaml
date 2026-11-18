@@ -9,4 +9,6 @@ filterFunctions:
   - "EscrowVaultSolvency.act_refund(uint256,uint256)"
   - "EscrowVaultSolvency.act_depositBond(uint256,uint256)"
   - "EscrowVaultSolvency.act_releaseBond(uint256,uint256)"
+  - "EscrowVaultSolvency.act_payoutOverByOne(uint256)"
+  - "EscrowVaultSolvency.act_refundOverByOne(uint256)"
 filterBlacklist: false

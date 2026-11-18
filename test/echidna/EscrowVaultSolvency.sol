@@ -89,6 +89,21 @@ contract EscrowVaultSolvency {
         vault.releaseBond(id, PROVIDER, 1 + (amount % b));
     }
 
+    // Namjerni PREKO-zahtjevi: ispravan kod ih odbija (require amount <= available),
+    // pa su no-op; relaksacija bounda (npr. `<= available + 1`) pusti ih i obori solvency.
+    // Mutation (2026-11-18) je pokazao da bez ovoga i Foundry i Echidna promaše off-by-one bound.
+    function act_payoutOverByOne(uint256 seed) public {
+        bytes32 id = _existing(seed);
+        if (id == bytes32(0)) return;
+        vault.payout(id, PROVIDER, vault.remaining(id) + 1);
+    }
+
+    function act_refundOverByOne(uint256 seed) public {
+        bytes32 id = _existing(seed);
+        if (id == bytes32(0)) return;
+        vault.refundToRequester(id, vault.remaining(id) + 1);
+    }
+
     // ---- invarijanta ----
 
     function echidna_solvent() public view returns (bool) {
