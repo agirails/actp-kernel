@@ -8,7 +8,7 @@ name: CI
 #   - per-contract coverage floors for BondEscalation + CompositeMediator
 #   - EIP-170 contract-size ceiling (24576 B)
 #   - the canonical ruling-encoding lint (INV-1)
-#   - Slither (intent: gate on HIGH; TEMPORARILY advisory — crytic-compile/forge build-info skew, see the slither job)
+#   - Slither (GATE on HIGH as of 2026-11-18; tooling skew fixed via pinned slither-analyzer, see the slither job)
 #   - (when present) the invariant-coverage map has no UNMAPPED rows
 # The previously-advisory steps (coverage `|| true`, Slither continue-on-error /
 # fail-on none) are now GATING. No existing passing check was weakened.
@@ -274,7 +274,7 @@ jobs:
   # crytic-compile-0.3.11-compatible version OR pipx-install a newer slither.
   # lib/, test/, script/ stay filtered out — third-party + non-production code.
   slither:
-    name: Slither (advisory — crytic-compile/forge compat pending)
+    name: Slither (gate on HIGH)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -287,21 +287,18 @@ jobs:
         with:
           version: stable
 
-      # Compile on the RUNNER (where foundry-toolchain put forge). The slither-action
-      # runs in its own container WITHOUT forge, so it must NOT invoke the compiler:
-      # build out/ here, then run Slither with ignore-compile + target "." (the repo
-      # root, where foundry.toml + out/ live). Fixes "FileNotFoundError: 'forge'".
-      - name: Build artifacts for Slither (forge, on the runner)
-        run: forge build
+      # GATING (2026-11-18, Poligon): install current slither-analyzer on the runner
+      # (where foundry-toolchain put forge) and run it directly. Replaces slither-action
+      # v0.4.0, whose bundled crytic-compile 0.3.11 could not parse current forge
+      # build-info (the reason this step was advisory). Current crytic-compile parses it,
+      # so slither compiles via forge itself. Pinned to 0.11.6 (verified locally against
+      # this kernel: 2 HIGH were arbitrary-send-erc20 false positives, now suppressed
+      # inline in EscrowVault.sol with justification; remaining findings are <= Medium).
+      - name: Install Slither (current, pinned)
+        run: pipx install slither-analyzer==0.11.6
 
-      - name: Run Slither (fail on high)
-        continue-on-error: true # ADVISORY: crytic-compile 0.3.11 vs forge 1.7.1 build-info skew (see header); restore as a hard gate after the tooling fix
-        uses: crytic/slither-action@f197989dea5b53e986d0f88c60a034ddd77ec9a8 # v0.4.0
-        with:
-          target: "."
-          ignore-compile: true
-          fail-on: high
-          slither-args: "--filter-paths 'lib/|test/|script/'"
+      - name: Run Slither (GATE on high)
+        run: slither . --fail-high --filter-paths 'lib/|test/|script/'
 
 # ── SDK-CI dispute-suite gate (DOCUMENTED REQUIREMENT — out of scope here) ──
 # The TypeScript and Python SDK CIs (sdk-ts-ci.yml / sdk-python-ci.yml) live in

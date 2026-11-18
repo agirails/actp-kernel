@@ -61,6 +61,11 @@ contract EscrowVault is IEscrowValidator, ReentrancyGuard {
             active: true
         });
 
+        // slither arbitrary-send-erc20: LAŽNI POZITIV — createEscrow je onlyKernel, a kernel
+        // (ACTPKernel.linkEscrow) prije poziva traži msg.sender == txn.requester i prosljeđuje
+        // requester = txn.requester. Sredstva se povlače samo od strane koja je autorizirala
+        // transakciju (fundaš vlastiti escrow). [Poligon triage 2026-11-18]
+        // slither-disable-next-line arbitrary-send-erc20
         token.safeTransferFrom(requester, address(this), amount);
 
         // State changes must be observable
@@ -104,6 +109,10 @@ contract EscrowVault is IEscrowValidator, ReentrancyGuard {
     function depositBond(bytes32 escrowId, address from, uint256 amount) external override onlyKernel nonReentrant {
         require(amount > 0, "Amount zero");
         require(from != address(0), "Zero address");
+        // slither arbitrary-send-erc20: LAŽNI POZITIV — depositBond je onlyKernel, a kernel
+        // (ACTPKernel) poziva s from = msg.sender, pa se bond povlači samo od samog pozivatelja
+        // (fundaš vlastiti bond). [Poligon triage 2026-11-18]
+        // slither-disable-next-line arbitrary-send-erc20
         token.safeTransferFrom(from, address(this), amount);
         bondBalances[escrowId] += amount;
     }
