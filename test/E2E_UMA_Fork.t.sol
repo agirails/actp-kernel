@@ -442,11 +442,12 @@ contract E2E_UMA_Fork is Test {
         IOOV3Extended.Assertion memory a = IOOV3Extended(UMA_OOV3).getAssertion(assertionId);
         assertEq(a.disputer, disputer, "OOV3 must record the disputer");
 
-        // (3) §8.6 Limitation: the DVM may exceed the window. After 30 days, forceResolveStale recovers
-        //     the dispute to a 50/50 split + CANCELS the kernel tx — recovery works even post-dispute.
-        //     (NOTE: the genuine post-DVM resolved-callback distribution is covered by the P1-7 mock
-        //      suite, which is authoritative for that branch.)
+        // Tier-2 backstop is anchored to UMA escalation + liveness + 30-day grace.
+        // The earlier disputedAt + 30d expectation is premature for a live assertion.
         vm.warp(_disputedAtOf(disputeId) + 30 days + 1);
+        vm.expectRevert("UMA pending: settle assertion first");
+        bondEscalation.forceResolveStale(disputeId);
+        vm.warp(uint256(a.expirationTime) + 30 days + 1);
         bondEscalation.forceResolveStale(disputeId);
 
         assertTrue(_resolvedOf(disputeId), "stale fallback must resolve a DVM-stuck dispute");
@@ -474,7 +475,7 @@ contract E2E_UMA_Fork is Test {
     function _createDisputed() internal returns (bytes32 txId) {
         vm.prank(requester);
         txId = kernel.createTransaction(
-            provider, requester, ESCROW_AMOUNT, block.timestamp + 30 days, 2 days, keccak256(abi.encode("svc", _salt())), bytes32(0), 0, 0
+            provider, requester, ESCROW_AMOUNT, block.timestamp + 30 days, 1 hours, keccak256(abi.encode("svc", _salt())), bytes32(0), 0, 0
         );
 
         vm.startPrank(requester);
@@ -560,35 +561,35 @@ contract E2E_UMA_Fork is Test {
     //  originalPool, escrowAmount)
     // =====================================================================
     function _txIdOf(bytes32 d) internal view returns (bytes32 t) {
-        (t,,,,,,,,,,,,) = bondEscalation.disputes(d);
+        (t,,,,,,,,,,,,,) = bondEscalation.disputes(d);
     }
 
     function _rulingOf(bytes32 d) internal view returns (uint8 r) {
-        (, r,,,,,,,,,,,) = bondEscalation.disputes(d);
+        (, r,,,,,,,,,,,,) = bondEscalation.disputes(d);
     }
 
     function _splitBpsOf(bytes32 d) internal view returns (uint16 s) {
-        (,, s,,,,,,,,,,) = bondEscalation.disputes(d);
+        (,, s,,,,,,,,,,,) = bondEscalation.disputes(d);
     }
 
     function _currentBondOf(bytes32 d) internal view returns (uint256 b) {
-        (,,, b,,,,,,,,,) = bondEscalation.disputes(d);
+        (,,, b,,,,,,,,,,) = bondEscalation.disputes(d);
     }
 
     function _disputedAtOf(bytes32 d) internal view returns (uint64 da) {
-        (,,,,,, da,,,,,,) = bondEscalation.disputes(d);
+        (,,,,,, da,,,,,,,) = bondEscalation.disputes(d);
     }
 
     function _lastProposerOf(bytes32 d) internal view returns (address p) {
-        (,,,,,,, p,,,,,) = bondEscalation.disputes(d);
+        (,,,,,,, p,,,,,,) = bondEscalation.disputes(d);
     }
 
     function _tierOf(bytes32 d) internal view returns (uint8 tier) {
-        (,,,,,,,, tier,,,,) = bondEscalation.disputes(d);
+        (,,,,,,,, tier,,,,,) = bondEscalation.disputes(d);
     }
 
     function _resolvedOf(bytes32 d) internal view returns (bool r) {
-        (,,,,,,,,, r,,,) = bondEscalation.disputes(d);
+        (,,,,,,,,, r,,,,) = bondEscalation.disputes(d);
     }
 
     // =====================================================================

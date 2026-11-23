@@ -408,22 +408,22 @@ contract BondEscalationAdversarialTest is DisputeTestBase {
 
     // ----- typed accessors over the disputes 13-tuple -----
     function _txIdOf(bytes32 disputeId) internal view returns (bytes32 t) {
-        (t,,,,,,,,,,,,) = bondEscalation.disputes(disputeId);
+        (t,,,,,,,,,,,,,) = bondEscalation.disputes(disputeId);
     }
 
     function _tierOf(bytes32 disputeId) internal view returns (uint8 tier) {
-        (,,,,,,,, tier,,,,) = bondEscalation.disputes(disputeId);
+        (,,,,,,,, tier,,,,,) = bondEscalation.disputes(disputeId);
     }
 
     function _currentBondOf(bytes32 disputeId) internal view returns (uint256 b) {
-        (,,, b,,,,,,,,,) = bondEscalation.disputes(disputeId);
+        (,,, b,,,,,,,,,,) = bondEscalation.disputes(disputeId);
     }
 
     function _splitBpsOf(bytes32 disputeId) internal view returns (uint16 s) {
-        (,, s,,,,,,,,,,) = bondEscalation.disputes(disputeId);
+        (,, s,,,,,,,,,,,) = bondEscalation.disputes(disputeId);
     }
 
     function _resolvedOf(bytes32 disputeId) internal view returns (bool r) {
-        (,,,,,,,,, r,,,) = bondEscalation.disputes(disputeId);
+        (,,,,,,,,, r,,,,) = bondEscalation.disputes(disputeId);
     }
 }

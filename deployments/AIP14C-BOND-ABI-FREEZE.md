@@ -1,4 +1,24 @@
-# AIP-14c — BondEscalation ABI freeze (D7) — Rev 3
+# AIP-14c — BondEscalation ABI freeze (D7) — Rev 4
+
+> **Rev 4 (2026-07-17, Codex audit H-01/F19 remediation).** All FROZEN function selectors are
+> **UNCHANGED** — `submitAIRuling` `0xca74ab82`, `escalateToUMA` `0xea487f8a` (the fix touches the
+> `DisputeState` struct, not any function signature). The ONE ABI-visible change:
+> - **H-01 / F19 fix (fresh-UMA-assertion preemption).** The tier-2 `forceResolveStale` gate is
+>   re-anchored on **assertion creation time**, not `disputedAt`. A new `uint64 escalatedAt` field is
+>   **appended to the END** of the `DisputeState` struct (set in `escalateToUMA`), so the
+>   auto-generated `disputes(bytes32)` getter now returns **14** fields (was 13); the appended field
+>   is `escalatedAt` (13th index, `uint64`). Storage layout is preserved (append-only), so a decoder
+>   that reads only the first 13 fields is unaffected; a decoder typed to the FULL tuple must read 14.
+> - `forceResolveStale` on a tier-2 dispute now requires
+>   `block.timestamp > escalatedAt + UMA_LIVENESS + TIER2_STALE_GRACE` — a fresh UMA assertion can no
+>   longer be pre-empted by the absolute stale backstop (regression PoC:
+>   `test/audit/PoC_LateUmaStalePreemption.t.sol`, 2 tests).
+> - **SDK impact:** the shipped `BondEscalation.json` / `bond_escalation.json` ABIs in both SDKs were
+>   regenerated from `forge inspect` to the 14-field `disputes()` getter (H-05/F26). Old 13-field
+>   readers keep working; only full-tuple consumers must update.
+> - Runtime size: BondEscalation **22,989 B** (1,587 B under EIP-170), UNCHANGED by this fix (the
+>   append lands in the kernel-side struct read; Bond bytecode is stable). Kernel suite **734/0**
+>   (43 suites) + the H-01 PoC.
 
 > **Rev 3 (2026-07-12, Apex pre-audit hardening).** All FROZEN selectors are UNCHANGED
 > (`submitAIRuling` `0xca74ab82`, `escalateToUMA` `0xea487f8a`, removed legacy selectors still

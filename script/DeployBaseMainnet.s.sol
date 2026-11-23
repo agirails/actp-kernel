@@ -42,8 +42,8 @@ import {ArchiveTreasury} from "../src/treasury/ArchiveTreasury.sol";
  * POST-DEPLOYMENT (via Gnosis Safe):
  *   1. approveEscrowVault(escrowAddress, true)
  *   2. setArchiveTreasury(archiveAddress)
- *   3. ArchiveTreasury.transferOwnership(safeAddress) - CRITICAL!
- *   4. scheduleAgentRegistryUpdate(registryAddress) - optional, 2-day delay
+ *   3. scheduleAgentRegistryUpdate(registryAddress) - optional, 2-day delay
+ * Archive ownership is transferred by the deployer within this script's broadcast sequence.
  */
 contract DeployBaseMainnet is Script {
     // Base Mainnet USDC (Circle official)
@@ -136,9 +136,10 @@ contract DeployBaseMainnet is Script {
         require(address(archive.USDC()) == USDC, "Archive USDC mismatch");
         require(address(archive.kernel()) == address(kernel), "Archive kernel mismatch");
         require(archive.uploader() == archiveUploader, "Archive uploader mismatch");
-        // WARNING: owner() is deployer, NOT Safe! Must transfer after deployment.
+        archive.transferOwnership(gnosisSafe);
+        require(archive.owner() == gnosisSafe, "Archive owner mismatch");
         console.log("   Archive configuration verified");
-        console.log("   WARNING: Archive owner is deployer! Transfer to Safe required.");
+        console.log("   Archive ownership transferred to Safe by deployer.");
 
         vm.stopBroadcast();
 
@@ -168,12 +169,7 @@ contract DeployBaseMainnet is Script {
         console.log("  Function: setArchiveTreasury(address)");
         console.log("  Args:     [", address(archive), "]");
         console.log("");
-        console.log("Transaction 3: Transfer ArchiveTreasury ownership (CRITICAL!)");
-        console.log("  To:       ", address(archive));
-        console.log("  Function: transferOwnership(address)");
-        console.log("  Args:     [", gnosisSafe, "]");
-        console.log("");
-        console.log("Transaction 4 (Optional): Schedule AgentRegistry");
+        console.log("Transaction 3 (Optional): Schedule AgentRegistry");
         console.log("  To:       ", address(kernel));
         console.log("  Function: scheduleAgentRegistryUpdate(address)");
         console.log("  Args:     [", address(registry), "]");

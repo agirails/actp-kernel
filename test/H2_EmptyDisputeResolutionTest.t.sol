@@ -32,8 +32,8 @@ import "../src/escrow/EscrowVault.sol";
  * 4. Unclear dispute outcome (was it intentional to favor requester?)
  *
  * FIX:
- * - require(totalDistributed > 0, "Empty resolution not allowed")
- * - require(totalDistributed == remaining, "Must distribute ALL funds")
+ * - require(totalDistributed > 0, "Empty resolution")
+ * - require(totalDistributed == remaining, "Distribute all")
  * - Removed leftover refund logic (no longer needed)
  * - Resolution must be EXPLICIT and COMPLETE
  */
@@ -70,7 +70,7 @@ contract H2_EmptyDisputeResolutionTest is Test {
     /**
      * @notice Demonstrates H-2 vulnerability: Empty resolution (all zeros)
      * BEFORE FIX: Would succeed, all funds go to requester via leftover logic
-     * AFTER FIX: Reverts with "Empty resolution not allowed"
+     * AFTER FIX: Reverts with "Empty resolution"
      */
     function testH2Vulnerability_EmptyResolution() external {
         bytes32 txId = _createDisputedTransaction();
@@ -94,7 +94,7 @@ contract H2_EmptyDisputeResolutionTest is Test {
     /**
      * @notice Demonstrates H-2 vulnerability: Partial resolution
      * BEFORE FIX: Would succeed, leftover refunded to requester automatically
-     * AFTER FIX: Reverts with "Must distribute ALL funds"
+     * AFTER FIX: Reverts with "Distribute all"
      */
     function testH2Vulnerability_PartialResolution() external {
         bytes32 txId = _createDisputedTransaction();
@@ -114,8 +114,8 @@ contract H2_EmptyDisputeResolutionTest is Test {
         // Wait for mediator timelock
         vm.warp(block.timestamp + 2 days + 1);
 
-        // H-2 FIX: Should revert with "Must distribute ALL funds"
-        vm.expectRevert("Must distribute ALL funds");
+        // H-2 FIX: Should revert with "Distribute all"
+        vm.expectRevert("Distribute all");
         kernel.transitionState(txId, IACTPKernel.State.SETTLED, partialResolution);
     }
 
@@ -139,7 +139,7 @@ contract H2_EmptyDisputeResolutionTest is Test {
         vm.warp(block.timestamp + 2 days + 1);
 
         // Should revert (was also prevented before fix)
-        vm.expectRevert("Must distribute ALL funds");
+        vm.expectRevert("Distribute all");
         kernel.transitionState(txId, IACTPKernel.State.SETTLED, overResolution);
     }
 
@@ -279,7 +279,7 @@ contract H2_EmptyDisputeResolutionTest is Test {
 
         vm.warp(block.timestamp + 2 days + 1);
 
-        vm.expectRevert("Must distribute ALL funds");
+        vm.expectRevert("Distribute all");
         kernel.transitionState(txId, IACTPKernel.State.SETTLED, resolution);
 
         // Try to distribute 1 wei MORE than escrow balance
@@ -290,7 +290,7 @@ contract H2_EmptyDisputeResolutionTest is Test {
             uint256(0)
         );
 
-        vm.expectRevert("Must distribute ALL funds");
+        vm.expectRevert("Distribute all");
         kernel.transitionState(txId, IACTPKernel.State.SETTLED, resolution);
     }
 
@@ -330,7 +330,7 @@ contract H2_EmptyDisputeResolutionTest is Test {
             uint256(0)
         );
 
-        vm.expectRevert("Must distribute ALL funds");
+        vm.expectRevert("Distribute all");
         kernel.transitionState(txId, IACTPKernel.State.CANCELLED, partialResolution);
     }
 
@@ -397,7 +397,7 @@ contract H2_EmptyDisputeResolutionTest is Test {
 
         // Create transaction
         vm.prank(requester);
-        txId = kernel.createTransaction(provider, requester, TRANSACTION_AMOUNT, block.timestamp + 30 days, 2 days, keccak256("service"), bytes32(0), 0, 0);
+        txId = kernel.createTransaction(provider, requester, TRANSACTION_AMOUNT, block.timestamp + 30 days, 1 hours, keccak256("service"), bytes32(0), 0, 0);
 
         // Link escrow (auto-transitions to COMMITTED)
         vm.startPrank(requester);

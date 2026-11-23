@@ -65,7 +65,7 @@ contract BondEscalationTest is DisputeTestBase {
         // Create a tx but leave it pre-DISPUTED.
         vm.prank(requester);
         bytes32 txId = kernel.createTransaction(
-            provider, requester, TRANSACTION_AMOUNT, block.timestamp + 30 days, 2 days, keccak256("svc2"), bytes32(0), 0, 0
+            provider, requester, TRANSACTION_AMOUNT, block.timestamp + 30 days, 1 hours, keccak256("svc2"), bytes32(0), 0, 0
         );
         vm.expectRevert("Not in DISPUTED state");
         bondEscalation.openDispute(txId);
@@ -404,9 +404,9 @@ contract BondEscalationTest is DisputeTestBase {
     }
 
     /// @notice assertionResolvedCallback (FALSE → ruling 1 / requester wins). The escalator only set
-    ///         the winner for ruling 0, so ruling 1 has no proposer → graceful split fallback
-    ///         (CANCELLED). Proves the no-winner branch.
-    function test_UMA_ResolvedFalse_NoWinnerForDirection_SplitFallback() external {
+    ///         the winner for ruling 0, so ruling 1 has no proposer. Principal still follows UMA;
+    ///         only the independent Tier-1 pool becomes refundable.
+    function test_UMA_ResolvedFalse_NoWinnerForDirection_CleanWinWithRefunds() external {
         bytes32 disputeId = _opened();
         bytes32 txId = _txIdOf(disputeId);
         // counterRuling 2 → ruling 1 is NEVER proposed, so FALSE (ruling 1) has no tier-1 winner.
@@ -420,12 +420,14 @@ contract BondEscalationTest is DisputeTestBase {
         bytes32 assertionId = bondEscalation.disputeToAssertion(disputeId);
         oov3.mockResolve(assertionId, false); // ruling 1 → no lastProposerForRuling[1]
 
-        // Fallback to split → kernel CANCELLED.
-        assertEq(uint8(kernel.getTransaction(txId).state), uint8(IACTPKernel.State.CANCELLED), "kernel not CANCELLED");
+        assertEq(uint8(kernel.getTransaction(txId).state), uint8(IACTPKernel.State.SETTLED), "kernel not SETTLED");
 
         assertTrue(_resolvedOf(disputeId));
         assertFalse(_winnerPaidOf(disputeId), "no winner should have been paid");
-        assertEq(_splitBpsOf(disputeId), 5000, "split fallback should be 50/50");
+        (, uint8 finalRuling, , , , , , , , , , , ,) = bondEscalation.disputes(disputeId);
+        assertEq(finalRuling, 1, "UMA requester victory preserved");
+        assertEq(_splitBpsOf(disputeId), 0);
+        assertTrue(bondEscalation.tier1Refundable(disputeId));
     }
 
     /// @notice assertionResolvedCallback (FALSE → ruling 1 / requester wins) WITH a genuine ruling-1
@@ -739,47 +741,47 @@ contract BondEscalationTest is DisputeTestBase {
     // Internal helpers — typed accessors over the `disputes` public getter (13-tuple).
     // =====================================================================
     function _txIdOf(bytes32 disputeId) internal view returns (bytes32 t) {
-        (t,,,,,,,,,,,,) = bondEscalation.disputes(disputeId);
+        (t,,,,,,,,,,,,,) = bondEscalation.disputes(disputeId);
     }
 
     function _tierOf(bytes32 disputeId) internal view returns (uint8 tier) {
-        (,,,,,,,, tier,,,,) = bondEscalation.disputes(disputeId);
+        (,,,,,,,, tier,,,,,) = bondEscalation.disputes(disputeId);
     }
 
     function _currentBondOf(bytes32 disputeId) internal view returns (uint256 b) {
-        (,,, b,,,,,,,,,) = bondEscalation.disputes(disputeId);
+        (,,, b,,,,,,,,,,) = bondEscalation.disputes(disputeId);
     }
 
     function _accumulatedOf(bytes32 disputeId) internal view returns (uint256 a) {
-        (,,,, a,,,,,,,,) = bondEscalation.disputes(disputeId);
+        (,,,, a,,,,,,,,,) = bondEscalation.disputes(disputeId);
     }
 
     function _splitBpsOf(bytes32 disputeId) internal view returns (uint16 s) {
-        (,, s,,,,,,,,,,) = bondEscalation.disputes(disputeId);
+        (,, s,,,,,,,,,,,) = bondEscalation.disputes(disputeId);
     }
 
     function _lastProposerOf(bytes32 disputeId) internal view returns (address p) {
-        (,,,,,,, p,,,,,) = bondEscalation.disputes(disputeId);
+        (,,,,,,, p,,,,,,) = bondEscalation.disputes(disputeId);
     }
 
     function _resolvedOf(bytes32 disputeId) internal view returns (bool r) {
-        (,,,,,,,,, r,,,) = bondEscalation.disputes(disputeId);
+        (,,,,,,,,, r,,,,) = bondEscalation.disputes(disputeId);
     }
 
     function _winnerPaidOf(bytes32 disputeId) internal view returns (bool w) {
-        (,,,,,,,,,, w,,) = bondEscalation.disputes(disputeId);
+        (,,,,,,,,,, w,,,) = bondEscalation.disputes(disputeId);
     }
 
     function _livenessEndOf(bytes32 disputeId) internal view returns (uint64 l) {
-        (,,,,, l,,,,,,,) = bondEscalation.disputes(disputeId);
+        (,,,,, l,,,,,,,,) = bondEscalation.disputes(disputeId);
     }
 
     function _disputedAtOf(bytes32 disputeId) internal view returns (uint64 d) {
-        (,,,,,, d,,,,,,) = bondEscalation.disputes(disputeId);
+        (,,,,,, d,,,,,,,) = bondEscalation.disputes(disputeId);
     }
 
     function _escrowAmountOf(bytes32 disputeId) internal view returns (uint256 e) {
-        (,,,,,,,,,,,, e) = bondEscalation.disputes(disputeId);
+        (,,,,,,,,,,,, e,) = bondEscalation.disputes(disputeId);
     }
 
     function _opened() internal returns (bytes32 disputeId) {
@@ -791,7 +793,7 @@ contract BondEscalationTest is DisputeTestBase {
     function _opened2() internal returns (bytes32 disputeId) {
         vm.prank(requester);
         bytes32 txId = kernel.createTransaction(
-            provider, requester, TRANSACTION_AMOUNT, block.timestamp + 30 days, 2 days, keccak256("service2"), bytes32(0), 0, 0
+            provider, requester, TRANSACTION_AMOUNT, block.timestamp + 30 days, 1 hours, keccak256("service2"), bytes32(0), 0, 0
         );
         vm.startPrank(requester);
         usdc.approve(address(escrow), TRANSACTION_AMOUNT);

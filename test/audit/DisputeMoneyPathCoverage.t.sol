@@ -113,7 +113,7 @@ contract DisputeMoneyPathCoverage is Test {
     /// Drive a fresh tx to DISPUTED.
     function _disputed() internal returns (bytes32 txId) {
         vm.prank(requester);
-        txId = kernel.createTransaction(provider, requester, AMT, block.timestamp + 30 days, 2 days, keccak256("svc"), bytes32(0), 0, 0);
+        txId = kernel.createTransaction(provider, requester, AMT, block.timestamp + 30 days, 1 hours, keccak256("svc"), bytes32(0), 0, 0);
         vm.startPrank(requester);
         usdc.approve(address(escrow), type(uint256).max);
         kernel.linkEscrow(txId, address(escrow), txId);
@@ -155,7 +155,6 @@ contract DisputeMoneyPathCoverage is Test {
     }
 
     /// providerAtFault = FALSE (provider wins) → totalTransactions++ but NOT disputedTransactions.
-    /// Proves the dispute path passes `providerAtFault`, NOT `wasDisputed` (which is always true here).
     function test_F7_ReputationLeg_ProviderNotAtFault_NoDisputedIncrement() external {
         _deployWithRealRegistry();
         _registerProvider();
@@ -195,8 +194,10 @@ contract DisputeMoneyPathCoverage is Test {
         );
         assertGt(usdc.balanceOf(provider), provBefore, "provider paid despite reverting registry");
         assertEq(escrow.remaining(txId), 0, "escrow fully released");
-        // C-2 stamp is still written before the external call, so a registry swap cannot re-fire it.
-        assertEq(kernel.reputationProcessedBy(txId), address(rr), "C-2 stamp written before the swallowed call");
+        // [F24 FIX] The processed-marker is now latched ONLY on a successful registry call. A
+        // reverting registry leaves it UNSET so the reputation row is not permanently suppressed —
+        // a later terminal path / re-registration can still record it. (Settlement never blocks.)
+        assertEq(kernel.reputationProcessedBy(txId), address(0), "F24: not latched on a reverting registry (retryable)");
     }
 
     /// An OUT-OF-GAS registry (burns past the {gas:150000} cap) is also swallowed.

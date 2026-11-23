@@ -58,7 +58,7 @@ contract EncodingCanonicalTest is DisputeTestBase {
     }
 
     function _txIdOf(bytes32 disputeId) internal view returns (bytes32 t) {
-        (t,,,,,,,,,,,,) = bondEscalation.disputes(disputeId);
+        (t,,,,,,,,,,,,,) = bondEscalation.disputes(disputeId);
     }
 
     /// @dev Drive a fresh dispute to a finalizable Tier-1 state with a single direct proposal of
@@ -460,7 +460,7 @@ contract EncodingCanonicalTest is DisputeTestBase {
         vm.stopPrank();
 
         // tier flips 0 → 1 only if the 2/3 verification over the golden domain digest passed.
-        (,,,,,,,, uint8 tier,,,,) = be.disputes(disputeId);
+        (,,,,,,,, uint8 tier,,,,,) = be.disputes(disputeId);
         assertEq(tier, 1, "golden-domain signatures must pass the real 2/3 verification");
     }
 

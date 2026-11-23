@@ -47,7 +47,7 @@ contract ACTPKernelLockedPenaltyTest is Test {
     function _create(uint256 amount) internal returns (bytes32 txId) {
         vm.prank(requester);
         txId = kernel.createTransaction(
-            provider, requester, amount, block.timestamp + 7 days, 2 days,
+            provider, requester, amount, block.timestamp + 7 days, 1 hours,
             keccak256("svc"), bytes32(0), 0, 0
         );
     }

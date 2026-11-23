@@ -114,7 +114,7 @@ contract BondEscalationHandler is Test {
         uint256 amount = 1_000 * ONE_USDC;
         vm.prank(requester);
         txId = kernel.createTransaction(
-            provider, requester, amount, block.timestamp + 60 days, 2 days, keccak256("service"), bytes32(0), 0, 0
+            provider, requester, amount, block.timestamp + 60 days, 1 hours, keccak256("service"), bytes32(0), 0, 0
         );
 
         vm.startPrank(requester);
@@ -178,7 +178,7 @@ contract BondEscalationHandler is Test {
         view
         returns (uint8 ruling, uint256 currentBond, uint256 accumulated, uint64 livenessEnd, uint8 tier, bool resolved)
     {
-        ( , ruling, , currentBond, accumulated, livenessEnd, , , tier, resolved, , , ) =
+        ( , ruling, , currentBond, accumulated, livenessEnd, , , tier, resolved, , , , ) =
             bondEscalation.disputes(disputeId);
     }
 
@@ -252,7 +252,7 @@ contract BondEscalationHandler is Test {
 
         // Must be a DIFFERENT outcome, otherwise the call reverts and does no work.
         // splitBps is field index 2 in the disputes tuple.
-        ( , , uint16 curSplit, , , , , , , , , , ) = bondEscalation.disputes(disputeId);
+        ( , , uint16 curSplit, , , , , , , , , , ,) = bondEscalation.disputes(disputeId);
         bool isDifferent = (counterRuling != ruling) || (counterRuling == 2 && counterSplit != curSplit);
         if (!isDifferent) {
             // Nudge to a guaranteed-different ruling so the action does real accounting work.
@@ -292,7 +292,7 @@ contract BondEscalationHandler is Test {
     function claimRefund(uint256 dSeed, uint256 aSeed) external {
         bytes32 disputeId = _pickDispute(dSeed);
         (uint8 ruling, , , , , bool resolved) = _state(disputeId);
-        if (!resolved || ruling != 2) return;
+        if (!resolved || (ruling != 2 && !bondEscalation.tier1Refundable(disputeId))) return;
 
         address who = _pickActor(aSeed);
         if (bondEscalation.deposits(disputeId, who) == 0) return;
@@ -355,7 +355,7 @@ contract BondEscalationHandler is Test {
         ( , , , , , bool resolved) = _state(disputeId);
         if (resolved) return;
 
-        ( , , , , , , uint64 disputedAt, , , , , , ) = bondEscalation.disputes(disputeId);
+        ( , , , , , , uint64 disputedAt, , , , , , ,) = bondEscalation.disputes(disputeId);
         warp = bound(warp, 1, 5 days);
         vm.warp(uint256(disputedAt) + 30 days + warp);
         bondEscalation.forceResolveStale(disputeId);
@@ -456,7 +456,7 @@ contract BondEscalationInvariantTest is DisputeTestBase {
         uint256 n = handler.disputeCount();
         for (uint256 i = 0; i < n; i++) {
             bytes32 disputeId = handler.disputeIds(i);
-            (, , , , uint256 accumulated, , , , uint8 tier, bool resolved, , , ) = bondEscalation.disputes(disputeId);
+            (, , , , uint256 accumulated, , , , uint8 tier, bool resolved, , , ,) = bondEscalation.disputes(disputeId);
             if (resolved || tier != 1) continue;
 
             uint256 sumDeposits = 0;
@@ -486,13 +486,13 @@ contract BondEscalationInvariantTest is DisputeTestBase {
         for (uint256 i = 0; i < n; i++) {
             bytes32 disputeId = handler.disputeIds(i);
             (
-                , uint8 ruling, , , uint256 accumulated, , , , , bool resolved, , uint256 originalPool,
+                , uint8 ruling, , , uint256 accumulated, , , , , bool resolved, , uint256 originalPool, ,
             ) = bondEscalation.disputes(disputeId);
 
             if (!resolved) {
                 // Whole live pool is owed back to the game.
                 totalObligation += accumulated;
-            } else if (ruling == 2) {
+            } else if (ruling == 2 || bondEscalation.tier1Refundable(disputeId)) {
                 // SPLIT: owe the sum of every depositor's still-unclaimed proportional share.
                 if (originalPool == 0) continue; // nothing was ever deposited
                 address[] memory deps = handler.depositorsOf(disputeId);
@@ -520,7 +520,7 @@ contract BondEscalationInvariantTest is DisputeTestBase {
         for (uint256 i = 0; i < n; i++) {
             bytes32 disputeId = handler.disputeIds(i);
             (
-                , , , , , , uint64 disputedAt, , uint8 tier, bool resolved, , ,
+                , , , , , , uint64 disputedAt, , uint8 tier, bool resolved, , , ,
             ) = bondEscalation.disputes(disputeId);
 
             if (_seen[disputeId]) {

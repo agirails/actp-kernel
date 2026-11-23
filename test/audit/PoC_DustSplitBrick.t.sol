@@ -93,13 +93,13 @@ contract PoC_DustSplitBrick is DisputeTestBase {
 
     // DisputeState tuple has 13 fields (BondEscalation.sol L78-92).
     function _tier(bytes32 disputeId) internal view returns (uint8 tier) {
-        (,,,,,,,, tier,,,,) = bondEscalation.disputes(disputeId);
+        (,,,,,,,, tier,,,,,) = bondEscalation.disputes(disputeId);
     }
     function _resolved(bytes32 disputeId) internal view returns (bool r) {
-        (,,,,,,,,, r,,,) = bondEscalation.disputes(disputeId);
+        (,,,,,,,,, r,,,,) = bondEscalation.disputes(disputeId);
     }
     function _livenessEnd(bytes32 disputeId) internal view returns (uint64 l) {
-        (,,,,, l,,,,,,,) = bondEscalation.disputes(disputeId);
+        (,,,,, l,,,,,,,,) = bondEscalation.disputes(disputeId);
     }
 
     function _propose(bytes32 disputeId, address who, uint8 ruling, uint16 splitBps) internal {

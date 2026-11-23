@@ -112,16 +112,50 @@ Never sponsored. The caller pays their own gas. Rationale per function:
 
 ## 3. Spend caps + circuit breakers (apply to every ALLOWED function)
 
-These are enforced in **both** the CDP paymaster policy and the Pimlico policy (failover parity), the
-same dual-paymaster posture already in production for AgentRegistry + X402Relay.
+These are the required controls for **both** CDP and Pimlico (failover parity). Confirm their
+enforcement for the new deployment before sponsorship activation; this decision record is not
+evidence of the current dashboard configuration.
 
 | Cap | Value | Rationale |
 |-----|-------|-----------|
-| **Max gas / dispute action** | **~600k gas (~$0.08 at target gas price)** | The heaviest sponsored call is the first-resolution UMA callback fan-out (`settleUMAAssertion → callback → mediator → kernel → escrow payout + reputation`), gas-bounded in Threat Model §4 (R13). 600k covers it with headroom; anything larger is rejected (it would be an anomalous/forged op). |
+| **Gas / dispute action** | **Bundler-estimated per UserOperation; no fixed 600k ceiling** | Estimate execution, verification and pre-verification gas with paymaster data, then obtain final sponsorship approval. The real-oracle settlement and first-wallet-deployment paths exceed 600k; a larger estimate alone does not make an operation anomalous. Keep the monetary and abuse controls below. |
 | **Max daily spend** | **$5–25 / day** (start at $5 testnet / mainnet ramp; raise toward $25 with volume) | Bounds total dispute-gas exposure per day. |
 | **Circuit breaker** | trip at **80% of the daily cap** | At 80% consumed, auto-pause new sponsorship for the day and alert OPS — leaves a 20% buffer to absorb in-flight ops without overrun, and surfaces an attack/anomaly before the cap is fully drained. |
 | **Per-sender cap** | **~$0.10 / sender / day** | One address can get at most ~1–2 sponsored dispute actions/day. Defeats single-key spam: a griefer would need to spin up many funded senders, each still bounded, and each `openDispute` still requires an upstream kernel entry bond. |
 | **Reverted-tx carve-out** | sponsor reverts up to **~15%** of sponsored ops | Honest ops sometimes revert on races (e.g. `settleUMAAssertion` losing to a concurrent settler → `"Already resolved"`; `finalize`'s sync-only branch). A small reverted-tx budget keeps those from bricking honest keepers, but is capped so an attacker cannot grind free reverts. Above 15% reverts/day → treat as anomaly, trip the breaker. |
+
+### Gas verification status — 2026-11-06
+
+`AutoWalletProvider.submitUserOp` obtains paymaster stub data, asks the bundler for
+`callGasLimit`, `verificationGasLimit` and `preVerificationGas`, and requests final paymaster data
+before signing and submitting. The SDK does not hardcode the former 600k whole-action limit.
+AutoWallet requires sponsorship; if both configured providers reject it, the operation fails.
+It does not silently charge the user's ETH. Pimlico is the optional configured backup to CDP.
+
+On the security-remediation candidate at Base mainnet fork block **53858872**, real OOV3/USDC
+settlement measured **600,108–799,792 gas** for the direct path and **757,291–1,127,917 gas**
+through real EntryPoint/CoinbaseSmartWallet, including a first-deployment case. Each of seven
+scenarios ran five times with identical measurements. These are isolated Forge call-accounting
+figures, not public transaction receipts or Base L1-data-fee estimates. Disputed TRUE/FALSE
+scenarios inject only the upstream DVM price; undisputed TRUE uses the real liveness path.
+AA measurements are self-funded, so actual paymaster validation/postOp overhead remains unmeasured.
+In the tested TRUE paths, a 600k call limit failed all five cases, 800k completed one, and 1M
+completed all five. A call limit is only one component of a UserOperation's total gas budget.
+Do not replace the old 600k claim with a universal 1M cap or a fixed USD conversion.
+
+Read-only CDP probes returned stub data for a known allowed target at call limits up to 3M and
+rejected a high-cost control with a **$20 per-operation** maximum. This is an observed admission
+check, not a change to the intended spend caps or proof of successful execution. The Pimlico key
+documented in the former root `SANITY-CHECK.md` was found and verified: Base/EntryPoint reads and
+stub requests work. Pimlico returned identical placeholder data across the requests; that does
+not establish its final policy limits or allowlist. No key belongs in this document or deployment
+config. Neither provider's dashboard was changed.
+
+Before activating sponsorship for new contract addresses, verify final policy approval and a
+successful sponsored settlement with exact escrow/bond/fee/keeper payouts and reputation updates.
+Measure actual paymaster overhead and verify the configured spend/receipt controls separately.
+The deployment/paymaster operator owns this activation check. Pimlico availability is needed to
+claim tested failover; its absence does not itself prevent an approved CDP-sponsored operation.
 
 ### 3.1 Receipt-gate store (for §2.2 / §2.3)
 
@@ -176,13 +210,14 @@ dashboards / API by an operator, or as Safe-submittable config where applicable.
 
 ## 6. Decision record
 
-- **OQ-6 = sponsor DECIDED**, implemented as a **per-function CDP + Pimlico allowlist**.
+- **OQ-6 = sponsor DECIDED**, requiring a **per-function CDP + Pimlico allowlist**; verify deployment-specific enforcement before activation.
 - **ALLOW (caps only):** `openDispute`.
 - **ALLOW (verified + consumed receipt):** `submitAIRuling`; keeper-recovery group
   (`settleUMAAssertion`, `retryMediatorResolution`, `forceResolveStale`, `syncExternalResolution`).
 - **DENY:** `proposeDirectly`, `challenge`, `escalateToUMA`, `finalize`, `claimEscalationRefund`
   (+ `CompositeMediator.resolve`, kernel dispute-leg).
-- **Caps:** ~600k gas / ~$0.08 per dispute action; $5–25/day with an **80% circuit breaker**; ~$0.10
+- **Caps:** dynamically estimated UserOperation gas, subject to verified monetary/policy limits;
+  $5–25/day with an **80% circuit breaker**; ~$0.10
   per-sender/day; ~15% reverted-tx carve-out.
 - **No hardcoded addresses / no keys:** targets read from `deployments/aip14b.json` (env / write-back);
   policy applied to both paymasters for failover parity, mirroring the existing AgentRegistry +

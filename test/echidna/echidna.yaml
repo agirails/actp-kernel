@@ -1,8 +1,8 @@
-# Echidna config — EscrowVault solvency (Poligon meta contracts, 2026-11-18)
+# Echidna config — EscrowVault solvency campaign
 testMode: property
 testLimit: 20000
 seqLen: 50
-# Echidna kompajlira kroz crytic-compile -> forge (foundry.toml). Filtriraj na akcije.
+# Echidna compiles through crytic-compile -> forge (foundry.toml). Restrict fuzzing to the act_* actions.
 filterFunctions:
   - "EscrowVaultSolvency.act_createEscrow(uint256,uint256)"
   - "EscrowVaultSolvency.act_payout(uint256,uint256)"

@@ -5,17 +5,20 @@ import "../../src/tokens/MockUSDC.sol";
 import "../../src/escrow/EscrowVault.sol";
 
 /**
- * Echidna solvency campaign for EscrowVault — Poligon meta contracts (2026-11-18).
+ * Echidna solvency campaign for EscrowVault.
  *
- * Drugi (property-based) napadač uz postojeću Foundry conservation invarijantu. Harness
- * glumi KERNEL (EscrowVault(kernel = address(this))), pa izravno vozi createEscrow / payout /
- * refund / depositBond / releaseBond — bez vm cheatcodeova (koje Echidna ne vozi kao Foundry).
+ * A property-based second line of defence next to the Foundry conservation invariant. The harness
+ * acts as the KERNEL (EscrowVault(kernel = address(this))), so it drives createEscrow / payout /
+ * refund / depositBond / releaseBond directly, without vm cheatcodes (Echidna does not run them
+ * the way Foundry does).
  *
- * Invarijanta (AGIRAILS CLAUDE.md #1 — Escrow Solvency): nakon SVAKE sekvence vault token-balans
- * >= zbroj nepodmirenih escrow ostataka + zbroj nepodmirenih bondova. Echidna traži sekvencu
- * (create/payout/refund/deposit/release s nasumičnim argumentima) koja to ruši.
+ * Invariant (Escrow Solvency): after EVERY sequence the vault's token balance equals the sum of
+ * outstanding escrow remainders plus outstanding bonds. The harness is the only source of funds,
+ * so equality holds exactly: a shortfall means insolvency, a surplus means stranded funds.
+ * Echidna searches for a create/payout/refund/deposit/release sequence with random arguments
+ * that breaks it.
  *
- * Pokretanje (iz actp-kernel korijena):
+ * Run from the actp-kernel root:
  *   echidna test/echidna/EscrowVaultSolvency.sol --contract EscrowVaultSolvency \
  *     --config test/echidna/echidna.yaml
  */
@@ -48,14 +51,14 @@ contract EscrowVaultSolvency {
         return ids[seed % ids.length];
     }
 
-    // ---- akcije koje Echidna fuzza (sve idu kroz harness => msg.sender vaultu = kernel) ----
+    // ---- fuzzed actions (all go through the harness, so msg.sender to the vault is the kernel) ----
 
     function act_createEscrow(uint256 seed, uint256 amount) public {
         bytes32 id = _track(seed);
         (, , uint256 a, , ) = vault.escrows(id);
-        if (a != 0) return; // slot zauzet
+        if (a != 0) return; // slot taken
         amount = 1 + (amount % 1_000_000);
-        // requester = address(this): harness drži tokene i dao je approve vaultu
+        // requester = address(this): the harness holds the tokens and has approved the vault
         vault.createEscrow(id, address(this), PROVIDER, amount);
     }
 
@@ -89,9 +92,9 @@ contract EscrowVaultSolvency {
         vault.releaseBond(id, PROVIDER, 1 + (amount % b));
     }
 
-    // Namjerni PREKO-zahtjevi: ispravan kod ih odbija (require amount <= available),
-    // pa su no-op; relaksacija bounda (npr. `<= available + 1`) pusti ih i obori solvency.
-    // Mutation (2026-11-18) je pokazao da bez ovoga i Foundry i Echidna promaše off-by-one bound.
+    // Deliberate OVER-requests: correct code rejects them (require amount <= available), so they
+    // are no-ops; a relaxed bound (e.g. `<= available + 1`) lets them through and breaks solvency.
+    // A mutation run showed that without these, both Foundry and Echidna miss an off-by-one bound.
     function act_payoutOverByOne(uint256 seed) public {
         bytes32 id = _existing(seed);
         if (id == bytes32(0)) return;
@@ -104,7 +107,7 @@ contract EscrowVaultSolvency {
         vault.refundToRequester(id, vault.remaining(id) + 1);
     }
 
-    // ---- invarijanta ----
+    // ---- invariant ----
 
     function echidna_solvent() public view returns (bool) {
         uint256 outstanding;
@@ -112,6 +115,6 @@ contract EscrowVaultSolvency {
             outstanding += vault.remaining(ids[i]);
             outstanding += vault.bondBalances(ids[i]);
         }
-        return usdc.balanceOf(address(vault)) >= outstanding;
+        return usdc.balanceOf(address(vault)) == outstanding;
     }
 }

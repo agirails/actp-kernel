@@ -275,7 +275,7 @@ contract ACTPKernelSecurityTest is Test {
     // Helpers
     function _createBaseTx() internal returns (bytes32 txId) {
         vm.prank(requester);
-        txId = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 2 days, keccak256("service"), bytes32(0), 0, 0);
+        txId = kernel.createTransaction(provider, requester, ONE_USDC, block.timestamp + 7 days, 1 hours, keccak256("service"), bytes32(0), 0, 0);
     }
 
     function _quote(bytes32 txId) internal {

@@ -50,12 +50,12 @@ contract ApexSecurityRead2026_07_12 is DisputeTestBase {
         bondEscalation.proposeDirectly(disputeId, 0, 0); // tier 1
         vm.stopPrank();
 
-        (, , , , , , uint64 disputedAt, , uint8 tier, , , , ) = bondEscalation.disputes(disputeId);
+        (, , , , , , uint64 disputedAt, , uint8 tier, , , , ,) = bondEscalation.disputes(disputeId);
         assertEq(tier, 1, "precondition: tier 1");
 
         vm.warp(uint256(disputedAt) + 30 days + 1);
         bondEscalation.forceResolveStale(disputeId);
-        (, uint8 ruling, uint16 splitBps, , , , , , , bool resolved, , , ) = bondEscalation.disputes(disputeId);
+        (, uint8 ruling, uint16 splitBps, , , , , , , bool resolved, , , ,) = bondEscalation.disputes(disputeId);
         assertTrue(resolved);
         assertEq(ruling, 2);
         assertEq(splitBps, 5000);
@@ -199,7 +199,7 @@ contract ApexSecurityRead2026_07_12 is DisputeTestBase {
         kernel.scheduleEscrowVaultRevocation(address(0xDEAD));
 
         kernel.scheduleEscrowVaultRevocation(address(escrow));
-        vm.expectRevert("Revocation already scheduled");
+        vm.expectRevert("Revoke scheduled");
         kernel.scheduleEscrowVaultRevocation(address(escrow));
 
         vm.prank(rando);

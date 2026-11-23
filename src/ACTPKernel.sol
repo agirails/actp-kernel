@@ -101,6 +101,13 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
     mapping(address => uint256) public mediatorRevokedAt; // [C-1 FIX] Track revocation time to prevent timelock bypass
     mapping(address => mapping(bytes32 => bool)) private usedEscrowIds;
     mapping(bytes32 => address) public reputationProcessedBy; // [C-2 FIX] Track which registry processed reputation for each transaction
+    // [F59 FIX] Per-transaction cumulative gross paid + platform fee charged, so milestone
+    // fragmentation charges the MIN_FEE floor at most once per transaction (aggregate accounting).
+    // internal (no public getter) — kept off the ABI to stay within the EIP-170 budget.
+    mapping(bytes32 => uint256) internal grossPaidFor;
+    mapping(bytes32 => uint256) internal platformFeePaidFor;
+    // Reserved legacy storage slot; explicit fee-debt accounting supersedes this flag.
+    mapping(bytes32 => bool) internal escrowProviderPaid;
 
     event MediatorApproved(address indexed mediator, bool approved);
     event AdminTransferInitiated(address indexed currentAdmin, address indexed pendingAdmin);
@@ -130,6 +137,9 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
     PendingEconomicParams private pendingEconomicParams;
     PendingRegistryUpdate private pendingRegistryUpdate;
 
+    // Charged fees that have not yet left this transaction's escrow. Never participant principal.
+    mapping(bytes32 => uint256) internal pendingPlatformFeeFor;
+
     modifier onlyAdmin() {
         require(msg.sender == admin, "Not admin");
         _;
@@ -157,7 +167,7 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         require(_admin != address(0), "Admin required");
         require(_feeRecipient != address(0), "Fee recipient required");
         require(_usdc != address(0), "USDC required");
-        require(_recoveryGrace >= MIN_RECOVERY_GRACE, "Recovery grace too short");
+        require(_recoveryGrace >= MIN_RECOVERY_GRACE, "Grace too short");
         admin = _admin;
         pauser = _pauser == address(0) ? _admin : _pauser;
         feeRecipient = _feeRecipient;
@@ -205,7 +215,7 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
     ) external override whenNotPaused returns (bytes32 transactionId) {
         require(msg.sender == requester, "Requester mismatch");
         require(provider != address(0), "Zero provider");
-        require(requester != provider, "Self-transaction not allowed");
+        require(requester != provider, "Self-tx");
         require(amount >= MIN_TRANSACTION_AMOUNT, "Amount below minimum");
         require(amount <= MAX_TRANSACTION_AMOUNT, "Amount exceeds maximum");
         require(deadline > block.timestamp, "Deadline in past");
@@ -310,12 +320,20 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
             // rejected on v2 — no default-window sentinel, and every delivery commits its result hash so a
             // dispute always has an on-chain-anchored deliverable to authenticate against.
             (uint256 window, bytes32 resultHash) = _decodeDeliveryProof(proof);
-            require(block.timestamp <= type(uint256).max - window, "Timestamp overflow");
+            require(block.timestamp <= type(uint256).max - window, "Time overflow");
+            // [F58 FIX / INV-31] The requester's creation-time disputeWindow is a FLOOR, not a default.
+            // At this point txn.disputeWindow still holds the requester's committed DURATION (converted
+            // to an absolute expiry on the next line), and `window` is the provider's proposed duration.
+            // The provider may EXTEND the requester's inspection window but MUST NOT shorten it —
+            // otherwise the party the window protects against could strip the requester's dispute time
+            // and then trigger permissionless auto-settle on its own deliverable. (Fast settlement when
+            // both parties agree is the requester's early-accept path, not provider shortening.)
+            require(window >= txn.disputeWindow, "Dispute window too short");
             txn.disputeWindow = block.timestamp + window;
             txn.resultHash = resultHash;
         } else if (newState == State.QUOTED && proof.length > 0) {
             // AIP-2: Store quote hash for verification (optional - only if proof provided)
-            require(proof.length == 32, "Quote hash must be 32 bytes");
+            require(proof.length == 32, "Bad quote hash");
             bytes32 quoteHash = abi.decode(proof, (bytes32));
             require(quoteHash != bytes32(0), "Invalid quote hash");
             txn.metadata = quoteHash;
@@ -328,7 +346,7 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
             uint256 bond = (txn.amount * txn.disputeBondBpsLocked) / MAX_BPS;
             if (bond < MIN_DISPUTE_BOND) bond = MIN_DISPUTE_BOND;
             // Bond is a separate deposit — does not affect escrow split accounting
-            require(txn.escrowContract != address(0), "Escrow missing for dispute");
+            require(txn.escrowContract != address(0), "No escrow disp");
             IEscrowValidator vault = IEscrowValidator(txn.escrowContract);
             vault.depositBond(txn.escrowId, msg.sender, bond);
             txn.disputeBond = bond;
@@ -405,7 +423,7 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         usedEscrowIds[escrowContract][escrowId] = true;
 
         Transaction storage txn = _getTransaction(transactionId);
-        require(txn.state == State.INITIATED || txn.state == State.QUOTED, "Invalid state for linkEscrow");
+        require(txn.state == State.INITIATED || txn.state == State.QUOTED, "Bad state link");
         // Authorization: only transaction requester
         require(msg.sender == txn.requester, "Only requester");
         require(block.timestamp <= txn.deadline, "Transaction expired");
@@ -427,7 +445,7 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
             txn.provider,
             txn.amount
         );
-        require(isActive && escrowAmount >= txn.amount, "Escrow funding failed");
+        require(isActive && escrowAmount >= txn.amount, "Fund failed");
 
         txn.escrowContract = escrowContract;
         txn.escrowId = escrowId;
@@ -464,7 +482,7 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         require(txn.escrowContract != address(0), "Escrow missing");
 
         IEscrowValidator vault = IEscrowValidator(txn.escrowContract);
-        uint256 remaining = vault.remaining(txn.escrowId);
+        uint256 remaining = _escrowPrincipal(txn, vault);
         // Solvency invariant: guarantee before commitment
         require(amount <= remaining, "Insufficient escrow");
 
@@ -483,6 +501,33 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         _releaseEscrow(txn);
     }
 
+    function escrowPrincipal(bytes32 transactionId) external view override returns (uint256) {
+        Transaction storage txn = _getTransaction(transactionId);
+        return _escrowPrincipal(txn, IEscrowValidator(txn.escrowContract));
+    }
+
+    /// @dev Available in any state and during pause. No state transition or reputation call.
+    function retryPlatformFee(bytes32 transactionId) external override nonReentrant {
+        Transaction storage txn = _getTransaction(transactionId);
+        require(approvedEscrowVaults[txn.escrowContract], "Vault not approved");
+        uint256 fee = pendingPlatformFeeFor[transactionId];
+        if (fee > 0) _distributeFee(txn, IEscrowValidator(txn.escrowContract), fee, false);
+    }
+
+    function retryReputation(bytes32 transactionId) external override nonReentrant {
+        Transaction storage txn = _getTransaction(transactionId);
+        require(
+            txn.state == State.SETTLED ||
+                (txn.state == State.CANCELLED && txn.wasDisputed && txn.resultHash == bytes32(0)),
+            "No reputation outcome"
+        );
+        _recordReputation(txn, txn.wasDisputed);
+    }
+
+    function _escrowPrincipal(Transaction storage txn, IEscrowValidator vault) internal view returns (uint256) {
+        return vault.remaining(txn.escrowId) - pendingPlatformFeeFor[txn.transactionId];
+    }
+
     /// @notice [F-6] Permissionless liveness backstop for a stalled IN_PROGRESS escrow.
     /// @dev Intentionally omits whenNotPaused — pause blocks state changes, not fund recovery
     ///      (same precedent as releaseEscrow / resolveDisputeWhilePaused). After deadline+recoveryGrace,
@@ -492,11 +537,11 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
     function recoverStalledInProgress(bytes32 transactionId) external override nonReentrant {
         Transaction storage txn = _getTransaction(transactionId);
         require(txn.state == State.IN_PROGRESS, "Not in progress");
-        require(block.timestamp >= txn.deadline + recoveryGrace, "Recovery not yet available");
+        require(block.timestamp >= txn.deadline + recoveryGrace, "Recovery pending");
         require(txn.escrowContract != address(0), "Escrow missing");
 
         IEscrowValidator vault = IEscrowValidator(txn.escrowContract);
-        uint256 remaining = vault.remaining(txn.escrowId);
+        uint256 remaining = _escrowPrincipal(txn, vault);
 
         // Effects before interactions (CEI). CANCELLED is terminal — re-entry reverts on the state check.
         txn.state = State.CANCELLED;
@@ -507,15 +552,7 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         emit StalledInProgressRecovered(transactionId, txn.requester, remaining);
 
         // [C-2 FIX] Reputation mark — same guarded pattern as settlement. provider at fault (true): non-delivery.
-        if (address(agentRegistry) != address(0) && reputationProcessedBy[txn.transactionId] == address(0)) {
-            reputationProcessedBy[txn.transactionId] = address(agentRegistry);
-            try agentRegistry.updateReputationOnSettlement{gas: 150000}(
-                txn.provider,
-                txn.transactionId,
-                txn.amount,
-                true
-            ) {} catch {}
-        }
+        _recordReputation(txn, true);
 
         if (remaining > 0) {
             _refundRequester(txn, vault, remaining);
@@ -564,7 +601,7 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         require(recipient != address(0), "Zero recipient");
         require(amount > 0, "Zero amount");
         uint256 balance = USDC.balanceOf(address(this));
-        require(amount <= balance, "Exceeds kernel balance");
+        require(amount <= balance, "Over kernel bal");
         USDC.safeTransfer(recipient, amount);
         emit EmergencyUSDCRecovered(recipient, amount, block.timestamp);
     }
@@ -619,7 +656,7 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
     /// @dev Cancel by re-calling `approveEscrowVault(vault, true)` before execution.
     function scheduleEscrowVaultRevocation(address vault) external onlyAdmin {
         require(approvedEscrowVaults[vault], "Vault not approved");
-        require(pendingVaultRevocationAt[vault] == 0, "Revocation already scheduled");
+        require(pendingVaultRevocationAt[vault] == 0, "Revoke scheduled");
         pendingVaultRevocationAt[vault] = block.timestamp + ECONOMIC_PARAM_DELAY;
         emit EscrowVaultRevocationScheduled(vault, pendingVaultRevocationAt[vault]);
     }
@@ -938,7 +975,7 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
             return (requesterAmount, providerAmount, mediator, mediatorAmount, true, true);
         }
         // AIP-14: with mediator, explicit fault determination
-        require(proof.length == 160, "Invalid resolution proof");
+        require(proof.length == 160, "Bad res proof");
         (requesterAmount, providerAmount, mediator, mediatorAmount, providerAtFault) =
             abi.decode(proof, (uint256, uint256, address, uint256, bool));
         require(requesterAmount > 0 || providerAmount > 0 || mediatorAmount > 0, "Empty resolution");
@@ -946,32 +983,26 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         return (requesterAmount, providerAmount, mediator, mediatorAmount, true, providerAtFault);
     }
 
-    /**
-     * @notice Release escrow to provider after successful delivery
-     * @dev [C-2 SECURITY FIX] Prevents reputation double-counting if AgentRegistry is upgraded
-     *      - Only updates reputation if current registry hasn't processed this transaction yet
-     *      - Tracks which registry version processed the update (prevents replay across registry upgrades)
-     */
+    /// @notice Release escrow to provider after successful delivery
     function _releaseEscrow(Transaction storage txn) internal {
         require(txn.escrowContract != address(0), "Escrow missing");
         IEscrowValidator vault = IEscrowValidator(txn.escrowContract);
-        uint256 remaining = vault.remaining(txn.escrowId);
+        uint256 remaining = _escrowPrincipal(txn, vault);
+        _recordReputation(txn, txn.wasDisputed);
 
-        // [C-2 FIX] Update reputation only if not yet processed by current registry (prevents double-counting on registry upgrade)
-        if (address(agentRegistry) != address(0) && reputationProcessedBy[txn.transactionId] == address(0)) {
-            reputationProcessedBy[txn.transactionId] = address(agentRegistry);
+        // Retry only previously reserved fees; participant principal is independent of that debt.
+        uint256 fee = pendingPlatformFeeFor[txn.transactionId];
+        if (fee > 0) _distributeFee(txn, vault, fee, false);
+        if (remaining > 0) _payoutProviderAmount(txn, vault, remaining);
+    }
+
+    function _recordReputation(Transaction storage txn, bool providerAtFault) internal {
+        if (address(agentRegistry).code.length > 0 && reputationProcessedBy[txn.transactionId] == address(0)) {
             try agentRegistry.updateReputationOnSettlement{gas: 150000}(
-                txn.provider,
-                txn.transactionId,
-                txn.amount,
-                txn.wasDisputed
-            ) {} catch {}
-        }
-
-        // If milestones already released all funds, settlement still succeeds
-        // (reputation was updated above, state transition was already validated).
-        if (remaining > 0) {
-            _payoutProviderAmount(txn, vault, remaining);
+                txn.provider, txn.transactionId, txn.amount, providerAtFault
+            ) {
+                reputationProcessedBy[txn.transactionId] = address(agentRegistry);
+            } catch {}
         }
     }
 
@@ -982,28 +1013,15 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
     function _handleDisputeSettlement(Transaction storage txn, bytes calldata proof) internal {
         if (txn.escrowContract == address(0)) return;
         IEscrowValidator vault = IEscrowValidator(txn.escrowContract);
-        uint256 remaining = vault.remaining(txn.escrowId);
+        uint256 remaining = _escrowPrincipal(txn, vault);
 
         (uint256 requesterAmount, uint256 providerAmount, address mediator, uint256 mediatorAmount, bool hasResolution, bool providerAtFault) =
             _decodeResolutionProof(proof);
 
-        // [M-2 AUDIT FIX] Require explicit resolution proof for dispute settlement.
-        // Previously, empty proof defaulted to full payout to provider — this allowed
-        // a compromised admin to resolve disputes without evidence. Now reverts.
-        // Must be checked BEFORE any state changes (CEI pattern).
         require(hasResolution, "Explicit resolution required");
 
-        // [C-2 FIX] Update reputation only if not yet processed by current registry (prevents double-counting on registry upgrade)
-        // AIP-14: Pass providerAtFault instead of txn.wasDisputed — only at-fault disputes affect reputation
-        if (address(agentRegistry) != address(0) && reputationProcessedBy[txn.transactionId] == address(0)) {
-            reputationProcessedBy[txn.transactionId] = address(agentRegistry);
-            try agentRegistry.updateReputationOnSettlement{gas: 150000}(
-                txn.provider,
-                txn.transactionId,
-                txn.amount,
-                providerAtFault
-            ) {} catch {}
-        }
+        txn.wasDisputed = providerAtFault;
+        _recordReputation(txn, providerAtFault);
 
         if (mediator != address(0)) {
             require(approvedMediators[mediator], "Mediator not approved");
@@ -1012,8 +1030,8 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
 
         if (remaining > 0) {
             uint256 totalDistributed = requesterAmount + providerAmount + mediatorAmount;
-            require(totalDistributed > 0, "Empty resolution not allowed");
-            require(totalDistributed == remaining, "Must distribute ALL funds");
+            require(totalDistributed > 0, "Empty resolution");
+            require(totalDistributed == remaining, "Distribute all");
 
             if (providerAmount > 0) {
                 _payoutProviderAmount(txn, vault, providerAmount);
@@ -1038,7 +1056,7 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
     ) internal {
         if (txn.escrowContract == address(0)) return;
         IEscrowValidator vault = IEscrowValidator(txn.escrowContract);
-        uint256 remaining = vault.remaining(txn.escrowId);
+        uint256 remaining = _escrowPrincipal(txn, vault);
 
         (uint256 requesterAmount, uint256 providerAmount, address mediator, uint256 mediatorAmount, bool hasResolution,) =
             _decodeResolutionProof(proof);
@@ -1057,9 +1075,9 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
 
             if (remaining > 0) {
                 uint256 totalDistributed = requesterAmount + providerAmount + mediatorAmount;
-                require(totalDistributed > 0, "Empty resolution not allowed");
-                require(totalDistributed == remaining, "Must distribute ALL funds");
-                require(totalDistributed <= txn.amount, "Resolution exceeds amount");
+                require(totalDistributed > 0, "Empty resolution");
+                require(totalDistributed == remaining, "Distribute all");
+                require(totalDistributed <= txn.amount, "Res exceeds amt");
 
                 if (providerAmount > 0) {
                     _payoutProviderAmount(txn, vault, providerAmount);
@@ -1115,23 +1133,35 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         require(grossAmount > 0, "Amount zero");
         require(approvedEscrowVaults[address(vault)], "Vault not approved");
 
-        uint256 available = vault.remaining(txn.escrowId);
-        require(available >= grossAmount, "Insufficient escrow balance");
+        uint256 available = _escrowPrincipal(txn, vault);
+        require(available >= grossAmount, "Low escrow");
 
-        uint256 fee = _calculateFee(grossAmount, txn.platformFeeBpsLocked);
-        // [F-1 AUDIT FIX] Solvency invariant: _calculateFee now clamps the MIN_FEE floor to gross,
-        // so this never reverts on a tiny payout (it used to brick dispute finalization). Kept as a
-        // defense-in-depth assertion guaranteeing providerNet + fee == grossAmount.
-        require(fee <= grossAmount, "Fee exceeds amount");
+        // [F59 FIX] Charge the fee on the CUMULATIVE gross for this transaction so milestone
+        // fragmentation cannot multiply the MIN_FEE floor. The bps portion is linear (sums exactly);
+        // the floor is topped up at most once across all fragments. `_calculateFee(newGross)` returns
+        // max(bps*newGross, MIN_FEE) clamped to newGross; the incremental fee for THIS fragment is the
+        // rise in that target, clamped to the fragment. A single full release is unchanged
+        // (prevGross==0 ⇒ fee == _calculateFee(grossAmount)); two 50/50 releases now split identically
+        // to one 100 release (the floor is not charged twice), while legitimate micro-milestones keep
+        // paying only their linear bps share once the floor is met.
+        bytes32 txId = txn.transactionId;
+        uint256 prevFee = platformFeePaidFor[txId];
+        uint256 newGross = grossPaidFor[txId] + grossAmount;
+        uint256 targetFee = _calculateFee(newGross, txn.platformFeeBpsLocked);
+        uint256 fee = targetFee > prevFee ? targetFee - prevFee : 0;
+        if (fee > grossAmount) fee = grossAmount; // never take more than this fragment (solvency)
+        grossPaidFor[txId] = newGross;
+        platformFeePaidFor[txId] = prevFee + fee;
+        pendingPlatformFeeFor[txId] += fee;
         uint256 providerNet = grossAmount - fee;
 
         if (providerNet > 0) {
             uint256 actualPayout = vault.payoutToProvider(txn.escrowId, providerNet);
-            require(actualPayout == providerNet, "Partial payout not allowed");
+            require(actualPayout == providerNet, "Partial payout");
             emit EscrowReleased(txn.transactionId, txn.provider, actualPayout, block.timestamp);
         }
         if (fee > 0) {
-            _distributeFee(txn, vault, fee);
+            _distributeFee(txn, vault, fee, true);
         }
     }
 
@@ -1148,7 +1178,7 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
      *      - Clears dangling approvals before fallback transfer
      *      - Emits forensic events for all failure scenarios
      */
-    function _distributeFee(Transaction storage txn, IEscrowValidator vault, uint256 totalFee) internal {
+    function _distributeFee(Transaction storage txn, IEscrowValidator vault, uint256 totalFee, bool freshCharge) internal {
         // Split fee: 0.1% to archive treasury, 99.9% to fee recipient
         uint256 archiveFee;
         // [AIP-14c] Amount of the archive portion ACTUALLY removed from escrow. Used below to size the
@@ -1156,7 +1186,10 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         // receiveFunds failed, the fee was redirected out of escrow AND still subtracted as if it stayed,
         // stranding ~archiveFee in the terminal escrow (recoverable by the provider via releaseEscrow).
         uint256 escrowedArchive;
-        if (archiveTreasury != address(0)) {
+        uint256 escrowedTreasury;
+        // A failed treasury payout is already allocated. Retrying it must never allocate
+        // another archive slice. Failed archive payments fall back to treasury in this same call.
+        if (freshCharge && archiveTreasury != address(0)) {
             archiveFee = (totalFee * ARCHIVE_ALLOCATION_BPS) / MAX_BPS;
             if (archiveFee > 0) {
                 // Payout archive fee to kernel first, then forward to treasury
@@ -1180,7 +1213,7 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
                             USDC.forceApprove(archiveTreasury, 0);
                             // [H-1 FIX] Wrap fallback transfer in try-catch to prevent total failure
                             try USDC.transfer(feeRecipient, archiveFee) returns (bool success) {
-                                require(success, "Fallback transfer failed");
+                                require(success, "Fallback failed");
                             } catch {
                                 // Emergency: Both archive treasury AND fee recipient failed
                                 // Funds remain in kernel - emit emergency event for manual recovery
@@ -1212,22 +1245,22 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
             // from DOSing all settlements. On failure, fee stays in vault (recoverable).
             try vault.payout(txn.escrowId, feeRecipient, treasuryFee) returns (uint256 feeResult) {
                 require(feeResult == treasuryFee, "Partial fee");
+                escrowedTreasury = treasuryFee;
                 emit PlatformFeeAccrued(txn.transactionId, feeRecipient, treasuryFee, block.timestamp);
             } catch {
-                // [Apex 2026-07-12 F-IV] Fee remains in the escrow vault for this escrowId. There is
-                // NO in-contract retry on a terminal transaction — recovery is operational: rotate
-                // `feeRecipient` for FUTURE settlements; this txn's stranded fee is surfaced via
-                // ArchivePayoutMismatch for accounting. Only platform fee is affected, never principal.
+                // The fee remains reserved in escrow. retryPlatformFee can re-drive it without
+                // repricing it as principal, including on CANCELLED transactions and during pause.
                 emit ArchivePayoutMismatch(txn.transactionId, treasuryFee, 0);
             }
         }
+        pendingPlatformFeeFor[txn.transactionId] -= escrowedArchive + escrowedTreasury;
     }
 
     function _refundRequester(Transaction storage txn, IEscrowValidator vault, uint256 amount) internal {
-        require(amount > 0, "Refund amount zero");
+        require(amount > 0, "Refund zero");
         require(approvedEscrowVaults[address(vault)], "Vault not approved");
         uint256 actualRefund = vault.refundToRequester(txn.escrowId, amount);
-        require(actualRefund == amount, "Partial refund not allowed");
+        require(actualRefund == amount, "Partial refund");
         emit EscrowRefunded(txn.transactionId, txn.requester, actualRefund, block.timestamp);
     }
 
@@ -1235,14 +1268,14 @@ contract ACTPKernel is IACTPKernel, ReentrancyGuard {
         require(mediator != address(0), "Mediator zero");
         require(approvedMediators[mediator], "Mediator not approved");
         require(block.timestamp >= mediatorApprovedAt[mediator], "Mediator approval pending");
-        require(amount > 0, "Mediator amount zero");
+        require(amount > 0, "Med amt zero");
         require(approvedEscrowVaults[address(vault)], "Vault not approved");
 
         uint256 maxMediatorFee = (txn.amount * MAX_MEDIATOR_FEE_BPS) / MAX_BPS;
-        require(amount <= maxMediatorFee, "Mediator fee exceeds maximum");
+        require(amount <= maxMediatorFee, "Med fee too high");
 
         uint256 actualPayout = vault.payout(txn.escrowId, mediator, amount);
-        require(actualPayout == amount, "Partial mediator payout");
+        require(actualPayout == amount, "Partial med pay");
         emit EscrowMediatorPaid(txn.transactionId, mediator, actualPayout, block.timestamp);
     }
 

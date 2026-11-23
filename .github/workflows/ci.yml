@@ -8,7 +8,8 @@ name: CI
 #   - per-contract coverage floors for BondEscalation + CompositeMediator
 #   - EIP-170 contract-size ceiling (24576 B)
 #   - the canonical ruling-encoding lint (INV-1)
-#   - Slither (GATE on HIGH as of 2026-11-18; tooling skew fixed via pinned slither-analyzer, see the slither job)
+#   - Slither (GATE on HIGH; pinned slither-analyzer + triage database, see the slither job)
+#   - Echidna EscrowVault solvency campaign + mutation controls (see the echidna job)
 #   - (when present) the invariant-coverage map has no UNMAPPED rows
 # The previously-advisory steps (coverage `|| true`, Slither continue-on-error /
 # fail-on none) are now GATING. No existing passing check was weakened.
@@ -33,6 +34,12 @@ env:
   # regression fails the gate. Raise (never silently lower) as the suites grow.
   COV_FLOOR_BOND_ESCALATION: "90"
   COV_FLOOR_COMPOSITE_MEDIATOR: "90"
+  # Security tooling pins (slither + echidna jobs). Same versions verified locally 2026-11-23.
+  SLITHER_VERSION: "0.11.6"
+  CRYTIC_COMPILE_VERSION: "0.4.2"
+  ECHIDNA_VERSION: "2.4.0"
+  # sha256 of echidna-2.4.0-x86_64-linux.tar.gz (matches the GitHub release asset digest).
+  ECHIDNA_SHA256: "a77a90501dd6269e12807156e9d409b160ce0c87fbb36fe323a896a4fb7a2d1d"
 
 jobs:
   # ── Forge build + test (REQUIRED) ───────────────────────────────
@@ -50,9 +57,9 @@ jobs:
           submodules: recursive
 
       - name: Install Foundry
-        uses: foundry-rs/foundry-toolchain@c7450ba673e133f5ee30098b3b54f444d3a2ca2d # v1
+        uses: foundry-rs/foundry-toolchain@dba66c27052e63476d886f22216e119ba7e615bf # v1
         with:
-          version: stable
+          version: v1.9.0
 
       - name: Show Forge version
         run: forge --version
@@ -107,6 +114,9 @@ jobs:
       # map (forge prints nothing for a fully-cached build). The build itself
       # still gates on compile errors (set -e); the parser additionally fails the
       # job if ANY contract's runtime bytecode exceeds MAX_CONTRACT_BYTES.
+      - name: Escrow verification presence and drift
+        run: python3 .agents/skills/verify-actp-escrow/doctor.py
+
       - name: Build + EIP-170 contract-size gate
         run: |
           set -euo pipefail
@@ -264,15 +274,22 @@ jobs:
           sys.exit(1 if failed else 0)
           PY
 
-  # ── Slither static analysis (ADVISORY — tooling-compat fix pending) ──────
-  # INTENT: gate on HIGH findings (fail-on:high is kept). The "Run Slither" step is
-  # TEMPORARILY continue-on-error because slither-action v0.4.0's bundled
-  # crytic-compile 0.3.11 cannot parse forge 1.7.1 build-info (KeyError: 'output'
-  # in hardhat_like_parsing) — a TOOLING version-skew, NOT a contract finding. The
-  # Forge job is the substantive release-gate; the external audit (P5-5) runs
-  # Slither authoritatively. FOLLOW-UP to restore as a hard gate: pin forge to a
-  # crytic-compile-0.3.11-compatible version OR pipx-install a newer slither.
+  # ── Slither static analysis (REQUIRED — gate on HIGH) ────────────────
+  # slither-action v0.4.0 bundled crytic-compile 0.3.11, which cannot parse current forge
+  # build-info (KeyError: 'output'), so this job used to be advisory. It now installs a pinned
+  # slither-analyzer + crytic-compile into a venv on the runner and fails on any HIGH.
   # lib/, test/, script/ stay filtered out — third-party + non-production code.
+  #
+  # Triaged findings live in slither.db.json (Slither's own triage database, read by default
+  # from the repo root) with the rationale in SLITHER-TRIAGE.md. The two entries are the
+  # arbitrary-send-erc20 false positives in EscrowVault (createEscrow / depositBond: onlyKernel,
+  # the kernel passes the authorised caller). They are suppressed by config, NOT by inline
+  # comments, so src/ stays byte-identical to the deployed candidate b08c0c6 (comments change
+  # the CBOR metadata hash and therefore EscrowVault's runtime codehash).
+  # Slither matches a triage entry by id OR description. Both carry line numbers but not
+  # modifiers or bodies, so the db alone only fails closed when lines MOVE. The preconditions
+  # step therefore pins EscrowVault.sol by SHA-256 (slither.db.pins) and checks the two kernel
+  # call sites; the positive control proves each triaged High is still a live finding.
   slither:
     name: Slither (gate on HIGH)
     runs-on: ubuntu-latest
@@ -283,22 +300,158 @@ jobs:
           submodules: recursive
 
       - name: Install Foundry (needed for forge build before Slither)
-        uses: foundry-rs/foundry-toolchain@c7450ba673e133f5ee30098b3b54f444d3a2ca2d # v1
+        uses: foundry-rs/foundry-toolchain@dba66c27052e63476d886f22216e119ba7e615bf # v1
         with:
-          version: stable
+          version: v1.9.0
 
-      # GATING (2026-11-18, Poligon): install current slither-analyzer on the runner
-      # (where foundry-toolchain put forge) and run it directly. Replaces slither-action
-      # v0.4.0, whose bundled crytic-compile 0.3.11 could not parse current forge
-      # build-info (the reason this step was advisory). Current crytic-compile parses it,
-      # so slither compiles via forge itself. Pinned to 0.11.6 (verified locally against
-      # this kernel: 2 HIGH were arbitrary-send-erc20 false positives, now suppressed
-      # inline in EscrowVault.sol with justification; remaining findings are <= Medium).
-      - name: Install Slither (current, pinned)
-        run: pipx install slither-analyzer==0.11.6
+      - name: Install Slither + crytic-compile (pinned)
+        run: |
+          set -euo pipefail
+          python3 -m venv "$RUNNER_TEMP/sectools"
+          "$RUNNER_TEMP/sectools/bin/pip" install --quiet "slither-analyzer==$SLITHER_VERSION" "crytic-compile==$CRYTIC_COMPILE_VERSION"
+          echo "$RUNNER_TEMP/sectools/bin" >> "$GITHUB_PATH"
+
+      - name: Triage preconditions (suppressions hold only while these do)
+        run: |
+          set -euo pipefail
+          test -f slither.db.json || { echo "::error::slither.db.json (triage database) missing"; exit 1; }
+          # 1. EscrowVault is the exact reviewed source (onlyKernel on createEscrow/depositBond,
+          #    immutable kernel + token). Slither matches a triage entry by id OR description,
+          #    and neither covers modifiers, so any EscrowVault edit must be re-triaged and re-pinned.
+          sha256sum -c slither.db.pins
+          # 2. The kernel is the only caller and passes the authorised payer (comment and
+          #    declaration lines excluded; any other reference, e.g. abi.encodeCall, fails closed)
+          #    (linkEscrow: txn.requester; DISPUTED transition: msg.sender, a party).
+          SITES="$(grep -rnwE 'createEscrow|depositBond' src/ | grep -vE '^[^:]+:[0-9]+:[[:space:]]*(function |//|/?\*)' || true)"
+          printf '%s\n' "$SITES"
+          test "$(printf '%s\n' "$SITES" | grep -c '^src/ACTPKernel\.sol:')" -eq 2 \
+            && test "$(printf '%s\n' "$SITES" | grep -c .)" -eq 2 \
+            || { echo "::error::expected exactly two createEscrow/depositBond references, both in ACTPKernel.sol — re-triage"; exit 1; }
+          printf '%s\n' "$SITES" | grep -qE '^src/ACTPKernel\.sol:[0-9]+:[[:space:]]*vault\.depositBond\(txn\.escrowId, msg\.sender, bond\);$' \
+            || { echo "::error::depositBond call site changed — re-triage"; exit 1; }
+          grep -A2 -E '\.createEscrow\($' src/ACTPKernel.sol | sed -n 3p | grep -qE '^[[:space:]]*txn\.requester,$' \
+            || { echo "::error::createEscrow payer argument changed — re-triage"; exit 1; }
 
       - name: Run Slither (GATE on high)
-        run: slither . --fail-high --filter-paths 'lib/|test/|script/'
+        run: |
+          set -euo pipefail
+          slither --version
+          slither . --fail-high --filter-paths 'lib/|test/|script/'
+
+      - name: Slither positive control (every triaged High must still be a live finding)
+        run: |
+          set -euo pipefail
+          echo '[]' > "$RUNNER_TEMP/empty-triage.json"
+          # Without the triage db Slither exits non-zero on the known Highs; the JSON is the result.
+          slither . --filter-paths 'lib/|test/|script/' \
+            --triage-database "$RUNNER_TEMP/empty-triage.json" \
+            --json "$RUNNER_TEMP/slither-raw.json" > "$RUNNER_TEMP/slither-raw.log" 2>&1 || true
+          test -s "$RUNNER_TEMP/slither-raw.json" \
+            || { tail -40 "$RUNNER_TEMP/slither-raw.log"; echo "::error::Slither produced no JSON"; exit 1; }
+          python3 -I - "$RUNNER_TEMP/slither-raw.json" slither.db.json <<'PY'
+          import json, sys
+          raw = json.load(open(sys.argv[1]))
+          if not raw.get("success"):
+              sys.exit(f"::error::Slither reported failure: {raw.get('error')}")
+          dets = (raw.get("results") or {}).get("detectors", [])
+          live = {(d["check"], d["description"]) for d in dets if d["impact"] == "High"}
+          triaged = {(e["check"], e["description"]) for e in json.load(open(sys.argv[2]))}
+          print(f"{len(dets)} results without triage db; {len(live)} High live; {len(triaged)} triaged")
+          if not triaged or triaged - live:
+              sys.exit("::error::a triage entry no longer matches a live finding — re-triage slither.db.json")
+          if live - triaged:
+              sys.exit("::error::untriaged High finding present")
+          print("Positive control OK — the triaged Highs are exactly the live Highs.")
+          PY
+
+  # ── Echidna escrow-solvency campaign (REQUIRED) ──────────────────────
+  # Property harness test/echidna/EscrowVaultSolvency.sol acts as the kernel and fuzzes
+  # create / payout / refund / depositBond / releaseBond plus deliberate over-by-one requests;
+  # echidna_solvent asserts vault balance == outstanding escrow + bonds (invariant #1).
+  # Echidna is a pinned release binary verified by SHA-256 (no curl | sh, no moving tag).
+  # The mutation controls re-run the campaign against three mutated EscrowVault copies and
+  # REQUIRE each to be caught: a relaxed disbursement bound (caught as a revert inside the
+  # property), a bond that is never pulled and an escrow that over-pulls by one (both must
+  # make the property RETURN false). A campaign that fuzzes nothing or a property that
+  # always returns true cannot go green.
+  echidna:
+    name: Echidna (EscrowVault solvency)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          submodules: recursive
+
+      - name: Install Foundry (crytic-compile builds through forge)
+        uses: foundry-rs/foundry-toolchain@dba66c27052e63476d886f22216e119ba7e615bf # v1
+        with:
+          version: v1.9.0
+
+      - name: Install Slither + crytic-compile (pinned; Echidna calls both)
+        run: |
+          set -euo pipefail
+          python3 -m venv "$RUNNER_TEMP/sectools"
+          "$RUNNER_TEMP/sectools/bin/pip" install --quiet "slither-analyzer==$SLITHER_VERSION" "crytic-compile==$CRYTIC_COMPILE_VERSION"
+          echo "$RUNNER_TEMP/sectools/bin" >> "$GITHUB_PATH"
+
+      - name: Install Echidna (pinned release, SHA-256 verified)
+        run: |
+          set -euo pipefail
+          TGZ="echidna-${ECHIDNA_VERSION}-x86_64-linux.tar.gz"
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/$TGZ" \
+            "https://github.com/crytic/echidna/releases/download/v${ECHIDNA_VERSION}/${TGZ}"
+          echo "${ECHIDNA_SHA256}  $RUNNER_TEMP/$TGZ" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/echidna-bin"
+          tar xzf "$RUNNER_TEMP/$TGZ" -C "$RUNNER_TEMP/echidna-bin" echidna
+          echo "$RUNNER_TEMP/echidna-bin" >> "$GITHUB_PATH"
+
+      - name: Echidna solvency campaign (GATE)
+        run: |
+          set -euo pipefail
+          echidna --version
+          echidna test/echidna/EscrowVaultSolvency.sol --contract EscrowVaultSolvency \
+            --config test/echidna/echidna.yaml --format text | tee "$RUNNER_TEMP/echidna.log"
+          grep -q 'echidna_solvent: passing' "$RUNNER_TEMP/echidna.log" \
+            || { echo "::error::echidna_solvent did not report passing"; exit 1; }
+
+      - name: Echidna mutation controls (every mutant MUST be caught)
+        run: |
+          set -euo pipefail
+          # mutant <label> <exact anchor in EscrowVault.sol> <replacement> <required log text>
+          mutant() {
+            local label="$1" anchor="$2" repl="$3" want="$4"
+            local mut="$RUNNER_TEMP/mutant-$label" log="$RUNNER_TEMP/echidna-mutant-$label.log"
+            rm -rf "$mut"; mkdir -p "$mut"
+            rsync -a --exclude 'out/' --exclude 'cache/' --exclude '.git/' ./ "$mut"/
+            python3 -I -c 'import sys; p, a, r = sys.argv[1:4]; s = open(p).read(); n = s.count(a); n == 1 or sys.exit(f"::error::mutation anchor found {n}x (need 1): {a}"); open(p, "w").write(s.replace(a, r))' \
+              "$mut/src/escrow/EscrowVault.sol" "$anchor" "$repl"
+            if ( cd "$mut" && echidna test/echidna/EscrowVaultSolvency.sol --contract EscrowVaultSolvency \
+                   --config test/echidna/echidna.yaml --format text > "$log" 2>&1 ); then
+              tail -20 "$log"
+              echo "::error::Echidna PASSED against mutant '$label' — the campaign is vacuous."
+              exit 1
+            fi
+            grep -q 'echidna_solvent: failed' "$log" && grep -qF "$want" "$log" \
+              || { tail -25 "$log"; echo "::error::mutant '$label' failed, but not with: $want"; exit 1; }
+            echo "Mutation control OK — '$label' falsified echidna_solvent ($want)."
+          }
+          # Relaxed disbursement bound: over-by-one payout/refund succeeds; remaining() then
+          # underflows inside the property, so this one is caught as a revert.
+          mutant relaxed-bound \
+            'require(amount <= available, "Insufficient escrow");' \
+            'require(amount <= available + 1, "Insufficient escrow");' \
+            'echidna_solvent: failed'
+          # Accounting mutants: the property must RETURN false, proving the balance comparison
+          # itself is live (not only a revert path).
+          mutant bond-not-pulled \
+            'token.safeTransferFrom(from, address(this), amount);' \
+            '/* mutant: bond not pulled */' \
+            'Reason: ReturnFalse'
+          mutant escrow-over-pulled \
+            'token.safeTransferFrom(requester, address(this), amount);' \
+            'token.safeTransferFrom(requester, address(this), amount + 1);' \
+            'Reason: ReturnFalse'
 
 # ── SDK-CI dispute-suite gate (DOCUMENTED REQUIREMENT — out of scope here) ──
 # The TypeScript and Python SDK CIs (sdk-ts-ci.yml / sdk-python-ci.yml) live in

@@ -53,7 +53,7 @@ contract AIP14cKernelGate is Test {
     function _inProgress(bytes32 agreementHash) internal returns (bytes32 txId) {
         vm.prank(requester);
         txId = kernel.createTransaction(
-            provider, requester, AMT, block.timestamp + 30 days, 2 days, keccak256("svc"), agreementHash, 0, 0
+            provider, requester, AMT, block.timestamp + 30 days, 1 hours, keccak256("svc"), agreementHash, 0, 0
         );
         vm.startPrank(requester);
         usdc.approve(address(escrow), type(uint256).max);
@@ -151,7 +151,7 @@ contract AIP14cKernelGate is Test {
         );
         vm.prank(requester);
         bytes32 txId = kernel.createTransaction(
-            provider, requester, AMT, block.timestamp + 30 days, 2 days, keccak256("svc"), ah, 0, 0
+            provider, requester, AMT, block.timestamp + 30 days, 1 hours, keccak256("svc"), ah, 0, 0
         );
         // storage/view parity
         assertEq(kernel.getTransaction(txId).agreementHash, ah, "agreementHash stored + surfaced in the view tuple");

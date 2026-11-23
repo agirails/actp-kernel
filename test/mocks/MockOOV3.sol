@@ -48,6 +48,10 @@ contract MockOOV3 is IOptimisticOracleV3 {
 
     /// @dev Monotonic nonce making each assertionId deterministic and unique.
     uint256 public nonce;
+    /// @dev Zero preserves unbounded callbacks for existing tests; gas probes opt in.
+    uint256 public callbackGasLimit;
+    uint256 public callbackGasUsed;
+    function setCallbackGasLimit(uint256 limit) external { callbackGasLimit = limit; }
 
     /// @dev Optional default currency, settable for test convenience (zero by default).
     IERC20 internal _defaultCurrency;
@@ -118,7 +122,15 @@ contract MockOOV3 is IOptimisticOracleV3 {
         require(a.exists, "MockOOV3: unknown assertion");
         a.settled = true;
         if (a.armed && a.callbackRecipient != address(0)) {
-            IUMACallbackRecipient(a.callbackRecipient).assertionResolvedCallback(assertionId, a.result);
+            uint256 limit = callbackGasLimit;
+            if (limit == 0) {
+                IUMACallbackRecipient(a.callbackRecipient).assertionResolvedCallback(assertionId, a.result);
+            } else {
+                require(gasleft() > limit + limit / 63 + 10_000, "MockOOV3: cannot forward full bound");
+                uint256 g = gasleft();
+                IUMACallbackRecipient(a.callbackRecipient).assertionResolvedCallback{gas: limit}(assertionId, a.result);
+                callbackGasUsed = g - gasleft();
+            }
             emit MockResolved(assertionId, a.result);
         }
     }
