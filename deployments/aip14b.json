@@ -31,28 +31,32 @@
       "recoveryGraceSeconds": 3600,
       "recoveryGraceHuman": "1 hour (testnet; >= MIN_RECOVERY_GRACE)",
       "existing": {
-        "ACTPKernel": "0xD8f7829c4555Fc95fc92e54729DaE7d28ace349B",
-        "EscrowVault": "0xAf35801fd0613c583a08ADbdA6131A431C7C69eb",
+        "ACTPKernel": "0xAfDd8D972b2d95eEb044b4C8010E33EA60eBA1a8",
+        "EscrowVault": "0x1d7d1dEfAb80dA75116D0fF8C493C8EBb7dA2542",
         "MockUSDC": "0x444b4e1A65949AB2ac75979D5d0166Eb7A248Ccb",
         "X402Relay": "0x4DCD02b276Dbeab57c265B72435e90507b6Ac81A",
-        "existingNote": "CANONICAL current Sepolia deployment (mirrors deployments/base-sepolia.json, F-6 kernel deployBlock 43262304). CORRECTED 2026-07-02: was the pre-F-6 kernel 0x469CBADb…3411 + vault 0x57f8…49E5, which LACK the AIP-14 dispute-era code (disputeBondBps reverts). The dispute system was briefly deployed against the stale kernel then redeployed against this F-6 kernel; the stale-kernel dispute contracts are orphaned (harmless testnet). DISPUTE_KERNEL env still overrides for a future v2 redeploy."
+        "existingNote": "CANONICAL current Sepolia deployment (mirrors deployments/base-sepolia.json): the b08c0c6 mainnet-candidate kernel, deployBlock 62589379, runtime codehash 0x819f4b41… (deployments/SEPOLIA-B08C0C6-2026-11-23.md). REPOINTED 2026-11-24 from the 2026-06-24 F-6 kernel 0xD8f7829c… / vault 0xAf35801f…; the 2026-07-13 kernel-v2 stack (0xE8ba4133…, SEPOLIA-V2-2026-07-13.md) and the abandoned 2026-08-18 rehearsal (0xFbc45522…, SEPOLIA-REHEARSAL-2026-08-18-ABANDONED.md) stay on chain, unused. kernelVersion() is identical across these kernels; identify them by address + codehash. X402Relay is the legacy relay (unchanged). script/DeployDisputeSystem.s.sol still defaults SEPOLIA_KERNEL to the F-6 kernel; set DISPUTE_KERNEL explicitly for any Sepolia dispute redeploy."
       },
       "disputeContracts": {
         "CompositeMediator": {
-          "address": "0x45a440a34303AEe597672C1D47d1ce83BEC8aD1C",
+          "address": "0xB2C6317752B7CB5Aff56114f6D4183Ba3B9c088A",
           "status": "DEPLOYED",
           "constructorArgs": {
-            "kernel": "0xD8f7829c4555Fc95fc92e54729DaE7d28ace349B"
+            "kernel": "0xAfDd8D972b2d95eEb044b4C8010E33EA60eBA1a8"
           },
-          "writeBackBy": "P4-1 (DeployDisputeSystem.s.sol)"
+          "writeBackBy": "P4-1 (DeployDisputeSystem.s.sol)",
+          "deployBlock": 62589436,
+          "runtimeCodehash": "0x78a4f5ea5581804954a3cd11d1e70c4c8944b26905e5316f043bb3c8a4912c65",
+          "activeAtIso": "2026-11-25T13:15:58Z",
+          "note": "b08c0c6 stack 2026-11-23. initialize(BondEscalation) in block 62589444; approveMediator in block 62589449; mediatorApprovedAt 1795612558, so resolve() cannot settle before 2026-11-25T13:15:58Z."
         },
         "BondEscalation": {
-          "address": "0x84CB23F1bCebC286270EE5E62A19a64686D3Ca0A",
+          "address": "0x1F89966780a09daE562d17D0aDd45E7E8BC7E992",
           "status": "DEPLOYED",
           "constructorArgs": {
-            "kernel": "0xD8f7829c4555Fc95fc92e54729DaE7d28ace349B",
+            "kernel": "0xAfDd8D972b2d95eEb044b4C8010E33EA60eBA1a8",
             "usdc": "0x444b4e1A65949AB2ac75979D5d0166Eb7A248Ccb",
-            "compositeMediator": "0xf8095f8df0102d5f9fA36fF0792c89Db6FB814a0",
+            "compositeMediator": "0xB2C6317752B7CB5Aff56114f6D4183Ba3B9c088A",
             "admin": "${DISPUTE_ADMIN} (defaults to deployer / Sepolia admin EOA)",
             "fixedEvaluators": [
               "${EVALUATOR_FIXED_0}",
@@ -61,16 +65,21 @@
             "rotatingPool": [
               "${EVALUATOR_ROTATING} (>=3 comma-delimited addresses; legacy fallback EVALUATOR_ROTATING_0.._7)"
             ],
-            "umaOOV3": "0xa3CEeb8df5949cA825421f7029554ddca30C976B (MockOOV3, DEPLOY_MOCK_OOV3=true)",
+            "umaOOV3": "0x07fD9Cb968f9A0aef5CEB2D536322f26164B83b8 (MockOOV3, DEPLOY_MOCK_OOV3=true)",
             "umaOOV3Note": "address(0) → BondEscalation resolves DEFAULT_UMA_OOV3 (0x2aBf...500c) on-chain. Tests inject a MockOOV3 (§8.4). With DEPLOY_MOCK_OOV3=true the deploy script instead wires the STEP-1.5 MockOOV3 (live testnet Tier-2 — see the MockOOV3 slot below)."
           },
-          "writeBackBy": "P4-1 (DeployDisputeSystem.s.sol)"
+          "writeBackBy": "P4-1 (DeployDisputeSystem.s.sol)",
+          "deployBlock": 62589441,
+          "runtimeCodehash": "0x9027d1a7c02ed532b3640f88066779ff8981c73bb2c7f3fc83df7df3d338bbdd",
+          "note": "b08c0c6 stack 2026-11-23. Evaluator addresses for this stack are listed in deployments/SEPOLIA-B08C0C6-2026-11-23.md (placeholders kept here per docs/AIP14B-EVALUATOR-KEY-CUSTODY.md). The codehash is Sepolia-specific (immutables bake in kernel, USDC, mediator, OOV3)."
         },
         "MockOOV3": {
-          "address": "0x64C81e2F8a8f72D20AF24a8d9b3A22A93D80AC6A",
+          "address": "0x07fD9Cb968f9A0aef5CEB2D536322f26164B83b8",
           "status": "DEPLOYED",
           "note": "TESTNET-ONLY Tier-2 double (test/mocks/MockOOV3.sol). Deployed by DeployDisputeSystem STEP 1.5 when DEPLOY_MOCK_OOV3=true; BondEscalation is then constructed against it so escalateToUMA → mockResolve/mockArmResult+settleAssertion → resolved-callbacks are live-drivable on Sepolia (G2: canonical OOV3 has no code here). mockResolve is PERMISSIONLESS — acceptable only for MockUSDC-denominated testnet value. The deploy script preflight hard-reverts if this flag is set on base-mainnet.",
-          "writeBackBy": "P4-1 (DeployDisputeSystem.s.sol, DEPLOY_MOCK_OOV3=true)"
+          "writeBackBy": "P4-1 (DeployDisputeSystem.s.sol, DEPLOY_MOCK_OOV3=true)",
+          "deployBlock": 62589438,
+          "runtimeCodehash": "0x3c0af9581656702682d15f243493fc0e6b8c36bcd0b00fb6bbee133a086fe359"
         }
       },
       "g2Recon": {

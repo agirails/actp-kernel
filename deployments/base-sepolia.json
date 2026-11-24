@@ -1,7 +1,7 @@
 {
   "network": "Base Sepolia",
   "chainId": 84532,
-  "deployedBy": "0x42a2f11555b9363fb7ebdcdc76d7cb26e01dcb00",
+  "deployedBy": "0x33b93f194D8fA580e8fAd153ABf06332993a6598",
   "blockExplorer": "https://sepolia.basescan.org",
   "contracts": {
     "MockUSDC": {
@@ -10,79 +10,84 @@
       "explorerUrl": "https://sepolia.basescan.org/address/0x444b4e1A65949AB2ac75979D5d0166Eb7A248Ccb",
       "decimals": 6,
       "symbol": "mUSDC",
-      "note": "Reused across the 2026-06-24 F-6 redeploy (MOCK_USDC_ADDRESS env); not redeployed."
+      "note": "Reused by every Sepolia redeploy since 2026-05 (F-6, kernel-v2 2026-07-13, b08c0c6 2026-11-23); not redeployed."
     },
     "ACTPKernel": {
-      "address": "0xD8f7829c4555Fc95fc92e54729DaE7d28ace349B",
-      "verified": true,
-      "verifiedOn": "basescan",
-      "deployBlock": 43262304,
-      "deployTx": "0x5d82a95e2ec9f9dc2f41625eb9d7eceec028c99b6f84fee32a439cb4ea59b8eb",
-      "explorerUrl": "https://sepolia.basescan.org/address/0xD8f7829c4555Fc95fc92e54729DaE7d28ace349B",
+      "address": "0xAfDd8D972b2d95eEb044b4C8010E33EA60eBA1a8",
+      "verified": false,
+      "verifiedNote": "Source verification (Sourcify / Basescan) not done yet for the b08c0c6 stack.",
+      "deployBlock": 62589379,
+      "deployTx": "0x88d844f6f1abcdc0081f688179b0259f8cd07680df3d948cd400a85e29976dcd",
+      "explorerUrl": "https://sepolia.basescan.org/address/0xAfDd8D972b2d95eEb044b4C8010E33EA60eBA1a8",
+      "runtimeCodehash": "0x819f4b419ebc3b10cdb406b56d712d21f556d92603e4df81bd53c6cffbc715a4",
+      "sourceCommit": "b08c0c60e3ee7823c04279ee84de14edc7fc5452",
       "constructorArgs": {
-        "admin": "0x42a2f11555b9363fb7ebdcdc76d7cb26e01dcb00",
-        "pauser": "0x42a2f11555b9363fb7ebdcdc76d7cb26e01dcb00",
-        "feeRecipient": "0x866ECF4b0E79EA6095c19e4adA4Ed872373fF6b7",
+        "admin": "0x33b93f194D8fA580e8fAd153ABf06332993a6598",
+        "pauser": "0x33b93f194D8fA580e8fAd153ABf06332993a6598",
+        "feeRecipient": "0xcB369A61Cbee3407EdF57f456a56e9E5a343c8a2",
         "agentRegistry": "0x0000000000000000000000000000000000000000",
         "usdc": "0x444b4e1A65949AB2ac75979D5d0166Eb7A248Ccb",
         "recoveryGrace": 3600
       },
       "compiler": "0.8.34",
-      "note": "F-6 redeploy 2026-06-24: adds recoverStalledInProgress(bytes32) + recoveryGrace() (stalled IN_PROGRESS escrow recovery). recoveryGrace = 3600s (1h, testnet). Constructor agentRegistry = address(0) at deploy; activated post-timelock via executeAgentRegistryUpdate (see postDeploy.agentRegistryExecuted) → on-chain agentRegistry now 0xDCcFA810….",
-      "previousDeployment": "0x9d25A874f046185d9237Cd4954C88D2B74B0021b (2026-05-19)"
+      "note": "Mainnet candidate kernel b08c0c6, deployed 2026-11-23 (deployments/SEPOLIA-B08C0C6-2026-11-23.md). Identify it by address + runtime codehash: kernelVersion() is the same constant as the 2026-07-13 and 2026-08-18 kernels. Constructor agentRegistry = address(0); the registry update is scheduled and executable after 2026-11-25 13:15:51 UTC (see postDeploy.agentRegistryExecuted).",
+      "previousDeployment": "0xE8ba4133CC43bAb48c9c71bF82243e0b15915389 (2026-07-13 kernel-v2, SEPOLIA-V2-2026-07-13.md); before it 0xD8f7829c4555Fc95fc92e54729DaE7d28ace349B (2026-06-24 F-6). The 2026-08-18 rehearsal kernel 0xFbc45522… is abandoned (SEPOLIA-REHEARSAL-2026-08-18-ABANDONED.md)."
     },
     "EscrowVault": {
-      "address": "0xAf35801fd0613c583a08ADbdA6131A431C7C69eb",
-      "verified": true,
-      "verifiedOn": "basescan",
-      "deployBlock": 43262304,
-      "deployTx": "0x37eae09d2098626db73d90d07043cd56a9af21c0c004713652ae3b2972a7e77c",
-      "explorerUrl": "https://sepolia.basescan.org/address/0xAf35801fd0613c583a08ADbdA6131A431C7C69eb",
+      "address": "0x1d7d1dEfAb80dA75116D0fF8C493C8EBb7dA2542",
+      "verified": false,
+      "verifiedNote": "Source verification (Sourcify / Basescan) not done yet for the b08c0c6 stack.",
+      "deployBlock": 62589382,
+      "deployTx": "0x4520f91ac4e0121d0f2956f097dceb1e25ba8c097d471b01d625680331bac6b0",
+      "explorerUrl": "https://sepolia.basescan.org/address/0x1d7d1dEfAb80dA75116D0fF8C493C8EBb7dA2542",
+      "runtimeCodehash": "0xf7c951775180c64d7a0565fae9477f5a572443ac02179f573f665336955b9549",
       "constructorArgs": {
         "token": "0x444b4e1A65949AB2ac75979D5d0166Eb7A248Ccb",
-        "kernel": "0xD8f7829c4555Fc95fc92e54729DaE7d28ace349B"
+        "kernel": "0xAfDd8D972b2d95eEb044b4C8010E33EA60eBA1a8"
       },
       "compiler": "0.8.34",
-      "note": "F-6 redeploy 2026-06-24 alongside kernel (immutable kernel ref forces fresh deploy). approveEscrowVault invoked on the kernel in the same broadcast.",
-      "previousDeployment": "0x7dF07327090efcA73DCBa70414aA3131Fc6d2efB (2026-05-19)"
+      "note": "b08c0c6 stack 2026-11-23 (immutable kernel ref forces a fresh vault). approveEscrowVault on the kernel in the same run.",
+      "previousDeployment": "0x9d3CbD2c630E390F9179DAfE02Dd5dAd80B3A05B (2026-07-13); before it 0xAf35801fd0613c583a08ADbdA6131A431C7C69eb (2026-06-24 F-6)"
     },
     "AgentRegistry": {
-      "address": "0xDCcFA810ea60Fb3ACfC22F93ACFDDF57Cc8217Bc",
-      "verified": true,
-      "verifiedOn": "basescan",
-      "deployBlock": 43262304,
-      "deployTx": "0x91c191266985a6e981b0e9aff198508843408a0b5067d20580e62d2cc2c3aecf",
-      "explorerUrl": "https://sepolia.basescan.org/address/0xDCcFA810ea60Fb3ACfC22F93ACFDDF57Cc8217Bc",
+      "address": "0x102263e9668B79769900b08788cea5D9bfCc2D46",
+      "verified": false,
+      "verifiedNote": "Source verification (Sourcify / Basescan) not done yet for the b08c0c6 stack.",
+      "deployBlock": 62589393,
+      "deployTx": "0x09bec664ff8156d646ed3e6a014d707219d7f4434d1d3e843f0e6e63b73e89cc",
+      "explorerUrl": "https://sepolia.basescan.org/address/0x102263e9668B79769900b08788cea5D9bfCc2D46",
+      "runtimeCodehash": "0xe67b9d018b302aac1e52c8e2e168fe458e36cf659fd3337724f48fb0f1792683",
       "constructorArgs": {
-        "actpKernel": "0xD8f7829c4555Fc95fc92e54729DaE7d28ace349B"
+        "actpKernel": "0xAfDd8D972b2d95eEb044b4C8010E33EA60eBA1a8"
       },
       "compiler": "0.8.34",
-      "note": "F-6 redeploy 2026-06-24. Deployed `new AgentRegistry(kernel)` so it authorizes this kernel for reputation writes. scheduleAgentRegistryUpdate(this) called at deploy; executeAgentRegistryUpdate() ran 2026-06-27 (see postDeploy.agentRegistryExecuted) → kernel.agentRegistry is now this address, so reputation (incl F-6 provider-at-fault on recoverStalledInProgress) is ACTIVE (no longer fail-open).",
-      "previousDeployment": "0xD91F9aBfBf60b4a2Fd5317ab0cDF3F44faB5D656 (2026-05-19)"
+      "note": "b08c0c6 stack 2026-11-23. scheduleAgentRegistryUpdate(this) called; NOT yet active: kernel.agentRegistry() is address(0) until executeAgentRegistryUpdate() runs after 2026-11-25 13:15:51 UTC. Until then reputation writes are fail-open.",
+      "previousDeployment": "0x1bb1D4B0b84801FF8597d3e7988E00802252d962 (2026-07-13); before it 0xDCcFA810ea60Fb3ACfC22F93ACFDDF57Cc8217Bc (2026-06-24 F-6)"
     },
     "AGIRAILSIdentityRegistry": {
       "address": "0xce9749c768b425fab0daa0331047d1340ec99a88",
       "verified": false,
       "explorerUrl": "https://sepolia.basescan.org/address/0xce9749c768b425fab0daa0331047d1340ec99a88",
       "constructorArgs": {},
-      "note": "Redeployed 2026-04-02 with audit fix L-2: zero-address guard in _changeOwner. Not part of the F-6 redeploy (independent contract)."
+      "note": "Redeployed 2026-04-02 with audit fix L-2: zero-address guard in _changeOwner. Independent contract; not part of the F-6, 2026-07-13 or b08c0c6 redeploys."
     },
     "ArchiveTreasury": {
-      "address": "0x63B0c4b4aCD96aC40Ac9ab023B6507FeE54375AD",
-      "verified": true,
-      "verifiedOn": "basescan",
-      "deployBlock": 43262305,
-      "deployTx": "0xcc82a3a281b539ddc40cdf68a24df403c5f4b00d06b6b3bc56cb25e5e97171d0",
-      "explorerUrl": "https://sepolia.basescan.org/address/0x63B0c4b4aCD96aC40Ac9ab023B6507FeE54375AD",
+      "address": "0x1C97490B58fC63B7Bc945755C2cd1EA22132902e",
+      "verified": false,
+      "verifiedNote": "Source verification (Sourcify / Basescan) not done yet for the b08c0c6 stack.",
+      "deployBlock": 62589396,
+      "deployTx": "0x140e95f6da950e2bc9626424b3f59572da11165c23866e95b0741737139494a2",
+      "explorerUrl": "https://sepolia.basescan.org/address/0x1C97490B58fC63B7Bc945755C2cd1EA22132902e",
+      "runtimeCodehash": "0x128225c82707fa127919973ef4e0cc048b95d6be4270a657cd127ee7ae6403af",
       "constructorArgs": {
         "usdc": "0x444b4e1A65949AB2ac75979D5d0166Eb7A248Ccb",
-        "kernel": "0xD8f7829c4555Fc95fc92e54729DaE7d28ace349B",
-        "uploader": "0x42a2f11555b9363fb7ebdcdc76d7cb26e01dcb00"
+        "kernel": "0xAfDd8D972b2d95eEb044b4C8010E33EA60eBA1a8",
+        "uploader": "0x33b93f194D8fA580e8fAd153ABf06332993a6598"
       },
       "compiler": "0.8.34",
-      "owner": "0x42a2f11555b9363fb7ebdcdc76d7cb26e01dcb00",
-      "note": "F-6 redeploy 2026-06-24. setArchiveTreasury invoked on the new kernel in the same broadcast; kernel.archiveTreasury() confirmed == this address. owner = deployer EOA (admin == deployer).",
-      "previousDeployment": "0x2eE4f7bE289fc9EFC2F9f2D6E53e50abDF23A3eb (2026-05-19)"
+      "owner": "0x33b93f194D8fA580e8fAd153ABf06332993a6598",
+      "note": "b08c0c6 stack 2026-11-23. setArchiveTreasury on the kernel in the same run. constructorArgs and owner read from the contract (USDC(), kernel(), uploader(), owner()) on 2026-11-24. owner = deployer EOA (admin == deployer).",
+      "previousDeployment": "0x415Ca522e1DfF9933ab5Eb7a8569B1879093324D (2026-07-13); before it 0x63B0c4b4aCD96aC40Ac9ab023B6507FeE54375AD (2026-06-24 F-6)"
     },
     "X402Relay": {
       "address": "0x110b25bb3d45c40dfcf34bb451aa7069b2a1cb3b",
@@ -97,42 +102,45 @@
         "admin": "0x42a2f11555b9363fb7ebdcdc76d7cb26e01dcb00"
       },
       "status": "deprecated",
-      "deprecationNote": "X402Relay is LEGACY. The SDK's X402Adapter (since x402 v2, SDK 3.3.0) routes payments directly from buyer to seller via the @x402/fetch + facilitator pattern (EIP-3009 / Permit2). Not on the active payment path and NOT part of the F-6 redeploy (still points at the superseded stack). Kept for any third party that may call it directly.",
+      "deprecationNote": "X402Relay is LEGACY. The SDK's X402Adapter (since x402 v2, SDK 3.3.0) routes payments directly from buyer to seller via the @x402/fetch + facilitator pattern (EIP-3009 / Permit2). Not on the active payment path and NOT part of the F-6 / 2026-07-13 / b08c0c6 redeploys (still points at the superseded stack). Kept for any third party that may call it directly.",
       "previousDeployment": "0x0804FC3c04214bC9036E126554aF7EE24d589988"
     }
   },
   "postDeploy": {
     "escrowVaultApproved": true,
-    "escrowVaultApprovedTx": "0xecf93bec1854c15e8a712d12da999c7867c23515c327fbb6817aebccbdb38731",
-    "escrowVaultApprovedNote": "approveEscrowVault(vault,true) in the F-6 deploy broadcast (admin == deployer).",
+    "escrowVaultApprovedTx": "0x465b4a68d98365edf625c02dcaed3bb0cefabf28d12986bee0c46f1bdf7eddf4",
+    "escrowVaultApprovedNote": "approveEscrowVault(vault,true) in the b08c0c6 run (admin == deployer), block 62589407.",
     "archiveTreasurySet": true,
-    "archiveTreasurySetTx": "0x3d9e3c58091bf95b1f3d70d61def5cee3e25aafdb02b763c64b65adf7e48af25",
-    "archiveTreasurySetNote": "setArchiveTreasury(0x63B0c4b4…) in the F-6 deploy broadcast; kernel.archiveTreasury() == 0x63B0c4b4… confirmed on-chain.",
+    "archiveTreasurySetTx": "0x577132637467015cd1dbfcbb745d023cb40ca19f265ce6904039b66228bca0e4",
+    "archiveTreasurySetNote": "setArchiveTreasury(0x1C97490B…) in the b08c0c6 run, block 62589409.",
     "agentRegistryScheduled": true,
-    "agentRegistryScheduledTx": "0xf1e40a9e97af78bf55a8b03877a3139eee4790dde7c0a4d9d95bebea047acb5e",
-    "agentRegistryScheduledEta": 1782465738,
-    "agentRegistryScheduledEtaIso": "2026-06-26T09:22:18Z",
-    "agentRegistryScheduledNote": "scheduleAgentRegistryUpdate(0xDCcFA810…) in the F-6 deploy broadcast. 2-day timelock (ECONOMIC_PARAM_DELAY).",
-    "agentRegistryExecuted": true,
-    "agentRegistryExecutedTx": "0x38c78f4c6541c12c3726ebe4a6585018f8edb5dd292306b9d93a9d87f05c1ca3",
-    "agentRegistryExecutedBlock": 43397162,
-    "agentRegistryExecutedAt": "2026-06-27T12:12Z",
-    "agentRegistryExecutedNote": "executeAgentRegistryUpdate() (permissionless, post-timelock). kernel.agentRegistry 0x0 → 0xDCcFA810…; AgentRegistryUpdated emitted. Reputation (incl F-6 provider-at-fault) now ACTIVE — no longer fail-open. Verified: kernel.agentRegistry() == 0xDCcFA810….",
+    "agentRegistryScheduledTx": "0x5341a30b39731384f08375de08af2c6dcbc047768db623cce41ac2f10adbffce",
+    "agentRegistryScheduledEta": 1795612551,
+    "agentRegistryScheduledEtaIso": "2026-11-25T13:15:51Z",
+    "agentRegistryScheduledNote": "scheduleAgentRegistryUpdate(0x102263e9…) in the b08c0c6 run, block 62589411. 2-day timelock (ECONOMIC_PARAM_DELAY).",
+    "agentRegistryExecuted": false,
+    "agentRegistryExecutedNote": "Pending: executeAgentRegistryUpdate() after 2026-11-25T13:15:51Z. Until then kernel.agentRegistry() == address(0).",
+    "mediatorApproved": true,
+    "mediatorApprovedTx": "0x960181809aacf415665a79e751a663133131b3a5d3598b302f34f3d2e222cb37",
+    "mediatorActiveAt": 1795612558,
+    "mediatorActiveAtIso": "2026-11-25T13:15:58Z",
+    "mediatorNote": "approveMediator(CompositeMediator 0xB2C63177…, true), block 62589449. The resolver cannot settle a dispute before mediatorActiveAt. Dispute stack addresses: deployments/aip14b.json networks.base-sepolia.disputeContracts.",
     "paymasterAllowlist": {
-      "status": "TBD-for-f6-addresses",
-      "note": "The 2026-05-19 CDP+Pimlico allowlist covered the SUPERSEDED stack (0x9d25 kernel etc.). The F-6 addresses (kernel 0xD8f7, vault 0xAf35, registry 0xDCcF, archive 0x63B0) must be added to both CDP and Pimlico paymaster dashboards before Paymaster-sponsored UserOps will work against the new kernel — confirm allowlist status."
+      "status": "TBD-for-b08c0c6-addresses",
+      "note": "The CDP and Pimlico paymaster allowlists must include the b08c0c6 addresses (kernel 0xAfDd8D97, vault 0x1d7d1dEf, registry 0x102263e9, archive 0x1C97490B) before paymaster-sponsored UserOps work against this kernel. Not checked here."
     },
     "smokeE2E": {
       "passed": false,
-      "note": "Pending — dispute canary / E2E against the F-6 kernel after SDK config swap (SDK already repointed to F-6 on the dispute branch)."
+      "note": "Pending. e2e/sepolia-capstone.ts sends a 3600 s DELIVERED window against a 2-day agreed window, which b08c0c6 rejects (\"Dispute window too short\"); fix it before the first capstone on this stack."
     }
   },
   "deployment": {
     "framework": "Foundry",
     "rpc": "Base Sepolia",
-    "date": "2026-06-24",
-    "label": "F-6 redeploy (stalled IN_PROGRESS recovery)",
-    "broadcast": "broadcast/DeployBaseSepolia.s.sol/84532/run-latest.json (run-1782292938188)",
-    "supersedes": "2026-05-19 deployment (kernel 0x9d25A874…)"
+    "date": "2026-11-23",
+    "label": "b08c0c6 mainnet-candidate kernel + D7 dispute stack",
+    "record": "deployments/SEPOLIA-B08C0C6-2026-11-23.md",
+    "broadcast": "DeployKernelV2.s.sol then DeployDisputeSystem.s.sol from a clean detached b08c0c6 checkout (broadcast/ is not tracked)",
+    "supersedes": "2026-07-13 kernel-v2 stack (kernel 0xE8ba4133…, SEPOLIA-V2-2026-07-13.md). This file previously still described the 2026-06-24 F-6 stack (kernel 0xD8f7829c…)."
   }
 }
