@@ -88,6 +88,28 @@ contract EscrowVaultBranchCoverageTest is Test {
         escrow.payout(escrowId, provider, ONE_USDC);
     }
 
+    // depositBond pulls from an arbitrary `from` (Slither arbitrary-send-erc20, triaged as a
+    // false positive only because of onlyKernel). Pin that guard with a test.
+    function testDepositBondRejectsNonKernel() external {
+        bytes32 escrowId = keccak256("bond1");
+
+        vm.prank(attacker);
+        vm.expectRevert("Only kernel");
+        escrow.depositBond(escrowId, requester, ONE_USDC);
+        assertEq(usdc.balanceOf(address(escrow)), 0);
+    }
+
+    function testReleaseBondRejectsNonKernel() external {
+        bytes32 escrowId = keccak256("bond1");
+        vm.prank(kernel);
+        escrow.depositBond(escrowId, requester, ONE_USDC);
+
+        vm.prank(attacker);
+        vm.expectRevert("Only kernel");
+        escrow.releaseBond(escrowId, attacker, ONE_USDC);
+        assertEq(escrow.bondBalance(escrowId), ONE_USDC);
+    }
+
     // ============================================
     // createEscrow BRANCH TESTS
     // ============================================

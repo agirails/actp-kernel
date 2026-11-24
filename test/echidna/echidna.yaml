@@ -1,0 +1,14 @@
+# Echidna config — EscrowVault solvency campaign
+testMode: property
+testLimit: 20000
+seqLen: 50
+# Echidna compiles through crytic-compile -> forge (foundry.toml). Restrict fuzzing to the act_* actions.
+filterFunctions:
+  - "EscrowVaultSolvency.act_createEscrow(uint256,uint256)"
+  - "EscrowVaultSolvency.act_payout(uint256,uint256)"
+  - "EscrowVaultSolvency.act_refund(uint256,uint256)"
+  - "EscrowVaultSolvency.act_depositBond(uint256,uint256)"
+  - "EscrowVaultSolvency.act_releaseBond(uint256,uint256)"
+  - "EscrowVaultSolvency.act_payoutOverByOne(uint256)"
+  - "EscrowVaultSolvency.act_refundOverByOne(uint256)"
+filterBlacklist: false

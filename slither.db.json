@@ -1,0 +1,16 @@
+[
+  {
+    "id": "311894c4e6b58015d8a85b5c27dfa7679c0f5ec790f921798e55e7868a0ad748",
+    "check": "arbitrary-send-erc20",
+    "impact": "High",
+    "confidence": "High",
+    "description": "EscrowVault.createEscrow(bytes32,address,address,uint256) (src/escrow/EscrowVault.sol#51-68) uses arbitrary from in transferFrom: token.safeTransferFrom(requester,address(this),amount) (src/escrow/EscrowVault.sol#64)\n"
+  },
+  {
+    "id": "3bbbf5624973ef828f51254b4a5ccdf59f3a6fddb9c2b947ce71b44fd0c4dd53",
+    "check": "arbitrary-send-erc20",
+    "impact": "High",
+    "confidence": "High",
+    "description": "EscrowVault.depositBond(bytes32,address,uint256) (src/escrow/EscrowVault.sol#104-109) uses arbitrary from in transferFrom: token.safeTransferFrom(from,address(this),amount) (src/escrow/EscrowVault.sol#107)\n"
+  }
+]
