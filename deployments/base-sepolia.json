@@ -131,8 +131,8 @@
     "mediatorActiveAtIso": "2026-11-25T13:15:58Z",
     "mediatorNote": "approveMediator(CompositeMediator 0xB2C63177…, true), block 62589449. The resolver cannot settle a dispute before mediatorActiveAt. Dispute stack addresses: deployments/aip14b.json networks.base-sepolia.disputeContracts. Active since 2026-11-25T13:15:58Z (chain time checked after the registry update).",
     "paymasterAllowlist": {
-      "status": "TBD-for-b08c0c6-addresses",
-      "note": "The CDP and Pimlico paymaster allowlists must include the b08c0c6 addresses (kernel 0xAfDd8D97, vault 0x1d7d1dEf, registry 0x102263e9, archive 0x1C97490B) before paymaster-sponsored UserOps work against this kernel. Not checked here."
+      "status": "pimlico-open-cdp-unchecked",
+      "note": "Pimlico Sepolia policy v2 has no address restrictions since 2026-11-23 (decision 15:19; its dashboard 'Contract restrictions' is a sender allowlist, not a call-target filter). A probe on 2026-11-23 got SIGNED for calls to this kernel and to MockUSDC. Target filtering is planned in a separate gas gateway. The CDP paymaster allowlist was not checked for the b08c0c6 addresses."
     },
     "smokeE2E": {
       "passed": true,
