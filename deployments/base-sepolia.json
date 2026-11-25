@@ -14,8 +14,9 @@
     },
     "ACTPKernel": {
       "address": "0xAfDd8D972b2d95eEb044b4C8010E33EA60eBA1a8",
-      "verified": false,
-      "verifiedNote": "Source verification (Sourcify / Basescan) not done yet for the b08c0c6 stack.",
+      "verified": true,
+      "verifiedOn": "sourcify",
+      "verifiedNote": "Sourcify exact_match 2026-11-25 (forge verify-contract --verifier sourcify, b08c0c6 build).",
       "deployBlock": 62589379,
       "deployTx": "0x88d844f6f1abcdc0081f688179b0259f8cd07680df3d948cd400a85e29976dcd",
       "explorerUrl": "https://sepolia.basescan.org/address/0xAfDd8D972b2d95eEb044b4C8010E33EA60eBA1a8",
@@ -30,13 +31,14 @@
         "recoveryGrace": 3600
       },
       "compiler": "0.8.34",
-      "note": "Mainnet candidate kernel b08c0c6, deployed 2026-11-23 (deployments/SEPOLIA-B08C0C6-2026-11-23.md). Identify it by address + runtime codehash: kernelVersion() is the same constant as the 2026-07-13 and 2026-08-18 kernels. Constructor agentRegistry = address(0); the registry update is scheduled and executable after 2026-11-25 13:15:51 UTC (see postDeploy.agentRegistryExecuted).",
+      "note": "Mainnet candidate kernel b08c0c6, deployed 2026-11-23 (deployments/SEPOLIA-B08C0C6-2026-11-23.md). Identify it by address + runtime codehash: kernelVersion() is the same constant as the 2026-07-13 and 2026-08-18 kernels. Constructor agentRegistry = address(0); the registry update ran on 2026-11-25 (see postDeploy.agentRegistryExecuted).",
       "previousDeployment": "0xE8ba4133CC43bAb48c9c71bF82243e0b15915389 (2026-07-13 kernel-v2, SEPOLIA-V2-2026-07-13.md); before it 0xD8f7829c4555Fc95fc92e54729DaE7d28ace349B (2026-06-24 F-6). The 2026-08-18 rehearsal kernel 0xFbc45522… is abandoned (SEPOLIA-REHEARSAL-2026-08-18-ABANDONED.md)."
     },
     "EscrowVault": {
       "address": "0x1d7d1dEfAb80dA75116D0fF8C493C8EBb7dA2542",
-      "verified": false,
-      "verifiedNote": "Source verification (Sourcify / Basescan) not done yet for the b08c0c6 stack.",
+      "verified": true,
+      "verifiedOn": "sourcify",
+      "verifiedNote": "Sourcify exact_match 2026-11-25 (forge verify-contract --verifier sourcify, b08c0c6 build).",
       "deployBlock": 62589382,
       "deployTx": "0x4520f91ac4e0121d0f2956f097dceb1e25ba8c097d471b01d625680331bac6b0",
       "explorerUrl": "https://sepolia.basescan.org/address/0x1d7d1dEfAb80dA75116D0fF8C493C8EBb7dA2542",
@@ -51,8 +53,9 @@
     },
     "AgentRegistry": {
       "address": "0x102263e9668B79769900b08788cea5D9bfCc2D46",
-      "verified": false,
-      "verifiedNote": "Source verification (Sourcify / Basescan) not done yet for the b08c0c6 stack.",
+      "verified": true,
+      "verifiedOn": "sourcify",
+      "verifiedNote": "Sourcify exact_match 2026-11-25 (forge verify-contract --verifier sourcify, b08c0c6 build).",
       "deployBlock": 62589393,
       "deployTx": "0x09bec664ff8156d646ed3e6a014d707219d7f4434d1d3e843f0e6e63b73e89cc",
       "explorerUrl": "https://sepolia.basescan.org/address/0x102263e9668B79769900b08788cea5D9bfCc2D46",
@@ -61,7 +64,7 @@
         "actpKernel": "0xAfDd8D972b2d95eEb044b4C8010E33EA60eBA1a8"
       },
       "compiler": "0.8.34",
-      "note": "b08c0c6 stack 2026-11-23. scheduleAgentRegistryUpdate(this) called; NOT yet active: kernel.agentRegistry() is address(0) until executeAgentRegistryUpdate() runs after 2026-11-25 13:15:51 UTC. Until then reputation writes are fail-open.",
+      "note": "b08c0c6 stack 2026-11-23. scheduleAgentRegistryUpdate(this) at deploy; executeAgentRegistryUpdate() ran 2026-11-25 (see postDeploy.agentRegistryExecuted), so kernel.agentRegistry() is this address and reputation writes are active.",
       "previousDeployment": "0x1bb1D4B0b84801FF8597d3e7988E00802252d962 (2026-07-13); before it 0xDCcFA810ea60Fb3ACfC22F93ACFDDF57Cc8217Bc (2026-06-24 F-6)"
     },
     "AGIRAILSIdentityRegistry": {
@@ -73,8 +76,9 @@
     },
     "ArchiveTreasury": {
       "address": "0x1C97490B58fC63B7Bc945755C2cd1EA22132902e",
-      "verified": false,
-      "verifiedNote": "Source verification (Sourcify / Basescan) not done yet for the b08c0c6 stack.",
+      "verified": true,
+      "verifiedOn": "sourcify",
+      "verifiedNote": "Sourcify exact_match 2026-11-25 (forge verify-contract --verifier sourcify, b08c0c6 build).",
       "deployBlock": 62589396,
       "deployTx": "0x140e95f6da950e2bc9626424b3f59572da11165c23866e95b0741737139494a2",
       "explorerUrl": "https://sepolia.basescan.org/address/0x1C97490B58fC63B7Bc945755C2cd1EA22132902e",
@@ -118,13 +122,14 @@
     "agentRegistryScheduledEta": 1795612551,
     "agentRegistryScheduledEtaIso": "2026-11-25T13:15:51Z",
     "agentRegistryScheduledNote": "scheduleAgentRegistryUpdate(0x102263e9…) in the b08c0c6 run, block 62589411. 2-day timelock (ECONOMIC_PARAM_DELAY).",
-    "agentRegistryExecuted": false,
-    "agentRegistryExecutedNote": "Pending: executeAgentRegistryUpdate() after 2026-11-25T13:15:51Z. Until then kernel.agentRegistry() == address(0).",
+    "agentRegistryExecuted": true,
+    "agentRegistryExecutedTx": "0x6839f1100abdd0f0b87a94a683566afcb5f4b9959a54a164a4c1050753a947f8",
+    "agentRegistryExecutedNote": "executeAgentRegistryUpdate() from the deployer, block 63461808 (2026-11-25). kernel.agentRegistry() == 0x102263e9668B79769900b08788cea5D9bfCc2D46 (cast call, same day).",
     "mediatorApproved": true,
     "mediatorApprovedTx": "0x960181809aacf415665a79e751a663133131b3a5d3598b302f34f3d2e222cb37",
     "mediatorActiveAt": 1795612558,
     "mediatorActiveAtIso": "2026-11-25T13:15:58Z",
-    "mediatorNote": "approveMediator(CompositeMediator 0xB2C63177…, true), block 62589449. The resolver cannot settle a dispute before mediatorActiveAt. Dispute stack addresses: deployments/aip14b.json networks.base-sepolia.disputeContracts.",
+    "mediatorNote": "approveMediator(CompositeMediator 0xB2C63177…, true), block 62589449. The resolver cannot settle a dispute before mediatorActiveAt. Dispute stack addresses: deployments/aip14b.json networks.base-sepolia.disputeContracts. Active since 2026-11-25T13:15:58Z (chain time checked after the registry update).",
     "paymasterAllowlist": {
       "status": "TBD-for-b08c0c6-addresses",
       "note": "The CDP and Pimlico paymaster allowlists must include the b08c0c6 addresses (kernel 0xAfDd8D97, vault 0x1d7d1dEf, registry 0x102263e9, archive 0x1C97490B) before paymaster-sponsored UserOps work against this kernel. Not checked here."

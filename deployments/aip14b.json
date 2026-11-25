@@ -48,7 +48,8 @@
           "deployBlock": 62589436,
           "runtimeCodehash": "0x78a4f5ea5581804954a3cd11d1e70c4c8944b26905e5316f043bb3c8a4912c65",
           "activeAtIso": "2026-11-25T13:15:58Z",
-          "note": "b08c0c6 stack 2026-11-23. initialize(BondEscalation) in block 62589444; approveMediator in block 62589449; mediatorApprovedAt 1795612558, so resolve() cannot settle before 2026-11-25T13:15:58Z."
+          "verifiedOn": "sourcify (exact_match, 2026-11-25)",
+          "note": "b08c0c6 stack 2026-11-23. initialize(BondEscalation) in block 62589444; approveMediator in block 62589449; mediatorApprovedAt 1795612558, so resolve() could not settle before 2026-11-25T13:15:58Z. Active since then."
         },
         "BondEscalation": {
           "address": "0x1F89966780a09daE562d17D0aDd45E7E8BC7E992",
@@ -71,6 +72,7 @@
           "writeBackBy": "P4-1 (DeployDisputeSystem.s.sol)",
           "deployBlock": 62589441,
           "runtimeCodehash": "0x9027d1a7c02ed532b3640f88066779ff8981c73bb2c7f3fc83df7df3d338bbdd",
+          "verifiedOn": "sourcify (exact_match, 2026-11-25)",
           "note": "b08c0c6 stack 2026-11-23. Evaluator addresses for this stack are listed in deployments/SEPOLIA-B08C0C6-2026-11-23.md (placeholders kept here per docs/AIP14B-EVALUATOR-KEY-CUSTODY.md). The codehash is Sepolia-specific (immutables bake in kernel, USDC, mediator, OOV3)."
         },
         "MockOOV3": {
@@ -79,7 +81,8 @@
           "note": "TESTNET-ONLY Tier-2 double (test/mocks/MockOOV3.sol). Deployed by DeployDisputeSystem STEP 1.5 when DEPLOY_MOCK_OOV3=true; BondEscalation is then constructed against it so escalateToUMA → mockResolve/mockArmResult+settleAssertion → resolved-callbacks are live-drivable on Sepolia (G2: canonical OOV3 has no code here). mockResolve is PERMISSIONLESS — acceptable only for MockUSDC-denominated testnet value. The deploy script preflight hard-reverts if this flag is set on base-mainnet.",
           "writeBackBy": "P4-1 (DeployDisputeSystem.s.sol, DEPLOY_MOCK_OOV3=true)",
           "deployBlock": 62589438,
-          "runtimeCodehash": "0x3c0af9581656702682d15f243493fc0e6b8c36bcd0b00fb6bbee133a086fe359"
+          "runtimeCodehash": "0x3c0af9581656702682d15f243493fc0e6b8c36bcd0b00fb6bbee133a086fe359",
+          "verifiedOn": "sourcify (exact_match, 2026-11-25)"
         }
       },
       "g2Recon": {
