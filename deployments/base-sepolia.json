@@ -135,8 +135,14 @@
       "note": "The CDP and Pimlico paymaster allowlists must include the b08c0c6 addresses (kernel 0xAfDd8D97, vault 0x1d7d1dEf, registry 0x102263e9, archive 0x1C97490B) before paymaster-sponsored UserOps work against this kernel. Not checked here."
     },
     "smokeE2E": {
-      "passed": false,
-      "note": "Pending. e2e/sepolia-capstone.ts sends a 3600 s DELIVERED window against a 2-day agreed window, which b08c0c6 rejects (\"Dispute window too short\"); fix it before the first capstone on this stack."
+      "passed": true,
+      "date": "2026-11-25",
+      "checks": "12/12",
+      "transactionId": "0xed66615bd68413f5c403d5006b6bed1e39c9c8fcc06225a67ee29442e86c28e1",
+      "disputeId": "0xd6a612bf4682cb707875c2fd9915f427ff549fb49f5631e4677ca0fd970aac7c",
+      "submitAIRulingTx": "0x81c7b285ba6936d9dfdfeba7ec47cfe2051d4c0bab38b8bc3e47c68810a79bc9",
+      "finalizeTx": "0xe9b6082ade115b9a790669cb2408bcc111055ae7ea64347d67139244a1548211",
+      "note": "LIVE capstone (dispute-evaluator e2e/sepolia-capstone.ts at b9c4c2b, window 3600 s at creation and DELIVERED): createTransaction -> DELIVERED -> DISPUTED -> evaluator 2/3 ruling (requester wins) -> submitAIRuling (tier 1) -> 1 h real-clock liveness -> finalize -> kernel SETTLED. Both txs status 1; getTransaction(txId).state == 5 (SETTLED), checked with cast call the same day."
     }
   },
   "deployment": {
