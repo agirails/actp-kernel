@@ -131,8 +131,8 @@
     "mediatorActiveAtIso": "2026-11-25T13:15:58Z",
     "mediatorNote": "approveMediator(CompositeMediator 0xB2C63177…, true), block 62589449. The resolver cannot settle a dispute before mediatorActiveAt. Dispute stack addresses: deployments/aip14b.json networks.base-sepolia.disputeContracts. Active since 2026-11-25T13:15:58Z (chain time checked after the registry update).",
     "paymasterAllowlist": {
-      "status": "pimlico-open-cdp-unchecked",
-      "note": "Pimlico Sepolia policy v2 has no address restrictions since 2026-11-23 (decision 15:19; its dashboard 'Contract restrictions' is a sender allowlist, not a call-target filter). A probe on 2026-11-23 got SIGNED for calls to this kernel and to MockUSDC. Target filtering is planned in a separate gas gateway. The CDP paymaster allowlist was not checked for the b08c0c6 addresses."
+      "status": "pimlico-open-cdp-allowlisted",
+      "note": "Pimlico Sepolia policy v2 has no address restrictions since 2026-11-23 (decision 15:19; its dashboard 'Contract restrictions' is a sender allowlist, not a call-target filter). A probe on 2026-11-23 got SIGNED for calls to this kernel and to MockUSDC. Target filtering is planned in a separate gas gateway. CDP: on 2026-11-25 the kernel, EscrowVault and AgentRegistry of this stack were added (all functions) to the allowlist of the CDP project whose client key the SDK uses; a sponsorship probe (nothing signed or sent) then got SIGNED for kernel createTransaction/linkEscrow/transitionState, registry registerAgent and the vault, and still refused for MockUSDC transfer (only approve and mint are allowlisted) and WETH. That CDP allowlist is shared by Base Mainnet and Base Sepolia; these three addresses have no code on Base mainnet."
     },
     "smokeE2E": {
       "passed": true,
